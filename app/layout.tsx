@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Botsville - MLBB Ghana",
   description: "Botsville is your go-to source for all things Mobile Legends: Bang Bang in Ghana. Stay updated with the latest esports news, team rankings, tournament schedules, and exclusive content. Join our community of passionate MLBB fans and never miss a moment of the action!",
+  icons: {
+    icon: "/mlbb_logo.png",
+  },
 };
 
 export default function RootLayout({
