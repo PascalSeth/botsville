@@ -40,10 +40,7 @@ export const Footer = () => {
                 height={48}
                 className="object-contain"
               />
-              <div className="flex flex-col leading-none">
-                <span className="font-['Rajdhani'] text-white font-bold text-lg tracking-[0.12em] uppercase">Ghana</span>
-                <span className="font-['Rajdhani'] text-[#e8a000] font-semibold text-sm tracking-[0.2em] uppercase">Nagends</span>
-              </div>
+    
             </Link>
 
             <p className="text-[#444] text-[12px] leading-relaxed max-w-[220px]">
