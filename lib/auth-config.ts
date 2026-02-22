@@ -179,4 +179,5 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+  trustHost: true, // Required for Netlify deploy previews and other cloud hosting
 });
