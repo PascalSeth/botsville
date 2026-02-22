@@ -4,7 +4,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, X, Plus, ChevronDown, Shield, Sword, Zap,
-  Crosshair, Anchor, CheckCircle, AlertCircle, User, Image as ImageIcon
+  Crosshair, Anchor, CheckCircle, AlertCircle, User, Image as ImageIcon, Loader2
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────
@@ -15,13 +15,45 @@ interface Player {
   inGameName: string;
   role: Role | '';
   image: string | null;
+  imageUrl: string | null; // URL from Supabase storage
 }
 
 interface TeamForm {
   teamName: string;
+  tag: string;
+  region: string;
   logo: string | null;
+  logoUrl: string | null; // URL from Supabase storage
   banner: string | null;
+  bannerUrl: string | null; // URL from Supabase storage
   players: Player[];
+}
+
+// ── Regions ────────────────────────────────────────────────
+const REGIONS = [
+  'Accra', 'Kumasi', 'Takoradi', 'Tema', 'Cape Coast'
+] as const;
+
+// ── Upload helper ──────────────────────────────────────────
+async function uploadImageToSupabase(image: string, type: string, bucket: string = 'teams'): Promise<string | null> {
+  try {
+    console.log(`Uploading ${type} to ${bucket}...`);
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image, type, bucket }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      console.error('Upload failed:', data.error);
+      return null;
+    }
+    console.log(`Upload successful:`, data.url);
+    return data.url;
+  } catch (error) {
+    console.error('Upload error:', error);
+    return null;
+  }
 }
 
 // ── Role config ────────────────────────────────────────────
@@ -40,6 +72,7 @@ const emptyPlayer = (): Player => ({
   inGameName: '',
   role: '',
   image: null,
+  imageUrl: null,
 });
 
 // ── File → base64 ──────────────────────────────────────────
@@ -355,6 +388,11 @@ const LivePreview = ({ form }: { form: TeamForm }) => {
             {form.teamName || <span className="text-[#222]">Team Name</span>}
           </h3>
           <p className="text-[#e8a000]/60 text-[9px] tracking-[0.15em] uppercase mt-0.5">
+            {form.tag && <span>[{form.tag}] </span>}
+            {form.region && <span>· {form.region}</span>}
+            {!form.tag && !form.region && 'Team Tag & Region'}
+          </p>
+          <p className="text-[#555] text-[9px] tracking-[0.15em] uppercase mt-0.5">
             {filledPlayers.length}/5 Players
           </p>
         </div>
@@ -438,9 +476,23 @@ const StepBar = ({ current }: { current: number }) => (
 );
 
 // ── Review Screen ──────────────────────────────────────────
-const ReviewScreen = ({ form, onSubmit, onBack }: { form: TeamForm; onSubmit: () => void; onBack: () => void }) => {
+const ReviewScreen = ({ 
+  form, 
+  onSubmit, 
+  onBack, 
+  isSubmitting, 
+  submitError 
+}: { 
+  form: TeamForm; 
+  onSubmit: () => void; 
+  onBack: () => void;
+  isSubmitting: boolean;
+  submitError: string | null;
+}) => {
   const issues: string[] = [];
   if (!form.teamName) issues.push('Team name is required');
+  if (!form.tag || form.tag.length < 3) issues.push('Team tag is required (3-5 characters)');
+  if (!form.region) issues.push('Region is required');
   if (!form.logo) issues.push('Team logo is required');
   const roles = form.players.map(p => p.role).filter(Boolean);
   const uniqueRoles = new Set(roles);
@@ -453,6 +505,17 @@ const ReviewScreen = ({ form, onSubmit, onBack }: { form: TeamForm; onSubmit: ()
       <h3 className="text-white font-black text-sm tracking-[0.2em] uppercase mb-4 border-l-2 border-[#e8a000] pl-3">
         Review & Submit
       </h3>
+
+      {/* API Error */}
+      {submitError && (
+        <div className="mb-4 border border-red-500/20 bg-red-500/[0.04] p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle size={12} className="text-red-400" />
+            <p className="text-red-400 text-[9px] tracking-[0.15em] uppercase font-black">Registration Failed</p>
+          </div>
+          <p className="text-[#666] text-[10px] tracking-wide">{submitError}</p>
+        </div>
+      )}
 
       {/* Issues */}
       {issues.length > 0 && (
@@ -475,6 +538,7 @@ const ReviewScreen = ({ form, onSubmit, onBack }: { form: TeamForm; onSubmit: ()
           </div>
           <div>
             <p className="text-white font-black text-base tracking-wide uppercase">{form.teamName}</p>
+            <p className="text-[#e8a000]/60 text-[9px] tracking-widest uppercase">[{form.tag}] · {form.region}</p>
             <p className="text-[#555] text-[9px] tracking-widest uppercase mt-0.5">
               {form.players.filter(p => p.inGameName).length} / 5 Players Ready
             </p>
@@ -511,21 +575,32 @@ const ReviewScreen = ({ form, onSubmit, onBack }: { form: TeamForm; onSubmit: ()
         <motion.button
           whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
           onClick={onBack}
-          className="flex-1 border border-white/10 text-[#666] text-[10px] font-black tracking-[0.15em] uppercase py-3 hover:border-white/20 hover:text-white transition-all"
+          disabled={isSubmitting}
+          className="flex-1 border border-white/10 text-[#666] text-[10px] font-black tracking-[0.15em] uppercase py-3 hover:border-white/20 hover:text-white transition-all disabled:opacity-50"
         >
           ← Back
         </motion.button>
         <motion.button
-          whileHover={valid ? { scale: 1.02 } : {}}
-          whileTap={valid ? { scale: 0.97 } : {}}
-          onClick={valid ? onSubmit : undefined}
-          className={`flex-[2] text-[10px] font-black tracking-[0.15em] uppercase py-3 transition-all ${
-            valid
+          whileHover={valid && !isSubmitting ? { scale: 1.02 } : {}}
+          whileTap={valid && !isSubmitting ? { scale: 0.97 } : {}}
+          onClick={valid && !isSubmitting ? onSubmit : undefined}
+          disabled={isSubmitting}
+          className={`flex-[2] text-[10px] font-black tracking-[0.15em] uppercase py-3 transition-all flex items-center justify-center gap-2 ${
+            isSubmitting
+              ? 'bg-[#e8a000]/50 text-black cursor-wait'
+              : valid
               ? 'bg-[#e8a000] hover:bg-[#ffb800] text-black'
               : 'bg-[#1a1a22] text-[#333] cursor-not-allowed'
           }`}
         >
-          Register Team →
+          {isSubmitting ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              Registering...
+            </>
+          ) : (
+            'Register Team →'
+          )}
         </motion.button>
       </div>
     </motion.div>
@@ -584,10 +659,17 @@ const SuccessScreen = ({ form, onReset }: { form: TeamForm; onReset: () => void 
 export default function RegisterTeamPage() {
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [createdTeamId, setCreatedTeamId] = useState<string | null>(null);
   const [form, setForm] = useState<TeamForm>({
     teamName: '',
+    tag: '',
+    region: '',
     logo: null,
+    logoUrl: null,
     banner: null,
+    bannerUrl: null,
     players: ROLES.map(() => emptyPlayer()),
   });
 
@@ -609,7 +691,112 @@ export default function RegisterTeamPage() {
   const handleReset = () => {
     setSubmitted(false);
     setStep(0);
-    setForm({ teamName: '', logo: null, banner: null, players: ROLES.map(() => emptyPlayer()) });
+    setSubmitError(null);
+    setCreatedTeamId(null);
+    setForm({ 
+      teamName: '', 
+      tag: '', 
+      region: '', 
+      logo: null, 
+      logoUrl: null, 
+      banner: null, 
+      bannerUrl: null, 
+      players: ROLES.map(() => emptyPlayer()) 
+    });
+  };
+
+  // Submit team registration to API
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      // Step 1: Upload images to Supabase storage
+      let logoUrl = form.logoUrl;
+      let bannerUrl = form.bannerUrl;
+
+      // Upload logo if it's a base64 image (not already uploaded)
+      if (form.logo && !form.logoUrl) {
+        logoUrl = await uploadImageToSupabase(form.logo, 'logo', 'teams');
+        if (!logoUrl) {
+          console.warn('Logo upload failed, continuing without logo');
+        }
+      }
+
+      // Upload banner if it's a base64 image (not already uploaded)
+      if (form.banner && !form.bannerUrl) {
+        bannerUrl = await uploadImageToSupabase(form.banner, 'banner', 'teams');
+        if (!bannerUrl) {
+          console.warn('Banner upload failed, continuing without banner');
+        }
+      }
+
+      // Upload player images
+      const playersWithUrls = await Promise.all(
+        form.players.map(async (player) => {
+          if (player.image && !player.imageUrl) {
+            const imageUrl = await uploadImageToSupabase(player.image, `player-${player.id}`, 'players');
+            if (!imageUrl) {
+              console.warn(`Player ${player.inGameName} image upload failed`);
+            }
+            return { ...player, imageUrl };
+          }
+          return player;
+        })
+      );
+
+      // Step 2: Create the team
+      const teamResponse = await fetch('/api/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.teamName,
+          tag: form.tag.toUpperCase(),
+          region: form.region,
+          logo: logoUrl,
+          banner: bannerUrl,
+        }),
+      });
+
+      const teamData = await teamResponse.json();
+
+      if (!teamResponse.ok) {
+        throw new Error(teamData.error || 'Failed to create team');
+      }
+
+      const teamId = teamData.team.id;
+      setCreatedTeamId(teamId);
+
+      // Step 3: Add players to the team
+      const validPlayers = playersWithUrls.filter(p => p.inGameName && p.role);
+      
+      for (const player of validPlayers) {
+        const playerResponse = await fetch(`/api/teams/${teamId}/players`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ign: player.inGameName,
+            role: player.role.toUpperCase(),
+            photo: player.imageUrl,
+            isSubstitute: false,
+          }),
+        });
+
+        const playerData = await playerResponse.json();
+
+        if (!playerResponse.ok) {
+          console.error(`Failed to add player ${player.inGameName}:`, playerData.error);
+          // Continue adding other players even if one fails
+        }
+      }
+
+      setSubmitted(true);
+    } catch (error) {
+      console.error('Registration error:', error);
+      setSubmitError(error instanceof Error ? error.message : 'Failed to register team');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -693,6 +880,35 @@ export default function RegisterTeamPage() {
                       />
                     </div>
 
+                    {/* Team Tag + Region */}
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <p className="text-[#555] text-[9px] tracking-[0.18em] uppercase mb-1.5">Team Tag</p>
+                        <input
+                          type="text"
+                          value={form.tag}
+                          onChange={e => setForm(f => ({ ...f, tag: e.target.value.toUpperCase() }))}
+                          placeholder="ABC"
+                          maxLength={5}
+                          className="w-full bg-[#0d0d14] border border-white/[0.08] text-white text-sm font-bold tracking-wide uppercase placeholder-[#333] px-3 py-2.5 outline-none focus:border-[#e8a000]/50 transition-colors duration-200"
+                        />
+                        <p className="text-[#333] text-[8px] tracking-wider mt-1">3-5 characters</p>
+                      </div>
+                      <div>
+                        <p className="text-[#555] text-[9px] tracking-[0.18em] uppercase mb-1.5">Region</p>
+                        <select
+                          value={form.region}
+                          onChange={e => setForm(f => ({ ...f, region: e.target.value }))}
+                          className="w-full bg-[#0d0d14] border border-white/[0.08] text-white text-sm font-bold tracking-wide uppercase px-3 py-2.5 outline-none focus:border-[#e8a000]/50 transition-colors duration-200 cursor-pointer"
+                        >
+                          <option value="" disabled className="text-[#333]">Select...</option>
+                          {REGIONS.map(r => (
+                            <option key={r} value={r} className="bg-[#0d0d14] text-white">{r}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
                     {/* Logo + Banner side by side */}
                     <div className="grid grid-cols-[120px_1fr] sm:grid-cols-[140px_1fr] gap-4 mb-6">
                       <ImageDropZone
@@ -717,9 +933,9 @@ export default function RegisterTeamPage() {
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.97 }}
                       onClick={() => setStep(1)}
-                      disabled={!form.teamName}
+                      disabled={!form.teamName || !form.tag || form.tag.length < 3 || !form.region}
                       className={`w-full py-3 text-[10px] font-black tracking-[0.2em] uppercase transition-all ${
-                        form.teamName
+                        form.teamName && form.tag.length >= 3 && form.region
                           ? 'bg-[#e8a000] hover:bg-[#ffb800] text-black'
                           : 'bg-[#1a1a22] text-[#333] cursor-not-allowed'
                       }`}
@@ -811,7 +1027,9 @@ export default function RegisterTeamPage() {
                     key="step2"
                     form={form}
                     onBack={() => setStep(1)}
-                    onSubmit={() => setSubmitted(true)}
+                    onSubmit={handleSubmit}
+                    isSubmitting={isSubmitting}
+                    submitError={submitError}
                   />
                 )}
               </AnimatePresence>

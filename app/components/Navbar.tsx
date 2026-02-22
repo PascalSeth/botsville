@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, ChevronRight, Menu, ArrowRight, Radio } from 'lucide-react';
+import { Search, X, ChevronRight, Menu, ArrowRight, Radio, User, LogOut, Settings, ChevronDown, Users, Shield } from 'lucide-react';
+import { useSession, signOut } from 'next-auth/react';
 
 // ── Ticker messages ────────────────────────────────────────
 const TICKER_MESSAGES = [
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { label: 'Leaderboard', href: '/leaderboard' },
   { label: 'News',        href: '/news'        },
 ];
+const DASHBOARD_HREF = '/dashboard';
 
 // ── TickerBar ──────────────────────────────────────────────
 const TickerBar = ({ onClose }: { onClose: () => void }) => {
@@ -108,101 +110,237 @@ const SearchOverlay = ({ onClose }: { onClose: () => void }) => (
 );
 
 // ── Full-screen mobile menu ────────────────────────────────
-const MobileMenu = ({ onClose }: { onClose: () => void }) => (
-  <motion.div
-    initial={{ opacity: 0, y: -16 }}
-    animate={{ opacity: 1, y: 0 }}
-    exit={{ opacity: 0, y: -16 }}
-    transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-    className="fixed inset-0 z-[60] bg-[#07070d] flex flex-col overflow-y-auto"
-  >
-    {/* Menu top bar */}
-    <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
-      <Logo />
-      <motion.button
-        whileTap={{ scale: 0.9 }}
-        onClick={onClose}
-        className="w-9 h-9 flex items-center justify-center border border-white/10 text-[#666] hover:text-white hover:border-[#e8a000]/40 transition-all"
-      >
-        <X size={16} />
-      </motion.button>
-    </div>
+const MobileMenu = ({ 
+  onClose, 
+  session 
+}: { 
+  onClose: () => void;
+  session: { user?: { id?: string; ign?: string; role?: string | null; status?: string } } | null;
+}) => {
+  const isLoggedIn = !!session?.user?.id;
+  const user = session?.user;
 
-    {/* Live ticker strip inside menu */}
-    <div className="flex items-center gap-2 px-5 py-2.5 bg-[#e8a000]/[0.04] border-b border-[#e8a000]/10">
-      <Radio size={10} className="text-[#e8a000] animate-pulse shrink-0" />
-      <p className="text-[#888] text-[10px] tracking-wide truncate">Season 4 Qualifier — Register your squad now</p>
-    </div>
+  const handleLogout = async () => {
+    await signOut({ callbackUrl: '/' });
+  };
 
-    {/* Primary nav links */}
-    <nav className="flex-1 px-5 pt-8 pb-6">
-      <p className="text-[#333] text-[8px] tracking-[0.25em] uppercase font-black mb-5">Navigation</p>
-      <div className="flex flex-col gap-1">
-        {NAV_ITEMS.map((item, i) => (
-          <motion.div
-            key={item.label}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.08 + i * 0.07, duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
-          >
-            <Link
-              href={item.href}
-              onClick={onClose}
-              className="group flex items-center justify-between py-4 border-b border-white/[0.05] hover:border-[#e8a000]/30 transition-colors"
-            >
-              <span className="text-white font-black text-2xl tracking-[0.08em] uppercase group-hover:text-[#e8a000] transition-colors duration-200">
-                {item.label}
-              </span>
-              <ArrowRight size={16} className="text-[#2a2a2a] group-hover:text-[#e8a000] group-hover:translate-x-1 transition-all duration-200" />
-            </Link>
-          </motion.div>
-        ))}
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+      className="fixed inset-0 z-[60] bg-[#07070d] flex flex-col overflow-y-auto scrollbar-hide"
+      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+    >
+      {/* Menu top bar */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
+        <Logo />
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={onClose}
+          className="w-9 h-9 flex items-center justify-center border border-white/10 text-[#666] hover:text-white hover:border-[#e8a000]/40 transition-all"
+        >
+          <X size={16} />
+        </motion.button>
       </div>
 
-      {/* Secondary links */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.45, duration: 0.35 }}
-        className="mt-8"
-      >
-        <p className="text-[#333] text-[8px] tracking-[0.25em] uppercase font-black mb-4">Account</p>
-        <div className="flex flex-col gap-3">
-          <Link href="/login" onClick={onClose} className="flex items-center gap-3 text-[#666] hover:text-white text-sm font-bold tracking-widest uppercase transition-colors">
-            <ArrowRight size={12} /> Login
-          </Link>
-          <Link href="/register-team" onClick={onClose} className="flex items-center gap-3 text-[#666] hover:text-[#e8a000] text-sm font-bold tracking-widest uppercase transition-colors">
-            <ArrowRight size={12} /> Register Team
-          </Link>
-        </div>
-      </motion.div>
-    </nav>
+      {/* Live ticker strip inside menu */}
+      <div className="flex items-center gap-2 px-5 py-2.5 bg-[#e8a000]/[0.04] border-b border-[#e8a000]/10">
+        <Radio size={10} className="text-[#e8a000] animate-pulse shrink-0" />
+        <p className="text-[#888] text-[10px] tracking-wide truncate">Season 4 Qualifier — Register your squad now</p>
+      </div>
 
-    {/* CTA at bottom */}
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.5, duration: 0.4 }}
-      className="px-5 pb-8 pt-4 border-t border-white/[0.05]"
-    >
-      <Link
-        href="/register-team"
-        onClick={onClose}
-        className="block w-full bg-[#e8a000] hover:bg-[#ffb800] text-black text-[11px] font-black tracking-[0.2em] uppercase text-center py-4 transition-colors duration-200"
+      {/* Primary nav links */}
+      <nav className="flex-1 px-5 pt-8 pb-6">
+        <p className="text-[#333] text-[8px] tracking-[0.25em] uppercase font-black mb-5">Navigation</p>
+        <div className="flex flex-col gap-1">
+          {NAV_ITEMS.map((item, i) => (
+            <motion.div
+              key={item.label}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.08 + i * 0.07, duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
+            >
+              <Link
+                href={item.href}
+                onClick={onClose}
+                className="group flex items-center justify-between py-4 border-b border-white/[0.05] hover:border-[#e8a000]/30 transition-colors"
+              >
+                <span className="text-white font-black text-2xl tracking-[0.08em] uppercase group-hover:text-[#e8a000] transition-colors duration-200">
+                  {item.label}
+                </span>
+                <ArrowRight size={16} className="text-[#2a2a2a] group-hover:text-[#e8a000] group-hover:translate-x-1 transition-all duration-200" />
+              </Link>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Secondary links - Account section */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.45, duration: 0.35 }}
+          className="mt-8"
+        >
+          <p className="text-[#333] text-[8px] tracking-[0.25em] uppercase font-black mb-4">Account</p>
+          <div className="flex flex-col gap-3">
+            {isLoggedIn ? (
+              <>
+                {/* User info display */}
+                <div className="flex items-center gap-3 px-3 py-3 bg-[#e8a000]/10 border border-[#e8a000]/20 rounded">
+                  <div className="w-8 h-8 rounded-full bg-[#e8a000]/20 flex items-center justify-center">
+                    <User size={14} className="text-[#e8a000]" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-white font-bold text-sm">{user?.ign}</span>
+                    <span className="text-[#888] text-[10px] uppercase tracking-wider">
+                      {user?.role || 'Player'}
+                    </span>
+                  </div>
+                </div>
+                <Link href="/profile" onClick={onClose} className="flex items-center gap-3 text-[#666] hover:text-white text-sm font-bold tracking-widest uppercase transition-colors">
+                  <Settings size={12} /> Profile Settings
+                </Link>
+                <Link href="/my-team" onClick={onClose} className="flex items-center gap-3 text-[#666] hover:text-white text-sm font-bold tracking-widest uppercase transition-colors">
+                  <Users size={12} /> My Team
+                </Link>
+                {user?.role && (
+                  <Link href={DASHBOARD_HREF} onClick={onClose} className="flex items-center gap-3 text-[#e8a000] hover:text-[#ffb800] text-sm font-bold tracking-widest uppercase transition-colors">
+                    <Shield size={12} /> Admin Dashboard
+                  </Link>
+                )}
+                <button 
+                  onClick={handleLogout}
+                  className="flex items-center gap-3 text-[#666] hover:text-red-400 text-sm font-bold tracking-widest uppercase transition-colors"
+                >
+                  <LogOut size={12} /> Logout
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" onClick={onClose} className="flex items-center gap-3 text-[#666] hover:text-white text-sm font-bold tracking-widest uppercase transition-colors">
+                  <ArrowRight size={12} /> Login
+                </Link>
+                <Link href="/register-team" onClick={onClose} className="flex items-center gap-3 text-[#666] hover:text-[#e8a000] text-sm font-bold tracking-widest uppercase transition-colors">
+                  <ArrowRight size={12} /> Register Team
+                </Link>
+              </>
+            )}
+          </div>
+        </motion.div>
+      </nav>
+
+      {/* CTA at bottom */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5, duration: 0.4 }}
+        className="px-5 pb-8 pt-4 border-t border-white/[0.05]"
       >
-        Register Your Team →
-      </Link>
-      <p className="text-[#2a2a2a] text-[9px] tracking-[0.15em] uppercase text-center mt-3">Season 5 · Registration Open</p>
+        {isLoggedIn ? (
+          <div className="text-center">
+            <p className="text-[#888] text-[10px] tracking-wider uppercase">Welcome back, {user?.ign}!</p>
+          </div>
+        ) : (
+          <>
+            <Link
+              href="/login"
+              onClick={onClose}
+              className="block w-full bg-[#e8a000] hover:bg-[#ffb800] text-black text-[11px] font-black tracking-[0.2em] uppercase text-center py-4 transition-colors duration-200"
+            >
+              Register Your Team →
+            </Link>
+            <p className="text-[#2a2a2a] text-[9px] tracking-[0.15em] uppercase text-center mt-3">Season 5 · Registration Open</p>
+          </>
+        )}
+      </motion.div>
     </motion.div>
-  </motion.div>
-);
+  );
+};
+
+// ── User dropdown menu for desktop ─────────────────────────────
+const UserDropdown = ({ 
+  user, 
+  onLogout 
+}: { 
+  user: { id?: string; ign?: string; role?: string | null; status?: string };
+  onLogout: () => void;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 px-3 py-1.5 bg-[#e8a000]/10 border border-[#e8a000]/20 hover:border-[#e8a000]/40 transition-colors"
+      >
+        <div className="w-6 h-6 rounded-full bg-[#e8a000]/20 flex items-center justify-center">
+          <User size={12} className="text-[#e8a000]" />
+        </div>
+        <span className="text-white font-bold text-[11px] tracking-wider">{user.ign}</span>
+        <ChevronDown size={12} className={`text-[#888] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 top-full mt-1 w-48 bg-[#0d0d14] border border-white/10 shadow-xl z-50"
+          >
+            <div className="px-3 py-2 border-b border-white/5">
+              <p className="text-white font-bold text-xs">{user.ign}</p>
+              <p className="text-[#888] text-[10px] uppercase tracking-wider">{user.role || 'Player'}</p>
+            </div>
+            <Link 
+              href="/profile" 
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 text-[#aaa] hover:text-white hover:bg-white/5 text-xs transition-colors"
+            >
+              <Settings size={12} /> Profile Settings
+            </Link>
+            <Link 
+              href="/my-team" 
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 text-[#aaa] hover:text-white hover:bg-white/5 text-xs transition-colors"
+            >
+              <Users size={12} /> My Team
+            </Link>
+            {user.role && (
+              <Link 
+                href={DASHBOARD_HREF} 
+                onClick={() => setIsOpen(false)}
+                className="flex items-center gap-2 px-3 py-2 text-[#e8a000] hover:text-[#ffb800] hover:bg-white/5 text-xs transition-colors"
+              >
+                <Shield size={12} /> Admin Dashboard
+              </Link>
+            )}
+            <button 
+              onClick={onLogout}
+              className="w-full flex items-center gap-2 px-3 py-2 text-[#aaa] hover:text-red-400 hover:bg-white/5 text-xs transition-colors"
+            >
+              <LogOut size={12} /> Logout
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 // ── Main Navbar ────────────────────────────────────────────
 export const Navbar = () => {
+  const { data: session, status } = useSession();
   const [scrolled,    setScrolled]    = useState(false);
   const [tickerOpen,  setTickerOpen]  = useState(true);
   const [searchOpen,  setSearchOpen]  = useState(false);
   const [menuOpen,    setMenuOpen]    = useState(false);
+
+  const isLoggedIn = status === 'authenticated' && !!session?.user?.id;
+  const user = session?.user;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -215,6 +353,16 @@ export const Navbar = () => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [menuOpen]);
+
+  // Log session status for debugging
+  useEffect(() => {
+    console.log('[NAVBAR] Session status:', status);
+    console.log('[NAVBAR] Session data:', session);
+  }, [session, status]);
+
+  const handleLogout = async () => {
+    await signOut({ callbackUrl: '/' });
+  };
 
   return (
     <>
@@ -231,11 +379,14 @@ export const Navbar = () => {
           background: linear-gradient(90deg, transparent, rgba(232,160,0,0.06), transparent);
           animation: scanMove 4s linear infinite;
         }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
       `}</style>
 
       {/* Full-screen mobile menu */}
       <AnimatePresence>
-        {menuOpen && <MobileMenu onClose={() => setMenuOpen(false)} />}
+        {menuOpen && <MobileMenu onClose={() => setMenuOpen(false)} session={session} />}
       </AnimatePresence>
 
       <header
@@ -305,19 +456,26 @@ export const Navbar = () => {
             {/* Divider — desktop only */}
             <div className="hidden lg:block w-px h-4 bg-white/10" />
 
-            {/* Login — desktop only */}
-            <Link href="/login" className="hidden lg:block text-[11px] font-semibold tracking-[0.15em] uppercase text-[#888] hover:text-white transition-colors px-2">
-              Login
-            </Link>
+            {/* Auth section — desktop only */}
+            {isLoggedIn ? (
+              <UserDropdown user={user!} onLogout={handleLogout} />
+            ) : (
+              <>
+                {/* Login — desktop only */}
+                <Link href="/login" className="hidden lg:block text-[11px] font-semibold tracking-[0.15em] uppercase text-[#888] hover:text-white transition-colors px-2">
+                  Login
+                </Link>
 
-            {/* Register CTA — desktop only */}
-            <Link
-              href="/login"
-              className="hidden lg:block relative group px-4 py-2 text-[11px] font-black tracking-[0.15em] uppercase text-black bg-[#e8a000] hover:bg-[#ffb800] transition-colors duration-200 overflow-hidden"
-            >
-              <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-white/20 skew-x-12 transition-transform duration-500" />
-              <span className="relative">Register</span>
-            </Link>
+                {/* Register CTA — desktop only */}
+                <Link
+                  href="/login"
+                  className="hidden lg:block relative group px-4 py-2 text-[11px] font-black tracking-[0.15em] uppercase text-black bg-[#e8a000] hover:bg-[#ffb800] transition-colors duration-200 overflow-hidden"
+                >
+                  <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-white/20 skew-x-12 transition-transform duration-500" />
+                  <span className="relative">Register</span>
+                </Link>
+              </>
+            )}
 
             {/* Hamburger — mobile/tablet only */}
             <motion.button

@@ -1,0 +1,978 @@
+// Ghana MLBB Esports Platform — Complete Prisma Schema
+// Covers every entity from the Master Plan with zero gaps
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ═══════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════
+
+// User account status
+enum UserStatus {
+  ACTIVE
+  SUSPENDED  // temporary — has suspendedUntil date
+  BANNED     // permanent — SUPER_ADMIN only
+}
+
+// Hero roles used on user profile preference
+enum MainRole {
+  TANK
+  FIGHTER
+  ASSASSIN
+  MAGE
+  MARKSMAN
+  SUPPORT
+}
+
+// In-game lane roles used on player roster
+enum GameRole {
+  EXP
+  JUNGLE
+  MAGE
+  MARKSMAN
+  ROAM
+}
+
+// Admin permission levels
+enum AdminRoleType {
+  SUPER_ADMIN        // full access + manage other admins
+  TOURNAMENT_ADMIN   // tournaments, registrations, brackets, scores, disputes
+  CONTENT_ADMIN      // news, scrim vault, fan art moderation
+  REFEREE            // match score entry only
+}
+
+// Season lifecycle
+enum SeasonStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+}
+
+// Team status
+enum TeamStatus {
+  ACTIVE
+  INACTIVE    // auto-set after 30 days below 5 players
+  SUSPENDED   // manually applied with reason + duration
+}
+
+// Competitive tier classification
+enum Tier {
+  S
+  A
+  B
+  C
+}
+
+// Hero meta tier
+enum MetaTier {
+  S_PLUS
+  S
+  A
+  B
+  C
+}
+
+// Tournament lifecycle — extended from original
+enum TournamentStatus {
+  UPCOMING   // announced, not yet open
+  OPEN       // accepting registrations
+  CLOSED     // registrations closed, not yet started
+  ONGOING    // matches in progress
+  COMPLETED  // all matches done, results final
+  CANCELLED  // cancelled — points reversed
+}
+
+// Tournament bracket format
+enum TournamentFormat {
+  SINGLE_ELIMINATION
+  DOUBLE_ELIMINATION
+  ROUND_ROBIN
+  SWISS_PLAYOFFS
+}
+
+// Registration lifecycle
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN  // team withdrew before deadline
+  FORFEITED  // team withdrew after deadline
+}
+
+// Match lifecycle — extended
+enum MatchStatus {
+  UPCOMING
+  LIVE
+  COMPLETED
+  FORFEITED  // one team no-showed
+  DISPUTED   // result contested, under review
+}
+
+// Draft action type
+enum DraftType {
+  PICK
+  BAN
+}
+
+// Team invite lifecycle
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED  // auto-cancelled when player joined another team
+}
+
+// In-app notification types
+enum NotificationType {
+  TEAM_INVITE_RECEIVED
+  TEAM_INVITE_ACCEPTED
+  TEAM_INVITE_DECLINED
+  TEAM_INVITE_CANCELLED
+  INVITE_LINK_USED
+  PLAYER_LEFT
+  PLAYER_REMOVED
+  CAPTAIN_TRANSFERRED
+  TOURNAMENT_REGISTRATION_APPROVED
+  TOURNAMENT_REGISTRATION_REJECTED
+  WAITLIST_SLOT_OFFERED
+  MATCH_SCHEDULED
+  MATCH_RESULT_SUBMITTED
+  MATCH_DISPUTED
+  MATCH_DISPUTE_RESOLVED
+  AWARD_RECEIVED
+  FAN_ART_APPROVED
+  FAN_ART_REJECTED
+  ACCOUNT_SUSPENDED
+  ACCOUNT_BANNED
+}
+
+// News publication state
+enum NewsStatus {
+  DRAFT
+  PUBLISHED
+}
+
+// News content category
+enum NewsCategory {
+  PATCH_NOTES
+  NEW_EVENT
+  NEW_HERO
+}
+
+// Scrim vault submission status
+enum ScrimVaultStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Prize side of match
+enum TeamSide {
+  BLUE
+  RED
+}
+
+// ═══════════════════════════════════════════════════════════
+// CORE — USERS & AUTH
+// ═══════════════════════════════════════════════════════════
+
+model User {
+  id                String     @id @default(uuid())
+  email             String     @unique
+  password          String
+  ign               String     @unique
+  mainRole          MainRole
+  photo             String?
+  status            UserStatus @default(ACTIVE)
+  emailVerified     Boolean    @default(false)
+  emailVerifyToken  String?
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  suspendedUntil    DateTime?
+  suspendReason     String?
+  openToOffers      Boolean    @default(false) // free agent flag
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  deletedAt         DateTime?
+
+  // Relations
+  player                  Player?
+  adminRole               AdminRole?
+  ignHistory              IgnHistory[]
+  captainOf               Team[]              @relation("TeamCaptain")
+  fanArt                  FanArt[]
+  fanArtReports           FanArtReport[]
+  invitesSent             TeamInvite[]        @relation("InvitesSent")
+  invitesReceived         TeamInvite[]        @relation("InvitesReceived")
+  inviteLinksCreated      TeamInviteLink[]
+  inviteLinkUsages        InviteLinkUsage[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  scrimVaultSubmissions   ScrimVault[]        @relation("SubmittedBy")
+  auditLogs               AdminAuditLog[]     @relation("AdminActor")
+
+  @@index([email])
+  @@index([ign])
+  @@index([status])
+  @@map("users")
+}
+
+// Tracks every IGN change — historical records use player UUID not IGN
+model IgnHistory {
+  id        String   @id @default(uuid())
+  userId    String
+  oldIgn    String
+  changedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("ign_history")
+}
+
+// ═══════════════════════════════════════════════════════════
+// ADMIN SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+model AdminRole {
+  id          String        @id @default(uuid())
+  userId      String        @unique
+  role        AdminRoleType
+  assignedBy  String?       // userId of SUPER_ADMIN who assigned this
+  assignedAt  DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([role])
+  @@map("admin_roles")
+}
+
+// Immutable log of every admin action on sensitive operations
+model AdminAuditLog {
+  id         String   @id @default(uuid())
+  actorId    String   // admin userId
+  action     String   // e.g. "APPROVE_REGISTRATION", "RESOLVE_DISPUTE"
+  targetType String   // e.g. "TournamentRegistration", "Match"
+  targetId   String   // UUID of the affected record
+  details    String?  // freeform JSON or note
+  createdAt  DateTime @default(now())
+
+  actor User @relation("AdminActor", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("admin_audit_log")
+}
+
+// ═══════════════════════════════════════════════════════════
+// SEASONS
+// ═══════════════════════════════════════════════════════════
+
+model Season {
+  id        String       @id @default(uuid())
+  name      String       @unique // e.g. "Season 6"
+  status    SeasonStatus @default(UPCOMING)
+  startDate DateTime
+  endDate   DateTime
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  teamStandings     TeamStanding[]
+  playerMvpRankings PlayerMvpRanking[]
+  heroMeta          HeroMeta[]
+  bestRoleAwards    BestRoleAward[]
+  tournaments       Tournament[]
+
+  @@index([status])
+  @@map("seasons")
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEAMS
+// ═══════════════════════════════════════════════════════════
+
+model Team {
+  id              String     @id @default(uuid())
+  name            String     @unique
+  tag             String     @unique @db.VarChar(5)
+  logo            String?
+  banner          String?
+  color           String?    @db.VarChar(7)
+  region          String     // Accra | Kumasi | Takoradi | Tema | Cape Coast
+  captainId       String?
+  status          TeamStatus @default(ACTIVE)
+  trophies        String[]   @default([])
+  // Career totals — auto-computed, never manually edited
+  totalPrizeMoney Int        @default(0) // in pesewas for precision
+  registeredAt    DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  // Relations
+  captain           User?                    @relation("TeamCaptain", fields: [captainId], references: [id])
+  players           Player[]
+  nameHistory       TeamNameHistory[]
+  registrations     TournamentRegistration[]
+  waitlistEntries   Waitlist[]
+  matchesAsA        Match[]                  @relation("TeamA")
+  matchesAsB        Match[]                  @relation("TeamB")
+  matchesWon        Match[]                  @relation("Winner")
+  standings         TeamStanding[]
+  pastPodiums       PastTournamentPodium[]
+  prizeDistributions PrizeDistribution[]
+  invitesSent       TeamInvite[]
+  inviteLinks       TeamInviteLink[]
+  groupStandings    GroupStageStanding[]
+  draftEntries      MatchDraft[]
+
+  @@index([status])
+  @@index([region])
+  @@map("teams")
+}
+
+// Snapshot taken before every name/tag change
+model TeamNameHistory {
+  id        String   @id @default(uuid())
+  teamId    String
+  oldName   String
+  oldTag    String
+  changedAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@index([teamId])
+  @@map("team_name_history")
+}
+
+// ═══════════════════════════════════════════════════════════
+// PLAYERS
+// ═══════════════════════════════════════════════════════════
+
+model Player {
+  id            String    @id @default(uuid())
+  userId        String?   @unique
+  teamId        String
+  ign           String    @unique
+  realName      String?
+  role          GameRole
+  secondaryRole GameRole?
+  signatureHero String?
+  photo         String?
+  isSubstitute  Boolean   @default(false)
+  // NOTE: kda, winRate, mvpCount are COMPUTED from MatchPerformance
+  // These are cached values updated after each match result is finalised
+  kda           Float     @default(0)
+  winRate       Float     @default(0)
+  mvpCount      Int       @default(0)
+  matchesPlayed Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime? // soft delete — stats preserved forever
+
+  user             User?               @relation(fields: [userId], references: [id])
+  team             Team                @relation(fields: [teamId], references: [id])
+  mvpRankings      PlayerMvpRanking[]
+  bestRoleAwards   BestRoleAward[]
+  matchPerformances MatchPerformance[]
+
+  @@index([teamId])
+  @@index([role])
+  @@index([ign])
+  @@map("players")
+}
+
+// ═══════════════════════════════════════════════════════════
+// RECRUITMENT — IGN INVITE
+// ═══════════════════════════════════════════════════════════
+
+model TeamInvite {
+  id          String       @id @default(uuid())
+  teamId      String
+  fromUserId  String
+  toIGN       String       // the IGN being invited
+  toUserId    String?      // resolved on accept
+  status      InviteStatus @default(PENDING)
+  message     String?      // optional captain message
+  sentAt      DateTime     @default(now())
+  respondedAt DateTime?
+  expiresAt   DateTime     // 48 hours from sentAt
+
+  team     Team  @relation(fields: [teamId], references: [id])
+  fromUser User  @relation("InvitesSent", fields: [fromUserId], references: [id])
+  toUser   User? @relation("InvitesReceived", fields: [toUserId], references: [id])
+
+  @@unique([teamId, toIGN, status]) // block duplicate pending invites
+  @@index([toIGN])
+  @@index([teamId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("team_invites")
+}
+
+// ═══════════════════════════════════════════════════════════
+// RECRUITMENT — INVITE LINK
+// ═══════════════════════════════════════════════════════════
+
+model TeamInviteLink {
+  id          String   @id @default(uuid())
+  teamId      String
+  createdById String
+  code        String   @unique @db.VarChar(8) // random 8-char e.g. "X7KP2MNQ"
+  maxUses     Int      @default(5)
+  usedCount   Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime // 7 days from creation
+
+  team      Team              @relation(fields: [teamId], references: [id])
+  createdBy User              @relation(fields: [createdById], references: [id])
+  usages    InviteLinkUsage[]
+
+  @@index([code])
+  @@index([teamId, active])
+  @@map("team_invite_links")
+}
+
+model InviteLinkUsage {
+  id       String   @id @default(uuid())
+  linkId   String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  link TeamInviteLink @relation(fields: [linkId], references: [id])
+  user User           @relation(fields: [userId], references: [id])
+
+  @@unique([linkId, userId]) // same person cannot use the same link twice
+  @@map("invite_link_usage")
+}
+
+// ═══════════════════════════════════════════════════════════
+// TOURNAMENTS
+// ═══════════════════════════════════════════════════════════
+
+model Tournament {
+  id                   String           @id @default(uuid())
+  seasonId             String
+  name                 String
+  subtitle             String?
+  description          String?          @db.Text
+  format               TournamentFormat
+  location             String
+  isOnline             Boolean          @default(false)
+  date                 DateTime         // start date
+  registrationDeadline DateTime
+  slots                Int
+  filled               Int              @default(0)
+  status               TournamentStatus @default(UPCOMING)
+  color                String?          @db.VarChar(7)
+  tags                 String[]         @default([])
+  heroImage            String?
+  banner               String?
+  rules                String[]         @default([])
+  prizePool            String?          // display string e.g. "GH₵ 5,000"
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  deletedAt            DateTime?
+
+  season             Season                   @relation(fields: [seasonId], references: [id])
+  pointsFormulas     PointsFormula[]
+  registrations      TournamentRegistration[]
+  waitlist           Waitlist[]
+  matches            Match[]
+  groupStandings     GroupStageStanding[]
+  scrimVaults        ScrimVault[]
+  pastRecord         PastTournament?
+  prizeDistributions PrizeDistribution[]
+
+  @@index([status])
+  @@index([date])
+  @@index([seasonId])
+  @@map("tournaments")
+}
+
+// Configurable points per placement — set by admin when creating tournament
+model PointsFormula {
+  id           String @id @default(uuid())
+  tournamentId String
+  placement    Int    // 1 = 1st, 2 = 2nd, etc. Use 99 for "group stage exit"
+  points       Int
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id])
+
+  @@unique([tournamentId, placement])
+  @@map("points_formulas")
+}
+
+// ═══════════════════════════════════════════════════════════
+// TOURNAMENT REGISTRATIONS
+// ═══════════════════════════════════════════════════════════
+
+model TournamentRegistration {
+  id             String             @id @default(uuid())
+  tournamentId   String
+  teamId         String
+  registeredAt   DateTime           @default(now())
+  status         RegistrationStatus @default(PENDING)
+  rejectionReason String?
+  seed           Int?
+  updatedAt      DateTime           @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  team       Team       @relation(fields: [teamId], references: [id])
+
+  @@unique([tournamentId, teamId])
+  @@index([tournamentId, status])
+  @@index([teamId])
+  @@map("tournament_registrations")
+}
+
+// Queue for full tournaments — auto-offers slot when one opens
+model Waitlist {
+  id           String   @id @default(uuid())
+  tournamentId String
+  teamId       String
+  position     Int      // queue position
+  joinedAt     DateTime @default(now())
+  offerExpiry  DateTime? // set when they're offered a slot — 24hr window
+  offered      Boolean  @default(false)
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  team       Team       @relation(fields: [teamId], references: [id])
+
+  @@unique([tournamentId, teamId])
+  @@unique([tournamentId, position])
+  @@index([tournamentId, position])
+  @@map("waitlist")
+}
+
+// ═══════════════════════════════════════════════════════════
+// MATCHES
+// ═══════════════════════════════════════════════════════════
+
+model Match {
+  id            String      @id @default(uuid())
+  tournamentId  String
+  refereeId     String?     // assigned referee userId
+  teamAId       String
+  teamBId       String
+  scheduledTime DateTime
+  status        MatchStatus @default(UPCOMING)
+  scoreA        Int         @default(0) // games won in the series
+  scoreB        Int         @default(0)
+  stage         String?     // e.g. "Group A — Match 3", "Grand Finals — Game 2"
+  bestOf        Int         @default(3)
+  elapsed       String?     // for live display e.g. "23:45"
+  winnerId      String?
+  forfeitedById String?     // which team forfeited, if applicable
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  tournament   Tournament      @relation(fields: [tournamentId], references: [id])
+  teamA        Team            @relation("TeamA", fields: [teamAId], references: [id])
+  teamB        Team            @relation("TeamB", fields: [teamBId], references: [id])
+  winner       Team?           @relation("Winner", fields: [winnerId], references: [id])
+  screenshots  MatchScreenshot[]
+  performances MatchPerformance[]
+  drafts       MatchDraft[]
+  dispute      MatchDispute?
+
+  @@index([tournamentId])
+  @@index([status])
+  @@index([scheduledTime])
+  @@map("matches")
+}
+
+// Screenshot proof — required before score can be finalised
+model MatchScreenshot {
+  id          String   @id @default(uuid())
+  matchId     String
+  gameNumber  Int      // which game in the series (1, 2, 3...)
+  imageUrl    String
+  uploadedBy  String   // userId of uploader (referee/admin)
+  uploadedAt  DateTime @default(now())
+
+  match Match @relation(fields: [matchId], references: [id])
+
+  @@index([matchId])
+  @@map("match_screenshots")
+}
+
+// Dispute raised by a team captain within 2 hours of result
+model MatchDispute {
+  id           String   @id @default(uuid())
+  matchId      String   @unique
+  raisedById   String   // userId of captain who raised it
+  reason       String
+  raisedAt     DateTime @default(now())
+  resolvedAt   DateTime?
+  resolvedById String?  // TOURNAMENT_ADMIN who resolved it
+  resolution   String?  // explanation of decision
+  resultChanged Boolean @default(false)
+
+  match Match @relation(fields: [matchId], references: [id])
+
+  @@map("match_disputes")
+}
+
+// Per-player, per-game performance data — source of truth for all stats
+model MatchPerformance {
+  id         String   @id @default(uuid())
+  matchId    String
+  gameNumber Int      // game 1, 2, 3 within the series
+  playerId   String
+  hero       String
+  kills      Int      @default(0)
+  deaths     Int      @default(0)
+  assists    Int      @default(0)
+  isMvp      Boolean  @default(false) // one per game per team
+  side       TeamSide
+  won        Boolean  // did this player's team win this game
+
+  match  Match  @relation(fields: [matchId], references: [id])
+  player Player @relation(fields: [playerId], references: [id])
+
+  @@unique([matchId, gameNumber, playerId])
+  @@index([playerId])
+  @@index([matchId])
+  @@map("match_performances")
+}
+
+// Pick/ban data per game — source of truth for hero meta stats
+model MatchDraft {
+  id         String    @id @default(uuid())
+  matchId    String
+  gameNumber Int
+  teamId     String
+  hero       String
+  type       DraftType // PICK or BAN
+  phase      String    // e.g. "BAN_1", "PICK_1", "BAN_2"
+  order      Int       // selection order within the full draft
+
+  match Match @relation(fields: [matchId], references: [id])
+  team  Team  @relation(fields: [teamId], references: [id])
+
+  @@index([matchId, gameNumber])
+  @@index([hero])
+  @@map("match_drafts")
+}
+
+// ═══════════════════════════════════════════════════════════
+// GROUP STAGE STANDINGS
+// Separate from overall tournament leaderboard
+// ═══════════════════════════════════════════════════════════
+
+model GroupStageStanding {
+  id              String @id @default(uuid())
+  tournamentId    String
+  groupName       String // e.g. "Group A"
+  teamId          String
+  wins            Int    @default(0)
+  losses          Int    @default(0)
+  draws           Int    @default(0)
+  groupPoints     Int    @default(0)
+  tiebreakerScore Int    @default(0)
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  team       Team       @relation(fields: [teamId], references: [id])
+
+  @@unique([tournamentId, groupName, teamId])
+  @@index([tournamentId, groupName])
+  @@map("group_stage_standings")
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAST TOURNAMENTS (ARCHIVE)
+// ═══════════════════════════════════════════════════════════
+
+model PastTournament {
+  id           String   @id @default(uuid())
+  tournamentId String?  @unique
+  name         String
+  dateRange    String   // e.g. "Jan 15 – Feb 10, 2025"
+  color        String?  @db.VarChar(7)
+  banner       String?
+  createdAt    DateTime @default(now())
+
+  tournament Tournament?            @relation(fields: [tournamentId], references: [id])
+  podium     PastTournamentPodium[]
+
+  @@map("past_tournaments")
+}
+
+model PastTournamentPodium {
+  id               String  @id @default(uuid())
+  pastTournamentId String
+  place            Int     // 1, 2, or 3
+  teamId           String? // nullable — in case team is later deleted
+  teamName         String  // denormalized snapshot for permanent accuracy
+  teamTag          String
+  score            String  // e.g. "8-0"
+
+  pastTournament PastTournament @relation(fields: [pastTournamentId], references: [id])
+  team           Team?          @relation(fields: [teamId], references: [id])
+
+  @@unique([pastTournamentId, place])
+  @@map("past_tournament_podiums")
+}
+
+// ═══════════════════════════════════════════════════════════
+// PRIZE DISTRIBUTION
+// ═══════════════════════════════════════════════════════════
+
+model PrizeDistribution {
+  id           String   @id @default(uuid())
+  tournamentId String
+  teamId       String
+  place        Int
+  amount       Int      // in pesewas (Ghana cedis × 100) for precision
+  currency     String   @default("GHS")
+  paid         Boolean  @default(false)
+  paidAt       DateTime?
+  recordedAt   DateTime @default(now())
+  recordedById String   // admin userId
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  team       Team       @relation(fields: [teamId], references: [id])
+
+  @@unique([tournamentId, teamId])
+  @@index([teamId])
+  @@map("prize_distributions")
+}
+
+// ═══════════════════════════════════════════════════════════
+// LEADERBOARDS
+// ═══════════════════════════════════════════════════════════
+
+model TeamStanding {
+  id           String   @id @default(uuid())
+  teamId       String
+  seasonId     String
+  rank         Int
+  previousRank Int?
+  wins         Int      @default(0)
+  losses       Int      @default(0)
+  points       Int      @default(0)
+  streak       String?  // e.g. "W5", "L2" — consecutive matches this season
+  tier         Tier     @default(C)
+  updatedAt    DateTime @updatedAt
+
+  team   Team   @relation(fields: [teamId], references: [id])
+  season Season @relation(fields: [seasonId], references: [id])
+
+  @@unique([teamId, seasonId])
+  @@index([seasonId, rank])
+  @@map("team_standings")
+}
+
+model PlayerMvpRanking {
+  id        String   @id @default(uuid())
+  playerId  String
+  seasonId  String
+  rank      Int
+  kda       Float    @default(0) // computed from MatchPerformance
+  winRate   Float    @default(0) // computed from MatchPerformance
+  mvpCount  Int      @default(0) // computed from MatchPerformance
+  updatedAt DateTime @updatedAt
+
+  player Player @relation(fields: [playerId], references: [id])
+  season Season @relation(fields: [seasonId], references: [id])
+
+  @@unique([playerId, seasonId])
+  @@index([seasonId, rank])
+  @@map("player_mvp_rankings")
+}
+
+// Computed from MatchDraft per season — never manually entered
+model HeroMeta {
+  id        String   @id @default(uuid())
+  hero      String
+  role      MainRole
+  pickRate  Float    @default(0)
+  banRate   Float    @default(0)
+  winRate   Float    @default(0)
+  tier      MetaTier @default(C)
+  seasonId  String
+  updatedAt DateTime @updatedAt
+
+  season Season @relation(fields: [seasonId], references: [id])
+
+  @@unique([hero, seasonId])
+  @@index([seasonId, tier])
+  @@map("hero_meta")
+}
+
+// ═══════════════════════════════════════════════════════════
+// AWARDS
+// ═══════════════════════════════════════════════════════════
+
+model BestRoleAward {
+  id         String   @id @default(uuid())
+  role       GameRole // which role slot this award covers
+  awardTitle String   // e.g. "KING OF JUNGLE", "MVP OF THE SEASON"
+  playerId   String
+  seasonId   String
+  hero       String?  // signature hero that season
+  createdAt  DateTime @default(now())
+
+  player Player @relation(fields: [playerId], references: [id])
+  season Season @relation(fields: [seasonId], references: [id])
+
+  @@unique([role, seasonId]) // one award per role per season
+  @@index([seasonId])
+  @@map("best_role_awards")
+}
+
+// ═══════════════════════════════════════════════════════════
+// NEWS & CONTENT
+// ═══════════════════════════════════════════════════════════
+
+model News {
+  id          String       @id @default(uuid())
+  category    NewsCategory
+  status      NewsStatus   @default(DRAFT)
+  title       String
+  subtitle    String?
+  body        String?      @db.Text
+  image       String?
+  tags        String[]     @default([])
+  featured    Boolean      @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  reactions NewsReaction[]
+
+  @@index([category])
+  @@index([status])
+  @@index([featured])
+  @@index([publishedAt])
+  @@map("news")
+}
+
+// Lightweight reactions — no comments in v1
+model NewsReaction {
+  id        String   @id @default(uuid())
+  newsId    String
+  userId    String
+  emoji     String   @db.VarChar(4) // "👍", "🔥", "💀"
+  createdAt DateTime @default(now())
+
+  news News @relation(fields: [newsId], references: [id])
+
+  @@unique([newsId, userId]) // one reaction per user per article
+  @@map("news_reactions")
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCRIM VAULT
+// ═══════════════════════════════════════════════════════════
+
+model ScrimVault {
+  id              String          @id @default(uuid())
+  tournamentId    String?
+  submittedById   String
+  approvedById    String?
+  title           String
+  matchup         String?
+  thumbnail       String?
+  videoUrl        String          // YouTube link
+  duration        String?
+  status          ScrimVaultStatus @default(PENDING)
+  rejectionReason String?
+  featured        Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  tournament  Tournament? @relation(fields: [tournamentId], references: [id])
+  submittedBy User        @relation("SubmittedBy", fields: [submittedById], references: [id])
+
+  @@index([status])
+  @@index([featured])
+  @@index([tournamentId])
+  @@map("scrim_vault")
+}
+
+// ═══════════════════════════════════════════════════════════
+// FAN ART
+// ═══════════════════════════════════════════════════════════
+
+model FanArt {
+  id              String    @id @default(uuid())
+  artistId        String
+  title           String
+  imageUrl        String
+  approved        Boolean   @default(false)
+  rejectionReason String?
+  urgentReview    Boolean   @default(false) // auto-flagged after 3 reports
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  artist  User           @relation(fields: [artistId], references: [id])
+  reports FanArtReport[]
+
+  @@index([approved])
+  @@index([artistId])
+  @@index([urgentReview])
+  @@map("fan_art")
+}
+
+// Community reports on fan art submissions
+model FanArtReport {
+  id         String   @id @default(uuid())
+  fanArtId   String
+  reporterId String
+  reason     String
+  reportedAt DateTime @default(now())
+
+  fanArt   FanArt @relation(fields: [fanArtId], references: [id])
+  reporter User   @relation(fields: [reporterId], references: [id])
+
+  @@unique([fanArtId, reporterId]) // one report per user per artwork
+  @@index([fanArtId])
+  @@map("fan_art_reports")
+}
+
+// ═══════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  linkUrl   String?          // where to navigate on click
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// Per-user email notification preferences — in-app cannot be toggled off
+model NotificationPreference {
+  id                         String  @id @default(uuid())
+  userId                     String  @unique
+  emailMatchReminder         Boolean @default(true)
+  emailRegistrationDecision  Boolean @default(true)
+  emailTournamentStart       Boolean @default(true)
+  emailAccountActions        Boolean @default(true) // suspend/ban
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notification_preferences")
+}

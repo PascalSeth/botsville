@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Eye, EyeOff, Shield, Swords, Star, ChevronRight, Trophy, Users } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { signIn } from 'next-auth/react';
+import { Eye, EyeOff, Shield, Swords, Star, ChevronRight, Trophy, Users, AlertCircle } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────
 type Mode = 'login' | 'register';
@@ -111,26 +113,104 @@ const SubmitBtn = ({ label, loading }: { label: string; loading: boolean }) => (
   </button>
 );
 
+// ── Error Message Component ────────────────────────────────
+const ErrorMessage = ({ message }: { message: string }) => (
+  <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded text-red-400 text-[11px]">
+    <AlertCircle size={14} />
+    <span>{message}</span>
+  </div>
+);
+
+// ── Success Message Component ──────────────────────────────
+const SuccessMessage = ({ message }: { message: string }) => (
+  <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/30 rounded text-green-400 text-[11px]">
+    <span>{message}</span>
+  </div>
+);
+
+// ── Error messages mapping
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  'Configuration': 'Server configuration error. Please try again later.',
+  'AccessDenied': 'Access denied. Please check your credentials.',
+  'Verification': 'Verification failed. Please try again.',
+  'Default': 'An error occurred. Please try again.',
+};
+
 // ── Login form ─────────────────────────────────────────────
 const LoginForm = () => {
-  const [email, setEmail]       = useState('');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [emailOrIgn, setEmailOrIgn] = useState('');
   const [password, setPassword] = useState('');
-  const [showPw, setShowPw]     = useState(false);
-  const [loading, setLoading]   = useState(false);
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
+  
+  // Get error from URL or state
+  const urlError = searchParams.get('error');
+  const [error, setError] = useState<string | null>(
+    urlError ? (AUTH_ERROR_MESSAGES[urlError] || `Authentication error: ${urlError}`) : null
+  );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Log URL error on mount
+  useEffect(() => {
+    if (urlError) {
+      console.log('[LOGIN] URL error parameter:', urlError);
+    }
+  }, [urlError]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Clear URL error by navigating to clean URL
+    if (urlError) {
+      window.history.replaceState({}, '', '/login');
+    }
+    
+    setError(null);
     setLoading(true);
-    setTimeout(() => setLoading(false), 1500);
+
+    console.log('[LOGIN] Submitting login form for:', emailOrIgn);
+
+    try {
+      const result = await signIn('credentials', {
+        emailOrIgn,
+        password,
+        redirect: false,
+      });
+
+      console.log('[LOGIN] SignIn result:', { 
+        ok: result?.ok, 
+        error: result?.error, 
+        status: result?.status 
+      });
+
+      if (result?.error) {
+        setError(result.error);
+        setLoading(false);
+        return;
+      }
+
+      if (result?.ok) {
+        console.log('[LOGIN] Login successful, redirecting to home');
+        // Redirect to home page
+        router.push('/');
+        router.refresh();
+      }
+    } catch (err) {
+      console.error('[LOGIN] Login error:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred during login');
+      setLoading(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {error && <ErrorMessage message={error} />}
       <Field
         label="Email / IGN"
-        placeholder="your@email.com"
-        value={email}
-        onChange={setEmail}
+        placeholder="your@email.com or YourIGN"
+        value={emailOrIgn}
+        onChange={setEmailOrIgn}
       />
       <Field
         label="Password"
@@ -160,24 +240,109 @@ const LoginForm = () => {
   );
 };
 
+// ── Role mapping ───────────────────────────────────────────
+const ROLE_MAP: Record<PlayerRole, string> = {
+  Tank: 'TANK',
+  Fighter: 'FIGHTER',
+  Assassin: 'ASSASSIN',
+  Mage: 'MAGE',
+  Marksman: 'MARKSMAN',
+  Support: 'SUPPORT',
+};
+
 // ── Register form ──────────────────────────────────────────
 const RegisterForm = () => {
-  const [ign, setIgn]           = useState('');
-  const [email, setEmail]       = useState('');
+  const router = useRouter();
+  const [ign, setIgn] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirm, setConfirm]   = useState('');
-  const [showPw, setShowPw]     = useState(false);
-  const [role, setRole]         = useState<PlayerRole | null>(null);
-  const [loading, setLoading]   = useState(false);
+  const [confirm, setConfirm] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [role, setRole] = useState<PlayerRole | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    // Validation
+    if (!ign || !email || !password || !confirm || !role) {
+      setError('All fields are required');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+
+    if (password !== confirm) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (ign.length < 3 || ign.length > 20) {
+      setError('IGN must be 3-20 characters');
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => setLoading(false), 1500);
+
+    try {
+      const response = await fetch('/api/users/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          ign,
+          mainRole: ROLE_MAP[role],
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || 'Registration failed');
+        setLoading(false);
+        return;
+      }
+
+      setSuccess('Account created successfully! Logging you in...');
+
+      // Auto-login after registration
+      const loginResult = await signIn('credentials', {
+        emailOrIgn: email,
+        password,
+        redirect: false,
+      });
+
+      if (loginResult?.error) {
+        setError('Account created but login failed. Please log in manually.');
+        setLoading(false);
+        return;
+      }
+
+      if (loginResult?.ok) {
+        // Redirect to home page
+        router.push('/');
+        router.refresh();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred during registration');
+      setLoading(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {error && <ErrorMessage message={error} />}
+      {success && <SuccessMessage message={success} />}
       <Field
         label="In-Game Name (IGN)"
         placeholder="YourMLBBName"
@@ -187,6 +352,7 @@ const RegisterForm = () => {
       <Field
         label="Email"
         placeholder="your@email.com"
+        type="email"
         value={email}
         onChange={setEmail}
       />
@@ -299,6 +465,10 @@ const ModeTab = ({ mode, active, onClick }: { mode: Mode; active: boolean; onCli
 export default function AuthPage() {
   const [mode, setMode] = useState<Mode>('login');
 
+  const handleModeChange = (newMode: Mode) => {
+    setMode(newMode);
+  };
+
   return (
     <>
       <style>{`
@@ -336,8 +506,8 @@ export default function AuthPage() {
 
               {/* Mode tabs */}
               <div className="flex border-b border-white/[0.06] mb-8">
-                <ModeTab mode="login"    active={mode === 'login'}    onClick={() => setMode('login')}    />
-                <ModeTab mode="register" active={mode === 'register'} onClick={() => setMode('register')} />
+                <ModeTab mode="login"    active={mode === 'login'}    onClick={() => handleModeChange('login')}    />
+                <ModeTab mode="register" active={mode === 'register'} onClick={() => handleModeChange('register')} />
               </div>
 
               {/* Heading */}
@@ -353,16 +523,22 @@ export default function AuthPage() {
                 </p>
               </div>
 
-              {/* Form — animate on switch */}
+              {/* Form — animate on switch (Suspense required for useSearchParams in LoginForm) */}
               <div key={mode}>
-                {mode === 'login' ? <LoginForm /> : <RegisterForm />}
+                {mode === 'login' ? (
+                  <Suspense fallback={<div className="flex flex-col gap-4 h-[280px] animate-pulse rounded bg-white/5" />}>
+                    <LoginForm />
+                  </Suspense>
+                ) : (
+                  <RegisterForm />
+                )}
               </div>
 
               {/* Switch mode link */}
               <p className="text-[#333] text-[11px] tracking-wide mt-6 text-center">
                 {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
                 <button
-                  onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+                  onClick={() => handleModeChange(mode === 'login' ? 'register' : 'login')}
                   className="text-[#e8a000] hover:text-white transition-colors font-bold"
                 >
                   {mode === 'login' ? 'Register →' : 'Login →'}
