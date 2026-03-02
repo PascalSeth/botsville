@@ -849,6 +849,7 @@ export const Navbar = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [animateReady, setAnimateReady] = useState(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isLoggedIn = status === 'authenticated' && !!session?.user?.id;
@@ -864,6 +865,12 @@ export const Navbar = () => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [menuOpen]);
+
+  // Defer heavier animated layers until after mount to avoid initial flicker
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setAnimateReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   // ⌘K shortcut
   useEffect(() => {
@@ -922,10 +929,14 @@ export const Navbar = () => {
 
         {/* Main bar */}
         <nav className="relative h-15 flex items-center justify-between px-4 sm:px-6 gap-4 border-b border-white/4 overflow-x-clip overflow-y-visible">
-          {/* Background animations */}
-          <GridBackground />
-          <Particles />
-          <Scanline />
+          {/* Background animations (deferred until after mount to prevent initial flicker) */}
+          {animateReady && (
+            <>
+              <GridBackground />
+              <Particles />
+              <Scanline />
+            </>
+          )}
 
           {/* Search overlay */}
           <AnimatePresence>
