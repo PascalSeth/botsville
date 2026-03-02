@@ -22,14 +22,20 @@ const Scanlines = ({ opacity = 0.025 }: { opacity?: number }) => (
 
 const OrbEffect = ({ color = '#e8a000' }: { color?: string }) => (
   <>
-    <motion.div className="absolute top-1/4 left-1/3 w-96 h-96 rounded-full pointer-events-none"
-      style={{ background: `radial-gradient(circle, ${color}22 0%, transparent 70%)`, filter: 'blur(40px)' }}
-      animate={{ scale: [1, 1.15, 1], opacity: [0.6, 1, 0.6] }}
-      transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }} />
-    <motion.div className="absolute bottom-0 right-1/4 w-72 h-72 rounded-full pointer-events-none"
-      style={{ background: 'radial-gradient(circle, rgba(30,80,200,0.15) 0%, transparent 70%)', filter: 'blur(50px)' }}
-      animate={{ scale: [1, 1.2, 1], opacity: [0.4, 0.8, 0.4] }}
-      transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut', delay: 2 }} />
+    <div className="absolute top-1/4 left-1/3 w-96 h-96 rounded-full pointer-events-none"
+      style={{
+        background: `radial-gradient(circle, ${color}22 0%, transparent 70%)`,
+        filter: 'blur(40px)',
+        animation: 'tourney-orb-a 6s ease-in-out infinite',
+        willChange: 'transform, opacity',
+      }} />
+    <div className="absolute bottom-0 right-1/4 w-72 h-72 rounded-full pointer-events-none"
+      style={{
+        background: 'radial-gradient(circle, rgba(30,80,200,0.15) 0%, transparent 70%)',
+        filter: 'blur(50px)',
+        animation: 'tourney-orb-b 8s ease-in-out 2s infinite',
+        willChange: 'transform, opacity',
+      }} />
   </>
 );
 
@@ -234,15 +240,18 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
             className="absolute bottom-0 right-4 h-[130%] w-28 sm:w-36 pointer-events-none select-none"
             initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.8, ease }}>
-            <motion.div className="relative w-full h-full"
-              animate={{ y: [0, -8, 0] }} transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}>
-              <motion.div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-20 h-4 rounded-full"
-                style={{ background: `radial-gradient(ellipse, ${(tournament.color || '#e8a000')}60 0%, transparent 70%)`, filter: 'blur(6px)' }}
-                animate={{ opacity: [0.3, 0.8, 0.3], scaleX: [0.8, 1.1, 0.8] }}
-                transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }} />
+            <div className="relative w-full h-full"
+              style={{ animation: 'hero-float 3.5s ease-in-out infinite', '--float-y': '-8px', willChange: 'transform' } as React.CSSProperties}>
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-20 h-4 rounded-full"
+                style={{
+                  background: `radial-gradient(ellipse, ${(tournament.color || '#e8a000')}60 0%, transparent 70%)`,
+                  filter: 'blur(6px)',
+                  animation: 'hero-shadow-pulse 3.5s ease-in-out infinite',
+                  willChange: 'transform, opacity',
+                }} />
               <Image src={tournament.heroImage || '/stunchou.png'} alt="" fill
                 className="object-contain object-bottom drop-shadow-[0_0_24px_rgba(232,160,0,0.4)]" />
-            </motion.div>
+            </div>
           </motion.div>
 
           <button onClick={onClose}
@@ -420,10 +429,10 @@ const FeaturedCard = ({
       transition={{ duration: 0.9, ease }}>
 
       <div className="absolute inset-0 z-0 overflow-hidden">
-        <motion.div className="absolute inset-0"
-          animate={{ scale: [1.05, 1.12] }} transition={{ duration: 18, repeat: Infinity, repeatType: 'reverse', ease: 'linear' }}>
+        <div className="absolute inset-0"
+          style={{ animation: 'ken-burns-alt 18s linear infinite alternate', willChange: 'transform' }}>
           <Image src={bannerSrc} alt="" fill className="object-cover brightness-25" />
-        </motion.div>
+        </div>
         <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at bottom left, ${color}40, transparent 55%)` }} />
         <div className="absolute inset-0" style={{ background: `linear-gradient(120deg, ${color}18, transparent 50%)` }} />
         <div className="absolute inset-0 bg-gradient-to-r from-[#07070d]/95 via-[#07070d]/50 to-[#07070d]/30" />
@@ -442,25 +451,29 @@ const FeaturedCard = ({
         className="absolute bottom-0 right-0 lg:right-[8%] h-[110%] w-[42%] sm:w-[36%] lg:w-[28%] pointer-events-none select-none z-10"
         initial={{ opacity: 0, x: 60, scale: 0.92 }} animate={{ opacity: 1, x: 0, scale: 1 }}
         transition={{ duration: 1.1, ease, delay: 0.3 }}>
-        <motion.div className="relative w-full h-full"
-          animate={{ y: [0, -16, 0] }} transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}>
-          <motion.div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-40 h-8 rounded-full"
-            style={{ background: `radial-gradient(ellipse, ${color}60 0%, transparent 70%)`, filter: 'blur(10px)' }}
-            animate={{ opacity: [0.3, 0.9, 0.3], scaleX: [0.8, 1.15, 0.8] }}
-            transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }} />
+        <div className="relative w-full h-full"
+          style={{ animation: 'hero-float 4.2s ease-in-out infinite', '--float-y': '-16px', willChange: 'transform' } as React.CSSProperties}>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-40 h-8 rounded-full"
+            style={{
+              background: `radial-gradient(ellipse, ${color}60 0%, transparent 70%)`,
+              filter: 'blur(10px)',
+              animation: 'hero-shadow-pulse 4.2s ease-in-out infinite',
+              willChange: 'transform, opacity',
+            }} />
           <Image src={heroSrc} alt="Tournament Hero" fill
             className="object-contain object-bottom drop-shadow-[0_0_48px_rgba(232,160,0,0.45)]" priority />
-        </motion.div>
+        </div>
       </motion.div>
 
       <div className="relative z-20 px-6 sm:px-10 py-8 sm:py-12 flex flex-col gap-6 lg:max-w-[58%]">
         <div className="flex items-center gap-2 flex-wrap">
           {t.status === 'OPEN' && !isFull && (
-            <motion.span animate={{ opacity: [1, 0.5, 1] }} transition={{ duration: 1.8, repeat: Infinity }}
-              className="flex items-center gap-1.5 bg-black/60 border border-[#27ae60]/50 px-2.5 py-1 backdrop-blur-sm">
+            <span
+              className="flex items-center gap-1.5 bg-black/60 border border-[#27ae60]/50 px-2.5 py-1 backdrop-blur-sm"
+              style={{ animation: 'reg-open-blink 1.8s ease-in-out infinite' }}>
               <span className="w-1.5 h-1.5 rounded-full bg-[#27ae60]" />
               <span className="text-[#27ae60] text-[9px] font-black tracking-widest uppercase">Registration Open</span>
-            </motion.span>
+            </span>
           )}
           {isFull && (
             <span className="flex items-center gap-1.5 bg-black/60 border border-[#e84040]/40 px-2.5 py-1">
@@ -569,8 +582,8 @@ const SmallCard = ({ t, active, onSelect, onRegister, index }: {
         <Scanlines />
         <div className="absolute top-2 right-2">
           {isOpen
-            ? <motion.div className="w-1.5 h-1.5 rounded-full bg-[#27ae60]"
-                animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.6, repeat: Infinity }} />
+            ? <div className="w-1.5 h-1.5 rounded-full bg-[#27ae60]"
+                style={{ animation: 'status-blink 1.6s ease-in-out infinite' }} />
             : <div className="w-1.5 h-1.5 rounded-full bg-[#333]" />
           }
         </div>
@@ -652,11 +665,10 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
 
       {/* ── Dark bg + faint Ken Burns banner ── */}
       <div className="absolute inset-0">
-        <motion.div className="absolute inset-0"
-          animate={{ scale: [1.03, 1.08] }}
-          transition={{ duration: 20, repeat: Infinity, repeatType: 'reverse', ease: 'linear' }}>
+        <div className="absolute inset-0"
+          style={{ animation: 'ken-burns 20s linear infinite alternate', willChange: 'transform' }}>
           <Image src={'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1600&q=80'} alt="" fill className="object-cover brightness-[0.1]" />
-        </motion.div>
+        </div>
         {/* Strong dark-to-transparent gradient from left so text is readable */}
         <div className="absolute inset-0 bg-gradient-to-r from-[#08080e] via-[#08080e]/85 to-transparent" />
         <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 20% 60%, #e8a00010, transparent 55%)' }} />
@@ -676,10 +688,9 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
         transition={{ duration: 1.1, ease, delay: 0.2 }}
       >
         {/* ══ FLOAT WRAPPER — Handles the idle floating animation ══ */}
-        <motion.div
+        <div
           className="absolute inset-0"
-          animate={{ y: [0, -12, 0] }}
-          transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+          style={{ animation: 'hero-float 5s ease-in-out infinite', '--float-y': '-12px', willChange: 'transform' } as React.CSSProperties}
         >
           {/* The image — object-right-bottom so the character stands at the right edge */}
           <Image
@@ -691,13 +702,15 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
             priority
           />
           {/* Ambient ground glow (Moves with the character) */}
-          <motion.div
+          <div
             className="absolute bottom-0 left-0 right-0 h-44 pointer-events-none"
-            style={{ background: 'radial-gradient(ellipse at 65% 100%, rgba(232,160,0,0.16) 0%, transparent 62%)' }}
-            animate={{ opacity: [0.7, 1, 0.7] }}
-            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+            style={{
+              background: 'radial-gradient(ellipse at 65% 100%, rgba(232,160,0,0.16) 0%, transparent 62%)',
+              animation: 'hero-ground-glow 4s ease-in-out infinite',
+              willChange: 'opacity',
+            }}
           />
-        </motion.div>
+        </div>
 
         {/* Static Overlays (Do not float) — Ensure edges stay masked */}
         {/* Left-edge fade — key to blending into the text area */}

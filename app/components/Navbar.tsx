@@ -72,10 +72,10 @@ const GridBackground = () => (
   </div>
 );
 
-// ── Floating particles ─────────────────────────────────────
+// ── Floating particles (CSS animations) ────────────────────
 const Particles = () =>
   Array.from({ length: 12 }, (_, i) => (
-    <motion.div
+    <div
       key={i}
       className="absolute w-px h-px rounded-full pointer-events-none"
       style={{
@@ -83,19 +83,22 @@ const Particles = () =>
         top: '50%',
         background: i % 3 === 0 ? '#e8a000' : i % 3 === 1 ? '#ff4d4d' : '#fff',
         boxShadow: `0 0 ${i % 2 === 0 ? 4 : 2}px ${i % 3 === 0 ? '#e8a000' : i % 3 === 1 ? '#ff4d4d' : '#fff'}`,
-      }}
-      animate={{ y: ['0px', '-20px', '0px'], opacity: [0.15, 0.7, 0.15], scale: [1, i % 2 === 0 ? 3 : 2, 1] }}
-      transition={{ duration: 3 + (i % 5) * 0.7, repeat: Infinity, delay: i * 0.4, ease: 'easeInOut' }}
+        '--pscale': String(i % 2 === 0 ? 3 : 2),
+        animation: `nav-particle ${3 + (i % 5) * 0.7}s ease-in-out ${i * 0.4}s infinite`,
+        willChange: 'transform, opacity',
+      } as React.CSSProperties}
     />
   ));
 
-// ── Scanline sweep ─────────────────────────────────────────
+// ── Scanline sweep (CSS animation) ─────────────────────────
 const Scanline = () => (
-  <motion.div
+  <div
     className="absolute inset-y-0 w-0.5 pointer-events-none"
-    style={{ background: 'linear-gradient(to bottom, transparent, rgba(232,160,0,0.35), transparent)' }}
-    animate={{ left: ['-2px', '101%'] }}
-    transition={{ duration: 6, repeat: Infinity, ease: 'linear', repeatDelay: 3 }}
+    style={{
+      background: 'linear-gradient(to bottom, transparent, rgba(232,160,0,0.35), transparent)',
+      animation: 'nav-scanline 9s linear infinite',
+      willChange: 'left',
+    }}
   />
 );
 
@@ -110,11 +113,13 @@ const TickerBar = ({ onClose }: { onClose: () => void }) => {
 
   return (
     <div className="relative bg-[#050508] border-b border-[#e8a000]/12 px-4 py-1.5 flex items-center justify-between overflow-hidden">
-      <motion.div
+      <div
         className="absolute inset-y-0 w-1/4 pointer-events-none"
-        style={{ background: 'linear-gradient(90deg, transparent, rgba(232,160,0,0.05), transparent)' }}
-        animate={{ x: ['-100%', '500%'] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+        style={{
+          background: 'linear-gradient(90deg, transparent, rgba(232,160,0,0.05), transparent)',
+          animation: 'nav-ticker-sweep 4s linear infinite',
+          willChange: 'transform',
+        }}
       />
       <div className="flex items-center gap-2 shrink-0">
         <span className="relative flex h-1.5 w-1.5">
@@ -149,11 +154,13 @@ const TickerBar = ({ onClose }: { onClose: () => void }) => {
 const Logo = () => (
   <Link href="/" className="flex items-center gap-3 group relative">
     <div className="relative">
-      <motion.div
+      <div
         className="absolute inset-0 rounded-full pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(232,160,0,0.35) 0%, transparent 70%)' }}
-        animate={{ scale: [1, 1.4, 1], opacity: [0.3, 0.7, 0.3] }}
-        transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          background: 'radial-gradient(circle, rgba(232,160,0,0.35) 0%, transparent 70%)',
+          animation: 'nav-logo-pulse 2.5s ease-in-out infinite',
+          willChange: 'transform, opacity',
+        }}
       />
       <Image
         src="/mlbb_logobg.png"
@@ -389,11 +396,13 @@ const MobileMenu = ({
 
       {/* Live strip */}
       <div className="relative flex items-center gap-2 px-5 py-2 bg-[#e8a000]/[0.035] border-b border-[#e8a000]/8 overflow-hidden">
-        <motion.div
+        <div
           className="absolute inset-0 pointer-events-none"
-          style={{ background: 'linear-gradient(90deg, transparent, rgba(232,160,0,0.04), transparent)' }}
-          animate={{ x: ['-100%', '200%'] }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+          style={{
+            background: 'linear-gradient(90deg, transparent, rgba(232,160,0,0.04), transparent)',
+            animation: 'nav-ticker-sweep 3s linear infinite',
+            willChange: 'transform',
+          }}
         />
         <Radio size={9} className="text-[#e8a000] animate-pulse shrink-0" />
         <p className="text-[#666] text-[10px] tracking-wide truncate">

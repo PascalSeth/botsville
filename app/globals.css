@@ -204,3 +204,60 @@
 .anim-orb-subtle { animation: pulse-orb-subtle 12s ease-in-out 4s infinite; will-change: opacity; }
 .anim-accent-ltr { animation: accent-line-ltr 6s linear infinite; will-change: left; }
 .anim-accent-rtl { animation: accent-line-rtl 8s linear 3s infinite; will-change: left; }
+
+/* ── Navbar decorative animations ── */
+@keyframes nav-particle {
+  0%, 100% { opacity: 0.15; transform: translateY(0) scale(1); }
+  50%      { opacity: 0.7; transform: translateY(-20px) scale(var(--pscale, 3)); }
+}
+@keyframes nav-scanline {
+  0%       { left: -2px; }
+  66.67%   { left: 101%; }
+  100%     { left: 101%; }
+}
+@keyframes nav-logo-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50%      { opacity: 0.7; transform: scale(1.4); }
+}
+@keyframes nav-ticker-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(500%); }
+}
+
+/* ── Tournament decorative animations ── */
+@keyframes tourney-orb-a {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.15); }
+}
+@keyframes tourney-orb-b {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 0.8; transform: scale(1.2); }
+}
+@keyframes hero-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(var(--float-y, -16px)); }
+}
+@keyframes hero-shadow-pulse {
+  0%, 100% { opacity: 0.3; transform: translateX(-50%) scaleX(0.8); }
+  50%      { opacity: 0.9; transform: translateX(-50%) scaleX(1.15); }
+}
+@keyframes hero-ground-glow {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+@keyframes ken-burns {
+  0%, 100% { transform: scale(1.03); }
+  50%      { transform: scale(1.08); }
+}
+@keyframes ken-burns-alt {
+  0%, 100% { transform: scale(1.05); }
+  50%      { transform: scale(1.12); }
+}
+@keyframes status-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+@keyframes reg-open-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
