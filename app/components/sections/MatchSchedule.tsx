@@ -458,55 +458,51 @@ export const MatchSchedule = () => {
         }}
       />
 
-      {/* Pulsing gradient orbs */}
-      <motion.div
+      {/* Pulsing gradient orbs — CSS animations */}
+      <div
         className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-[140px] pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(232,64,64,0.08), transparent 70%)' }}
-        animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          background: 'radial-gradient(circle, rgba(232,64,64,0.08), transparent 70%)',
+          animation: 'pulse-orb-lg 8s ease-in-out infinite',
+          willChange: 'transform, opacity',
+        }}
       />
-      <motion.div
+      <div
         className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-[140px] pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(74,144,217,0.08), transparent 70%)' }}
-        animate={{ scale: [1.2, 1, 1.2], opacity: [0.5, 0.8, 0.5] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut', delay: 4 }}
+        style={{
+          background: 'radial-gradient(circle, rgba(74,144,217,0.08), transparent 70%)',
+          animation: 'pulse-orb-lg-alt 8s ease-in-out 4s infinite',
+          willChange: 'transform, opacity',
+        }}
       />
-      <motion.div
+      <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-150 h-100 rounded-full blur-[120px] pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(232,160,0,0.06), transparent 70%)' }}
-        animate={{ scale: [1, 1.15, 1], opacity: [0.4, 0.7, 0.4] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+        style={{
+          background: 'radial-gradient(circle, rgba(232,160,0,0.06), transparent 70%)',
+          animation: 'pulse-orb-lg-center 6s ease-in-out 2s infinite',
+          willChange: 'transform, opacity',
+        }}
       />
 
-      {/* Floating particles */}
+      {/* Floating particles — CSS animations */}
       {[...Array(12)].map((_, i) => (
-        <motion.div
+        <div
           key={'ms-p-' + i}
           className="absolute w-px h-px rounded-full bg-white/20 pointer-events-none"
           style={{
             left: (8 + ((i * 37) % 84)) + '%',
             top: (5 + ((i * 23) % 90)) + '%',
-          }}
-          animate={{
-            y: [0, -(30 + (i % 4) * 15), 0],
-            opacity: [0, 0.6, 0],
-            scale: [0, 1.5 + (i % 3) * 0.5, 0],
-          }}
-          transition={{
-            duration: 4 + (i % 3) * 2,
-            repeat: Infinity,
-            delay: i * 0.7,
-            ease: 'easeInOut',
+            animation: `float-particle-up ${4 + (i % 3) * 2}s ease-in-out ${i * 0.7}s infinite`,
+            willChange: 'transform, opacity',
           }}
         />
       ))}
 
-      {/* Animated horizontal accent line */}
+      {/* Animated horizontal accent line — CSS animation */}
       <div className="absolute top-0 left-0 right-0 h-px overflow-hidden">
-        <motion.div
+        <div
           className="h-full w-1/3 bg-linear-to-r from-transparent via-[#e8a000]/40 to-transparent"
-          animate={{ x: ['-100%', '400%'] }}
-          transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+          style={{ animation: 'accent-slide-x 8s linear infinite', willChange: 'transform' }}
         />
       </div>
 
@@ -626,12 +622,11 @@ export const MatchSchedule = () => {
 
       </div>
 
-      {/* Bottom animated accent line */}
+      {/* Bottom animated accent line — CSS animation */}
       <div className="absolute bottom-0 left-0 right-0 h-px overflow-hidden">
-        <motion.div
+        <div
           className="h-full w-1/4 bg-linear-to-r from-transparent via-red-500/30 to-transparent"
-          animate={{ x: ['400%', '-100%'] }}
-          transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
+          style={{ animation: 'accent-slide-x-reverse 10s linear infinite', willChange: 'transform' }}
         />
       </div>
       <div className="absolute bottom-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-white/4 to-transparent" />

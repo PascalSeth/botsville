@@ -33,10 +33,10 @@ function Home() {
       {/* Self-switching: MobileNewsSection lg:hidden / DesktopNewsSection hidden lg:block */}
 
       {/* Self-switching: MobileMatchCard lg:hidden / DesktopMatchRow hidden lg:block */}
-     {/* <MatchSchedule /> */}
+      <MatchSchedule />
 
-      {/* <CommunityHighlights />  */}
-      {/* <NewsSection /> */}
+      <CommunityHighlights />
+      <NewsSection />
 
       {/* Mobile combined section — lg:hidden */}
       <MobileScrimAndAwards />

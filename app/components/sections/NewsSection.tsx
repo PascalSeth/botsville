@@ -129,48 +129,41 @@ const AnimatedBackground = () => (
       }}
     />
 
-    {/* Orbs */}
-    <motion.div
-      className="pointer-events-none absolute -top-40 -left-40 w-125 h-125 rounded-full bg-[#e8a000]/6 blur-[120px]"
-      animate={{ opacity: [0.3, 0.6, 0.3], scale: [1, 1.08, 1] }}
-      transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+    {/* Orbs — CSS animations (compositor thread) */}
+    <div
+      className="pointer-events-none absolute -top-40 -left-40 w-125 h-125 rounded-full bg-[#e8a000]/6 blur-[120px] anim-orb"
     />
-    <motion.div
-      className="pointer-events-none absolute -bottom-32 -right-32 w-105 h-105 rounded-full bg-blue-600/5 blur-[100px]"
-      animate={{ opacity: [0.25, 0.5, 0.25], scale: [1, 1.06, 1] }}
-      transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+    <div
+      className="pointer-events-none absolute -bottom-32 -right-32 w-105 h-105 rounded-full bg-blue-600/5 blur-[100px] anim-orb-alt"
     />
-    <motion.div
-      className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-90 h-90 rounded-full bg-purple-600/4 blur-[90px]"
-      animate={{ opacity: [0.2, 0.4, 0.2] }}
-      transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut', delay: 4 }}
+    <div
+      className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-90 h-90 rounded-full bg-purple-600/4 blur-[90px] anim-orb-subtle"
     />
 
-    {/* Particles */}
+    {/* Particles — CSS animations */}
     {Array.from({ length: 10 }).map((_, i) => (
-      <motion.div
+      <div
         key={i}
         className="pointer-events-none absolute w-px h-px bg-white/20 rounded-full"
-        style={{ left: (8 + i * 9) + '%', top: (5 + ((i * 17) % 80)) + '%' }}
-        animate={{ opacity: [0, 0.6, 0], y: [0, -30, 0] }}
-        transition={{ duration: 4 + (i % 3), repeat: Infinity, delay: i * 0.6, ease: 'easeInOut' }}
+        style={{
+          left: (8 + i * 9) + '%',
+          top: (5 + ((i * 17) % 80)) + '%',
+          animation: `float-particle ${4 + (i % 3)}s ease-in-out ${i * 0.6}s infinite`,
+          willChange: 'transform, opacity',
+        }}
       />
     ))}
 
-    {/* Top accent line */}
+    {/* Top accent line — CSS animation */}
     <div className="absolute top-0 left-0 right-0 h-px overflow-hidden">
-      <motion.div
-        className="absolute top-0 h-px w-32 bg-linear-to-r from-transparent via-[#e8a000]/40 to-transparent"
-        animate={{ left: ['-10%', '110%'] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'linear' }}
+      <div
+        className="absolute top-0 h-px w-32 bg-linear-to-r from-transparent via-[#e8a000]/40 to-transparent anim-accent-ltr"
       />
     </div>
-    {/* Bottom accent line */}
+    {/* Bottom accent line — CSS animation */}
     <div className="absolute bottom-0 left-0 right-0 h-px overflow-hidden">
-      <motion.div
-        className="absolute bottom-0 h-px w-24 bg-linear-to-r from-transparent via-blue-400/30 to-transparent"
-        animate={{ left: ['110%', '-10%'] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'linear', delay: 3 }}
+      <div
+        className="absolute bottom-0 h-px w-24 bg-linear-to-r from-transparent via-blue-400/30 to-transparent anim-accent-rtl"
       />
     </div>
   </>

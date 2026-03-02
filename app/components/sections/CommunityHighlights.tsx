@@ -454,56 +454,54 @@ export function CommunityHighlights() {
         }}
       />
 
-      {/* Pulsing gradient orbs */}
-      <motion.div
+      {/* Pulsing gradient orbs — CSS animations */}
+      <div
         className="absolute -top-20 left-1/3 w-80 h-80 rounded-full blur-[120px] pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(232,160,0,0.07), transparent 70%)' }}
-        animate={{ scale: [1, 1.3, 1], opacity: [0.4, 0.7, 0.4] }}
-        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          background: 'radial-gradient(circle, rgba(232,160,0,0.07), transparent 70%)',
+          animation: 'pulse-orb-community 7s ease-in-out infinite',
+          willChange: 'transform, opacity',
+        }}
       />
-      <motion.div
+      <div
         className="absolute -bottom-20 right-1/4 w-72 h-72 rounded-full blur-[100px] pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.06), transparent 70%)' }}
-        animate={{ scale: [1.2, 1, 1.2], opacity: [0.3, 0.6, 0.3] }}
-        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 3 }}
+        style={{
+          background: 'radial-gradient(circle, rgba(139,92,246,0.06), transparent 70%)',
+          animation: 'pulse-orb-community-alt 9s ease-in-out 3s infinite',
+          willChange: 'transform, opacity',
+        }}
       />
-      <motion.div
+      <div
         className="absolute top-1/2 -left-10 w-60 h-60 rounded-full blur-[100px] pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.05), transparent 70%)' }}
-        animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut', delay: 5 }}
+        style={{
+          background: 'radial-gradient(circle, rgba(59,130,246,0.05), transparent 70%)',
+          animation: 'pulse-orb-community-sm 8s ease-in-out 5s infinite',
+          willChange: 'transform, opacity',
+        }}
       />
 
-      {/* Floating particles */}
+      {/* Floating particles — CSS animations */}
       {[...Array(8)].map((_, i) => (
-        <motion.div
+        <div
           key={'ch-p-' + i}
           className="absolute w-px h-px rounded-full bg-[#e8a000]/30 pointer-events-none"
           style={{
             left: (10 + ((i * 41) % 80)) + '%',
             top: (10 + ((i * 29) % 80)) + '%',
-          }}
-          animate={{
-            y: [0, -(20 + (i % 3) * 12), 0],
-            x: [0, ((i % 2) === 0 ? 8 : -8), 0],
-            opacity: [0, 0.7, 0],
-            scale: [0, 1 + (i % 3) * 0.4, 0],
-          }}
-          transition={{
-            duration: 5 + (i % 4) * 1.5,
-            repeat: Infinity,
-            delay: i * 0.9,
-            ease: 'easeInOut',
-          }}
+            '--dx': ((i % 2) === 0 ? '8px' : '-8px'),
+            '--dy': `${-(20 + (i % 3) * 12)}px`,
+            '--s': String(1 + (i % 3) * 0.4),
+            animation: `float-particle-xy ${5 + (i % 4) * 1.5}s ease-in-out ${i * 0.9}s infinite`,
+            willChange: 'transform, opacity',
+          } as React.CSSProperties}
         />
       ))}
 
-      {/* Animated top accent line */}
+      {/* Animated top accent line — CSS animation */}
       <div className="absolute top-0 left-0 right-0 h-px overflow-hidden">
-        <motion.div
+        <div
           className="h-full w-1/4 bg-linear-to-r from-transparent via-purple-500/30 to-transparent"
-          animate={{ x: ['-100%', '500%'] }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
+          style={{ animation: 'accent-slide-wide 12s linear infinite', willChange: 'transform' }}
         />
       </div>
 
@@ -558,12 +556,11 @@ export function CommunityHighlights() {
         </AnimatePresence>
       </div>
 
-      {/* Bottom animated accent line */}
+      {/* Bottom animated accent line — CSS animation */}
       <div className="absolute bottom-0 left-0 right-0 h-px overflow-hidden">
-        <motion.div
+        <div
           className="h-full w-1/5 bg-linear-to-r from-transparent via-[#e8a000]/25 to-transparent"
-          animate={{ x: ['500%', '-100%'] }}
-          transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}
+          style={{ animation: 'accent-slide-wide-reverse 14s linear infinite', willChange: 'transform' }}
         />
       </div>
       <div className="absolute bottom-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-white/4 to-transparent" />
