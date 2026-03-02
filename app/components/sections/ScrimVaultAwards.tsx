@@ -6,38 +6,92 @@ import { Play, Swords, Shield, Zap, Target, Star, Wind, ChevronRight } from 'luc
 import { motion } from 'framer-motion';
 
 // ── Data ───────────────────────────────────────────────────
-const SCRIMS = [
-  {
-    id: 1,
-    title: 'HACK! MIDGAME!',
-    tournament: 'APL Season 5 Finals',
-    matchup: 'Yacd3',
-    image: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=600&q=80',
-    duration: '14:32',
-  },
-  {
-    id: 2,
-    title: 'AMBUSH ON THE FLANK',
-    tournament: 'APL Season 5 Finals',
-    matchup: 'Commodity Saints · Wave 3',
-    image: 'https://images.unsplash.com/photo-1542751110-97427bbecf20?w=600&q=80',
-    duration: '08:17',
-    featured: true,
-  },
-  {
-    id: 3,
-    title: 'TURTLE STEAL',
-    tournament: 'AFL Season 5.1',
-    matchup: 'Voca 3',
-    image: 'https://images.unsplash.com/photo-1534423861386-85a16f5d13fd?w=600&q=80',
-    duration: '22:04',
-  },
-];
+type ScrimItem = {
+  id: string;
+  title: string;
+  tournament: string;
+  matchup: string;
+  image: string;
+  duration: string;
+  featured?: boolean;
+  videoUrl: string;
+};
 
-const LIVE_MATCH = {
-  teamA: { name: 'CERUS AL', score: 4 },
-  teamB: { name: 'YACD3',    score: 3 },
-  mode: 'Ranked · Bo5',
+type ScrimVaultApiItem = {
+  id: string;
+  title: string;
+  matchup: string | null;
+  thumbnail: string | null;
+  videoUrl: string;
+  duration: string | null;
+  featured: boolean;
+  tournament?: { name?: string | null } | null;
+};
+
+const getYoutubeThumbnail = (url: string): string | null => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('youtu.be')) {
+      const id = parsed.pathname.slice(1);
+      return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+    }
+    if (parsed.hostname.includes('youtube.com')) {
+      const id = parsed.searchParams.get('v');
+      return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const useRealtimeScrims = () => {
+  const [scrims, setScrims] = useState<ScrimItem[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        const response = await fetch('/api/scrim-vault?limit=9', { cache: 'no-store' });
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const videos: ScrimVaultApiItem[] = Array.isArray(data?.videos) ? data.videos : [];
+        if (!mounted) return;
+
+        const mapped: ScrimItem[] = videos.map((video) => ({
+          id: video.id,
+          title: video.title,
+          tournament: video.tournament?.name || '—',
+          matchup: video.matchup || '—',
+          image:
+            video.thumbnail ||
+            getYoutubeThumbnail(video.videoUrl) ||
+            '/mlbb_logo.png',
+          duration: video.duration || '—',
+          featured: Boolean(video.featured),
+          videoUrl: video.videoUrl,
+        }));
+
+        setScrims(mapped);
+      } catch {
+        setScrims([]);
+      }
+    };
+
+    load().catch(() => undefined);
+    const interval = setInterval(() => {
+      load().catch(() => undefined);
+    }, 15000);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  return scrims;
 };
 
 const ROLE_ICONS: Record<string, React.ReactNode> = {
@@ -85,25 +139,6 @@ const AWARDS = [
   },
 ];
 
-// ── Shared ─────────────────────────────────────────────────
-const LiveTimer = () => {
-  const [secs, setSecs] = useState(30);
-  useEffect(() => {
-    const t = setInterval(() => setSecs(s => s + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
-  const m = String(Math.floor(secs / 60)).padStart(2, '0');
-  const s = String(secs % 60).padStart(2, '0');
-  return <>{m}:{s}</>;
-};
-
-const LiveDot = () => (
-  <span className="relative flex h-1.5 w-1.5 shrink-0">
-    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
-  </span>
-);
-
 const SectionLabel = ({ children }: { children: React.ReactNode }) => (
   <h2 className="text-white font-black text-[11px] tracking-[0.3em] uppercase mb-4 border-l-2 border-[#e8a000] pl-3">
     {children}
@@ -111,7 +146,7 @@ const SectionLabel = ({ children }: { children: React.ReactNode }) => (
 );
 
 // ── Desktop Scrim Card ─────────────────────────────────────
-const DesktopScrimCard = ({ scrim }: { scrim: typeof SCRIMS[0] }) => (
+const DesktopScrimCard = ({ scrim }: { scrim: ScrimItem }) => (
   <div className="group cursor-pointer flex flex-col gap-1.5">
     <div className="relative w-full aspect-video overflow-hidden bg-[#111]">
       <Image src={scrim.image} alt={scrim.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500 brightness-75 group-hover:brightness-90" />
@@ -156,30 +191,28 @@ const DesktopAwardCard = ({ award }: { award: typeof AWARDS[0] }) => {
 };
 
 // ── Desktop Sections (100% original) ──────────────────────
-export const ScrimVault = () => (
-  <section className="hidden lg:block bg-[#0d0d12] py-8">
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <SectionLabel>Scrim Vault</SectionLabel>
-      <div className="flex gap-5">
-        {/* Live score block */}
-        <div className="shrink-0 w-[88px] flex flex-col gap-1 pt-0.5">
-          <p className="text-[#555] text-[8px] tracking-widest uppercase leading-none font-semibold">
-            {LIVE_MATCH.teamA.name} <span className="text-[#666]">{LIVE_MATCH.teamA.score} · {LIVE_MATCH.teamB.score}</span>
-          </p>
-          <p className="text-white font-black text-[28px] leading-none font-mono tracking-tight"><LiveTimer /></p>
-          <div className="flex items-center gap-1 mt-0.5">
-            <LiveDot />
-            <span className="text-[#555] text-[8px] tracking-widest uppercase font-semibold">Live</span>
-          </div>
-          <p className="text-[#3a3a3a] text-[8px] leading-none">{LIVE_MATCH.mode}</p>
-        </div>
-        <div className="flex-1 grid grid-cols-3 gap-3">
-          {SCRIMS.map(s => <DesktopScrimCard key={s.id} scrim={s} />)}
+export const ScrimVault = () => {
+  const scrims = useRealtimeScrims();
+
+  return (
+    <section className="hidden lg:block bg-[#0d0d12] py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <SectionLabel>Scrim Vault</SectionLabel>
+        <div>
+          {scrims.length === 0 ? (
+            <div className="border border-white/10 bg-[#0b0b11] flex items-center justify-center text-[#666] text-sm py-10">
+              No scrim videos available yet.
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {scrims.slice(0, 3).map(s => <DesktopScrimCard key={s.id} scrim={s} />)}
+            </div>
+          )}
         </div>
       </div>
-    </div>
-  </section>
-);
+    </section>
+  );
+};
 
 export const BestRoleAwards = () => (
   <section className="hidden lg:block bg-[#0d0d12] pb-10 border-t border-white/[0.04]">
@@ -200,36 +233,8 @@ export const BestRoleAwards = () => (
 // Single section, stacked, fully rethought for small screens
 // ══════════════════════════════════════════════════════════
 
-// ── Mobile: Live score bar (sticky feel at the top) ────────
-const MobileLiveBar = () => (
-  <motion.div
-    initial={{ opacity: 0, y: -8 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.4 }}
-    className="flex items-center justify-between px-4 py-2.5 bg-[#0a0a0f] border-b border-[#e8a000]/15 mb-4"
-  >
-    <div className="flex items-center gap-2">
-      <LiveDot />
-      <span className="text-[#555] text-[9px] tracking-[0.15em] uppercase font-black">Live</span>
-      <span className="text-[#333] text-[9px] mx-1">·</span>
-      <span className="text-[#888] text-[9px] tracking-wide uppercase font-bold">{LIVE_MATCH.mode}</span>
-    </div>
-    {/* Score pill */}
-    <div className="flex items-center gap-2">
-      <span className="text-white font-black text-[11px] uppercase tracking-wide">{LIVE_MATCH.teamA.name}</span>
-      <div className="flex items-center gap-1.5 bg-[#111] border border-[#e8a000]/20 px-2.5 py-1">
-        <span className="text-white font-black text-sm font-mono">{LIVE_MATCH.teamA.score}</span>
-        <span className="text-[#333] text-xs">:</span>
-        <span className="text-white font-black text-sm font-mono">{LIVE_MATCH.teamB.score}</span>
-      </div>
-      <span className="text-white font-black text-[11px] uppercase tracking-wide">{LIVE_MATCH.teamB.name}</span>
-    </div>
-    <p className="text-[#e8a000] font-black text-sm font-mono tracking-tight"><LiveTimer /></p>
-  </motion.div>
-);
-
 // ── Mobile: Featured scrim (big hero card) ─────────────────
-const MobileFeaturedScrim = ({ scrim }: { scrim: typeof SCRIMS[0] }) => (
+const MobileFeaturedScrim = ({ scrim }: { scrim: ScrimItem }) => (
   <motion.div
     initial={{ opacity: 0, y: 12 }}
     animate={{ opacity: 1, y: 0 }}
@@ -262,7 +267,7 @@ const MobileFeaturedScrim = ({ scrim }: { scrim: typeof SCRIMS[0] }) => (
 );
 
 // ── Mobile: Small scrim row (horizontal) ──────────────────
-const MobileScrimRow = ({ scrim, index }: { scrim: typeof SCRIMS[0]; index: number }) => (
+const MobileScrimRow = ({ scrim, index }: { scrim: ScrimItem; index: number }) => (
   <motion.div
     initial={{ opacity: 0, x: -14 }}
     animate={{ opacity: 1, x: 0 }}
@@ -335,8 +340,22 @@ const MobileAwardCard = ({ award, index }: { award: typeof AWARDS[0]; index: num
 
 // ── Mobile combined section ────────────────────────────────
 export const MobileScrimAndAwards = () => {
-  const featured = SCRIMS.find(s => s.featured)!;
-  const rest = SCRIMS.filter(s => !s.featured);
+  const scrims = useRealtimeScrims();
+  const featured = scrims.find(s => s.featured) || scrims[0];
+  const rest = scrims.filter(s => s.id !== featured?.id).slice(0, 3);
+
+  if (!featured) {
+    return (
+      <section className="lg:hidden bg-[#0d0d12] py-6">
+        <div className="px-4 sm:px-6 mb-6">
+          <SectionLabel>Scrim Vault</SectionLabel>
+          <div className="border border-white/10 bg-[#0b0b11] px-4 py-8 text-center text-[#666] text-sm">
+            No scrim videos available yet.
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="lg:hidden bg-[#0d0d12] py-6">
@@ -344,7 +363,6 @@ export const MobileScrimAndAwards = () => {
       {/* ── Scrim Vault ── */}
       <div className="px-4 sm:px-6 mb-6">
         <SectionLabel>Scrim Vault</SectionLabel>
-        <MobileLiveBar />
         <MobileFeaturedScrim scrim={featured} />
         <div className="flex flex-col gap-3">
           {rest.map((s, i) => <MobileScrimRow key={s.id} scrim={s} index={i} />)}

@@ -143,6 +143,13 @@ export function isValidTeamTag(tag: string): boolean {
 }
 
 /**
+ * Validate team join code - exactly 6 uppercase alphanumeric characters
+ */
+export function isValidTeamCode(teamCode: string): boolean {
+  return /^[A-Z0-9]{6}$/.test(teamCode.toUpperCase());
+}
+
+/**
  * Validate hex color
  */
 export function isValidHexColor(color: string): boolean {
@@ -153,6 +160,6 @@ export function isValidHexColor(color: string): boolean {
  * Validate region
  */
 export function isValidRegion(region: string): boolean {
-  const validRegions = ["Accra", "Kumasi", "Takoradi", "Tema", "Cape Coast"];
+  const validRegions = ["Accra", "Kumasi", "Takoradi", "Tema", "Cape Coast", "Tamale"];
   return validRegions.includes(region);
 }

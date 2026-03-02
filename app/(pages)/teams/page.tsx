@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Zap, Swords, Star, Target, Wind, Trophy, Search, X, MapPin, Users, ChevronRight, Crown, Loader2 } from 'lucide-react';
@@ -64,6 +64,19 @@ interface ApiTeam {
   _count?: {
     players: number;
   };
+}
+
+interface AvailabilityTeam {
+  teamId: string;
+}
+
+interface AvailabilityPayload {
+  weekStart?: string;
+  ping?: {
+    weekStart: string;
+    scrimDate: string;
+  } | null;
+  availableTeams?: AvailabilityTeam[];
 }
 
 // ── Scanlines ────────────────────────────────────────────────
@@ -358,8 +371,14 @@ const SpotlightPanel = ({ team }: { team: ApiTeam }) => {
 // ══════════════════════════════════════════════════════════
 // SIDEBAR ENTRY
 // ══════════════════════════════════════════════════════════
-const SidebarEntry = ({ team, active, onClick, index }: {
-  team: ApiTeam; active: boolean; onClick: () => void; index: number;
+const SidebarEntry = ({ team, active, onClick, index, canChallenge, challengeLoading, onChallenge }: {
+  team: ApiTeam;
+  active: boolean;
+  onClick: () => void;
+  index: number;
+  canChallenge?: boolean;
+  challengeLoading?: boolean;
+  onChallenge?: () => void;
 }) => {
   const teamColor = team.color || '#e8a000';
   const logoUrl = team.logo || '/heroes/stun.png';
@@ -417,7 +436,22 @@ const SidebarEntry = ({ team, active, onClick, index }: {
           </div>
         </div>
 
-        <ChevronRight size={11} style={{ color: active ? teamColor : '#222' }} className="shrink-0" />
+        <div className="flex items-center gap-2 shrink-0">
+          {canChallenge && onChallenge && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onChallenge();
+              }}
+              disabled={challengeLoading}
+              className="text-[8px] font-black uppercase tracking-wider px-2 py-1 border border-[#e8a000]/35 text-[#e8a000] hover:bg-[#e8a000]/15 disabled:opacity-50"
+            >
+              {challengeLoading ? '...' : 'Challenge'}
+            </button>
+          )}
+          <ChevronRight size={11} style={{ color: active ? teamColor : '#222' }} className="shrink-0" />
+        </div>
       </div>
 
       {!active && (
@@ -431,8 +465,13 @@ const SidebarEntry = ({ team, active, onClick, index }: {
 // ══════════════════════════════════════════════════════════
 // MOBILE TEAM ROW — accordion with photo cards
 // ══════════════════════════════════════════════════════════
-const MobileTeamRow = ({ team, active, onClick }: {
-  team: ApiTeam; active: boolean; onClick: () => void;
+const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, onChallenge }: {
+  team: ApiTeam;
+  active: boolean;
+  onClick: () => void;
+  canChallenge?: boolean;
+  challengeLoading?: boolean;
+  onChallenge?: () => void;
 }) => {
   const winRate = team.wins + team.losses > 0 
     ? Math.round((team.wins / (team.wins + team.losses)) * 100) 
@@ -554,6 +593,19 @@ const MobileTeamRow = ({ team, active, onClick }: {
                   transition={{ duration: 0.8, delay: 0.1 }} />
               </div>
 
+              {canChallenge && onChallenge && (
+                <div className="mb-4">
+                  <button
+                    type="button"
+                    disabled={challengeLoading}
+                    onClick={onChallenge}
+                    className="text-[10px] font-black uppercase tracking-widest px-3 py-2 border border-[#e8a000]/35 text-[#e8a000] hover:bg-[#e8a000]/15 disabled:opacity-50"
+                  >
+                    {challengeLoading ? 'Sending...' : 'Challenge This Team'}
+                  </button>
+                </div>
+              )}
+
               {/* ── Starting Five — photo cards ── */}
               {starters.length > 0 && (
                 <>
@@ -597,10 +649,90 @@ export default function TeamsPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All'|'S'|'A'|'B'|'C'>('All');
+  const [captainTeamId, setCaptainTeamId] = useState<string | null>(null);
+  const [challengeSubmittingId, setChallengeSubmittingId] = useState<string | null>(null);
+  const [challengeFeedback, setChallengeFeedback] = useState<string | null>(null);
+  const [availableTeamIds, setAvailableTeamIds] = useState<string[]>([]);
+  const [showAvailableOnly, setShowAvailableOnly] = useState(false);
+  const [weeklyScrimDateLabel, setWeeklyScrimDateLabel] = useState<string | null>(null);
+
+  const fetchWeeklyAvailability = useCallback(async () => {
+    try {
+      const response = await fetch('/api/matches/challenges/availability');
+      const data = (await response.json()) as AvailabilityPayload;
+      if (!response.ok) {
+        setAvailableTeamIds([]);
+        setWeeklyScrimDateLabel(null);
+        return;
+      }
+
+      const ids = Array.isArray(data.availableTeams)
+        ? data.availableTeams.map((entry) => entry.teamId)
+        : [];
+
+      setAvailableTeamIds(ids);
+      setWeeklyScrimDateLabel(data.ping?.scrimDate ? new Date(data.ping.scrimDate).toLocaleString() : null);
+    } catch {
+      setAvailableTeamIds([]);
+      setWeeklyScrimDateLabel(null);
+    }
+  }, []);
+
+  const fetchCaptainTeam = useCallback(async () => {
+    try {
+      const response = await fetch('/api/my-team');
+      if (!response.ok) {
+        setCaptainTeamId(null);
+        return;
+      }
+      const data = await response.json();
+      if (data?.isCaptain && data?.id) {
+        setCaptainTeamId(data.id);
+        fetchWeeklyAvailability();
+      } else {
+        setCaptainTeamId(null);
+      }
+    } catch {
+      setCaptainTeamId(null);
+    }
+  }, [fetchWeeklyAvailability]);
 
   useEffect(() => {
     fetchTeams();
-  }, []);
+    fetchCaptainTeam();
+  }, [fetchCaptainTeam]);
+
+  const challengeTeam = async (teamId: string) => {
+    if (!captainTeamId) {
+      setChallengeFeedback('Only team captains can send challenges.');
+      return;
+    }
+
+    if (!availableTeamIds.includes(teamId)) {
+      setChallengeFeedback('This team is not marked available for this week yet.');
+      return;
+    }
+
+    setChallengeSubmittingId(teamId);
+    setChallengeFeedback(null);
+    try {
+      const response = await fetch('/api/matches/challenges', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challengedTeamId: teamId }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setChallengeFeedback(data?.error || 'Failed to send challenge');
+        return;
+      }
+      setChallengeFeedback('Challenge sent successfully. Waiting for captain response.');
+    } catch {
+      setChallengeFeedback('Failed to send challenge');
+    } finally {
+      setChallengeSubmittingId(null);
+    }
+  };
 
   const fetchTeams = async () => {
     try {
@@ -629,6 +761,10 @@ export default function TeamsPage() {
     if (filter !== 'All' && t.tier !== filter) return false;
     if (search && !t.name.toLowerCase().includes(search.toLowerCase()) &&
         !t.tag.toLowerCase().includes(search.toLowerCase())) return false;
+    if (showAvailableOnly && captainTeamId) {
+      if (t.id === captainTeamId) return true;
+      if (!availableTeamIds.includes(t.id)) return false;
+    }
     return true;
   });
 
@@ -657,6 +793,14 @@ export default function TeamsPage() {
 
       <main className="min-h-screen bg-[#08080e]">
         <PageHeader teamsCount={teams.length} topTeam={teams[0]} />
+
+        {challengeFeedback && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3">
+            <div className="border border-[#e8a000]/25 bg-[#e8a000]/8 px-3 py-2 text-xs text-[#e8a000]">
+              {challengeFeedback}
+            </div>
+          </div>
+        )}
 
         {/* ── DESKTOP: spotlight + sidebar ── */}
         <div className="hidden lg:flex" style={{ height: 'calc(100vh - 196px)', minHeight: 560 }}>
@@ -689,6 +833,21 @@ export default function TeamsPage() {
                   </button>
                 ))}
               </div>
+              {captainTeamId && (
+                <button
+                  type="button"
+                  onClick={() => setShowAvailableOnly((prev) => !prev)}
+                  className="w-full py-1 text-[9px] font-black tracking-widest uppercase border transition-all"
+                  style={showAvailableOnly
+                    ? { background: '#e8a000', color: '#000', borderColor: '#e8a000' }
+                    : { background: 'transparent', color: '#666', borderColor: '#ffffff0f' }}
+                >
+                  {showAvailableOnly ? 'Showing Available Teams' : 'Available Teams Only'}
+                </button>
+              )}
+              {captainTeamId && weeklyScrimDateLabel && (
+                <p className="text-[9px] text-[#777] tracking-wide">Scrim date: {weeklyScrimDateLabel}</p>
+              )}
             </div>
 
             <div className="overflow-y-auto flex-1">
@@ -696,7 +855,11 @@ export default function TeamsPage() {
                 ? <p className="text-[#1e1e28] text-[10px] tracking-widest uppercase text-center mt-12">No results</p>
                 : filtered.map((team, i) => (
                     <SidebarEntry key={team.id} team={team} index={i}
-                      active={activeId === team.id} onClick={() => setActiveId(team.id)} />
+                      active={activeId === team.id}
+                      onClick={() => setActiveId(team.id)}
+                        canChallenge={Boolean(captainTeamId && captainTeamId !== team.id && availableTeamIds.includes(team.id))}
+                      challengeLoading={challengeSubmittingId === team.id}
+                      onChallenge={() => challengeTeam(team.id)} />
                   ))
               }
             </div>
@@ -731,13 +894,31 @@ export default function TeamsPage() {
                 </button>
               ))}
             </div>
+            {captainTeamId && (
+              <button
+                type="button"
+                onClick={() => setShowAvailableOnly((prev) => !prev)}
+                className="w-full py-1.5 text-[9px] font-black tracking-widest uppercase border transition-all"
+                style={showAvailableOnly
+                  ? { background: '#e8a000', color: '#000', borderColor: '#e8a000' }
+                  : { background: 'transparent', color: '#666', borderColor: '#ffffff0f' }}
+              >
+                {showAvailableOnly ? 'Showing Available Teams' : 'Available Teams Only'}
+              </button>
+            )}
+            {captainTeamId && weeklyScrimDateLabel && (
+              <p className="text-[9px] text-[#777] tracking-wide">Scrim date: {weeklyScrimDateLabel}</p>
+            )}
           </div>
 
           <div>
             {filtered.map(team => (
               <MobileTeamRow key={team.id} team={team}
                 active={activeId === team.id}
-                onClick={() => setActiveId(prev => prev === team.id ? null : team.id)} />
+                onClick={() => setActiveId(prev => prev === team.id ? null : team.id)}
+                canChallenge={Boolean(captainTeamId && captainTeamId !== team.id && availableTeamIds.includes(team.id))}
+                challengeLoading={challengeSubmittingId === team.id}
+                onChallenge={() => challengeTeam(team.id)} />
             ))}
           </div>
         </div>

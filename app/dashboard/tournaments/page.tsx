@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { dashboardFetch } from "../lib/api";
-import { Trophy, Plus, Loader2 } from "lucide-react";
+import { Plus } from "lucide-react";
 
 type Tournament = {
   id: string;
@@ -29,32 +29,40 @@ export default function DashboardTournamentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    params.set("limit", "50");
-    if (status) params.set("status", status);
-    const { data, error: err } = await dashboardFetch<Payload>(`/api/tournaments?${params}`);
-    setLoading(false);
-    if (err) {
-      setError(err);
-      setTournaments([]);
-      return;
-    }
-    setError(null);
-    setTournaments(data?.tournaments ?? []);
-    if (data?.pagination) setPagination(data.pagination);
-  }, [status]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    let isCancelled = false;
+
+    const run = async () => {
+      const params = new URLSearchParams();
+      params.set("limit", "50");
+      if (status) params.set("status", status);
+
+      const { data, error: err } = await dashboardFetch<Payload>(`/api/tournaments?${params}`);
+      if (isCancelled) return;
+
+      setLoading(false);
+      if (err) {
+        setError(err);
+        setTournaments([]);
+        return;
+      }
+
+      setError(null);
+      setTournaments(data?.tournaments ?? []);
+      if (data?.pagination) setPagination(data.pagination);
+    };
+
+    void run();
+    return () => {
+      isCancelled = true;
+    };
+  }, [status]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-black text-2xl tracking-tight text-white uppercase tracking-[0.08em]">
+          <h1 className="font-black text-2xl text-white uppercase tracking-[0.08em]">
             Tournaments
           </h1>
           <p className="mt-1 text-sm text-[#888]">
@@ -64,7 +72,10 @@ export default function DashboardTournamentsPage() {
         <div className="flex gap-2">
           <select
             value={status}
-            onChange={(e) => setStatus(e.target.value)}
+            onChange={(e) => {
+              setLoading(true);
+              setStatus(e.target.value);
+            }}
             className="bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
           >
             <option value="">All statuses</option>
@@ -111,7 +122,7 @@ export default function DashboardTournamentsPage() {
               </thead>
               <tbody>
                 {tournaments.map((t) => (
-                  <tr key={t.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                  <tr key={t.id} className="border-b border-white/5 hover:bg-white/2">
                     <td className="p-3 text-white font-semibold">{t.name}</td>
                     <td className="p-3 text-[#aaa] text-sm">{t.season?.name ?? "—"}</td>
                     <td className="p-3">
@@ -135,6 +146,13 @@ export default function DashboardTournamentsPage() {
                         className="text-[10px] font-bold uppercase text-[#e8a000] hover:underline"
                       >
                         View
+                      </Link>
+                      {" · "}
+                      <Link
+                        href={`/dashboard/tournaments/${t.id}/edit`}
+                        className="text-[10px] font-bold uppercase text-[#e8a000] hover:underline"
+                      >
+                        Edit
                       </Link>
                     </td>
                   </tr>

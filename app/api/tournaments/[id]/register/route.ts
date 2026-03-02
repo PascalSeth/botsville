@@ -8,6 +8,67 @@ import { RegistrationStatus, TournamentStatus, GameRole } from "@/app/generated/
 
 import { prisma } from "@/lib/prisma";
 
+// GET - Check current captain team registration status for tournament
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await requireActiveUser();
+    const { id } = await context.params;
+
+    const tournament = await prisma.tournament.findUnique({
+      where: { id },
+      select: { id: true, deletedAt: true },
+    });
+
+    if (!tournament || tournament.deletedAt) {
+      return apiError("Tournament not found", 404);
+    }
+
+    const team = await prisma.team.findFirst({
+      where: {
+        captainId: user.id,
+        deletedAt: null,
+        status: "ACTIVE",
+      },
+      select: { id: true, name: true },
+    });
+
+    if (!team) {
+      return apiSuccess({
+        isCaptain: false,
+        registered: false,
+      });
+    }
+
+    const registration = await prisma.tournamentRegistration.findUnique({
+      where: {
+        tournamentId_teamId: {
+          tournamentId: id,
+          teamId: team.id,
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    return apiSuccess({
+      isCaptain: true,
+      team: { id: team.id, name: team.name },
+      registered: Boolean(registration),
+      registrationStatus: registration?.status || null,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to check registration";
+    if (message === "Unauthorized") return apiError("Unauthorized", 401);
+    console.error("Check tournament registration error:", error);
+    return apiError(message, 500);
+  }
+}
+
 // POST - Register team for tournament
 export async function POST(
   request: NextRequest,

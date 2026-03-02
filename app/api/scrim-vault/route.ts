@@ -11,6 +11,10 @@ import { ScrimVaultStatus, AdminRoleType } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
 
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
 // GET - List scrim vault videos
 export async function GET(request: NextRequest) {
   try {
@@ -93,27 +97,31 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireActiveUser();
     const body = await request.json();
-    const { tournamentId, title, matchup, thumbnail, videoUrl, duration } = body;
+    const { tournamentId, title, matchup, thumbnail, videoUrl, duration, featured } = body;
 
     if (!title || !videoUrl) {
       return apiError("Title and video URL are required");
     }
 
-    // Validate YouTube URL
-    if (!videoUrl.includes("youtube.com") && !videoUrl.includes("youtu.be")) {
-      return apiError("Video URL must be a YouTube link");
+    const normalizedVideoUrl = typeof videoUrl === "string" ? videoUrl.trim() : "";
+    if (!normalizedVideoUrl || !isHttpUrl(normalizedVideoUrl)) {
+      return apiError("Video URL must be a valid http(s) URL");
     }
+
+    const isAdminSubmission = Boolean(user.role);
 
     const video = await prisma.scrimVault.create({
       data: {
         tournamentId: tournamentId || null,
         submittedById: user.id,
-        title,
+        approvedById: isAdminSubmission ? user.id : null,
+        title: title.trim(),
         matchup: matchup || null,
         thumbnail: thumbnail || null,
-        videoUrl,
+        videoUrl: normalizedVideoUrl,
         duration: duration || null,
-        status: ScrimVaultStatus.PENDING,
+        status: isAdminSubmission ? ScrimVaultStatus.APPROVED : ScrimVaultStatus.PENDING,
+        featured: isAdminSubmission ? Boolean(featured) : false,
       },
     });
 
@@ -137,7 +145,7 @@ export async function PUT(request: NextRequest) {
   try {
     const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
     const body = await request.json();
-    const { videoId, action, rejectionReason, featured } = body; // action: "approve" | "reject"
+    const { videoId, action, rejectionReason, featured, title, matchup, videoUrl, duration, thumbnail } = body; // action: "approve" | "reject" | "update"
 
     if (!videoId || !action) {
       return apiError("Video ID and action are required");
@@ -157,6 +165,48 @@ export async function PUT(request: NextRequest) {
 
     if (!video) {
       return apiError("Video not found", 404);
+    }
+
+    if (action === "update") {
+      const updateData: Prisma.ScrimVaultUpdateInput = {};
+
+      if (title !== undefined) {
+        const normalizedTitle = typeof title === "string" ? title.trim() : "";
+        if (!normalizedTitle) {
+          return apiError("Title is required");
+        }
+        updateData.title = normalizedTitle;
+      }
+      if (matchup !== undefined) updateData.matchup = matchup || null;
+      if (thumbnail !== undefined) updateData.thumbnail = thumbnail || null;
+      if (duration !== undefined) updateData.duration = duration || null;
+      if (videoUrl !== undefined) {
+        const normalizedVideoUrl = typeof videoUrl === "string" ? videoUrl.trim() : "";
+        if (!normalizedVideoUrl || !isHttpUrl(normalizedVideoUrl)) {
+          return apiError("Video URL must be a valid http(s) URL");
+        }
+        updateData.videoUrl = normalizedVideoUrl;
+      }
+      if (featured !== undefined) updateData.featured = Boolean(featured);
+
+      if (Object.keys(updateData).length === 0) {
+        return apiError("No fields to update");
+      }
+
+      await prisma.scrimVault.update({
+        where: { id: videoId },
+        data: updateData,
+      });
+
+      await createAuditLog(
+        admin.id,
+        "UPDATE_SCRIM_VAULT",
+        "ScrimVault",
+        videoId,
+        JSON.stringify(updateData)
+      );
+
+      return apiSuccess({ message: "Video updated" });
     }
 
     if (action === "reject") {
@@ -231,6 +281,42 @@ export async function PUT(request: NextRequest) {
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
     if (message.includes("Forbidden")) return apiError(message, 403);
     console.error("Approve/reject scrim vault error:", error);
+    return apiError(message, 500);
+  }
+}
+
+// DELETE - Remove scrim vault video
+export async function DELETE(request: NextRequest) {
+  try {
+    const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    const body = await request.json();
+    const { videoId } = body;
+
+    if (!videoId) {
+      return apiError("Video ID is required");
+    }
+
+    const video = await prisma.scrimVault.findUnique({ where: { id: videoId } });
+    if (!video) {
+      return apiError("Video not found", 404);
+    }
+
+    await prisma.scrimVault.delete({ where: { id: videoId } });
+
+    await createAuditLog(
+      admin.id,
+      "DELETE_SCRIM_VAULT",
+      "ScrimVault",
+      videoId,
+      JSON.stringify({ title: video.title })
+    );
+
+    return apiSuccess({ message: "Video deleted" });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to delete video";
+    if (message === "Unauthorized") return apiError("Unauthorized", 401);
+    if (message.includes("Forbidden")) return apiError(message, 403);
+    console.error("Delete scrim vault error:", error);
     return apiError(message, 500);
   }
 }

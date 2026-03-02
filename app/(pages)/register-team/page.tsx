@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
+import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, X, Plus, ChevronDown, Shield, Sword, Zap,
@@ -657,6 +659,9 @@ const SuccessScreen = ({ form, onReset }: { form: TeamForm; onReset: () => void 
 
 // ── Main Page ──────────────────────────────────────────────
 export default function RegisterTeamPage() {
+  const { status } = useSession();
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -672,6 +677,12 @@ export default function RegisterTeamPage() {
     bannerUrl: null,
     players: ROLES.map(() => emptyPlayer()),
   });
+
+  React.useEffect(() => {
+    if (status === 'unauthenticated') {
+      setShowAuthModal(true);
+    }
+  }, [status]);
 
   const updatePlayer = (index: number, player: Player) => {
     const players = [...form.players];
@@ -707,6 +718,11 @@ export default function RegisterTeamPage() {
 
   // Submit team registration to API
   const handleSubmit = async () => {
+    if (status !== 'authenticated') {
+      setShowAuthModal(true);
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError(null);
 
@@ -761,6 +777,10 @@ export default function RegisterTeamPage() {
       const teamData = await teamResponse.json();
 
       if (!teamResponse.ok) {
+        if (teamResponse.status === 401) {
+          setShowAuthModal(true);
+          return;
+        }
         throw new Error(teamData.error || 'Failed to create team');
       }
 
@@ -799,6 +819,14 @@ export default function RegisterTeamPage() {
     }
   };
 
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <p className="text-[#666] text-[10px] tracking-[0.18em] uppercase">Checking authentication...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white" style={{ fontFamily: "'Rajdhani', 'Barlow Condensed', sans-serif" }}>
 
@@ -830,6 +858,46 @@ export default function RegisterTeamPage() {
           <div className="flex items-center gap-3">
             <div className="w-1 h-6 bg-[#e8a000]" />
             <div>
+
+            {showAuthModal && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+                <button
+                  type="button"
+                  aria-label="Close login required modal"
+                  className="absolute inset-0 bg-black/75 backdrop-blur-sm"
+                  onClick={() => setShowAuthModal(false)}
+                />
+
+                <div className="relative w-full max-w-md overflow-hidden border border-white/15 bg-[#0a0a0f]">
+                  <div className="absolute inset-0">
+                    <img src="/gif/chou.gif" alt="" className="w-full h-full object-cover opacity-25" />
+                    <div className="absolute inset-0 bg-[#05070f]/80" />
+                  </div>
+
+                  <div className="relative p-6 sm:p-7">
+                    <h2 className="text-white font-black text-lg tracking-[0.14em] uppercase mb-2">Login Required</h2>
+                    <p className="text-[#b3b3c2] text-xs tracking-wide leading-relaxed mb-6">
+                      You need to be logged in before you can register a team.
+                    </p>
+
+                    <div className="flex items-center gap-2.5">
+                      <Link
+                        href="/login?callbackUrl=/register-team"
+                        onClick={() => setShowAuthModal(false)}
+                        className="flex-1 bg-[#e8a000] text-black text-[10px] font-black tracking-[0.18em] uppercase py-3 text-center">
+                        Login
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setShowAuthModal(false)}
+                        className="flex-1 border border-white/20 text-white! text-[10px]  tracking-[0.18em] uppercase py-3 hover:bg-white/5 transition-colors cursor-pointer">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
               <p className="text-[#e8a000] text-[8px] tracking-[0.3em] uppercase font-black">Tournament Season 5</p>
               <h1 className="text-white font-black text-lg tracking-[0.12em] uppercase leading-tight">Register Your Team</h1>
             </div>

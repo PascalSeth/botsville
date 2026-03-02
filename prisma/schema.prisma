@@ -23,12 +23,11 @@ enum UserStatus {
 
 // Hero roles used on user profile preference
 enum MainRole {
-  TANK
-  FIGHTER
-  ASSASSIN
-  MAGE
-  MARKSMAN
-  SUPPORT
+  EXP
+  JUNGLE
+  MID
+  GOLD
+  ROAM
 }
 
 // In-game lane roles used on player roster
@@ -115,6 +114,14 @@ enum MatchStatus {
   DISPUTED   // result contested, under review
 }
 
+enum MatchChallengeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  SCHEDULED
+}
+
 // Draft action type
 enum DraftType {
   PICK
@@ -180,6 +187,43 @@ enum TeamSide {
   RED
 }
 
+enum CommunityPostType {
+  CLIP
+  MEME
+  HOT_TAKE
+  BUILD_SCREENSHOT
+  ROAST
+}
+
+enum CommunityReactionType {
+  UPVOTE
+  DOWNVOTE
+  LIKE
+  LAUGH
+  FIRE
+  WOW
+}
+
+enum PollStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+enum XpEventType {
+  TRIVIA_REVEAL
+  CLIP_OF_WEEK_WIN
+  BADGE_EARNED
+  DAILY_ENGAGEMENT
+}
+
 // ═══════════════════════════════════════════════════════════
 // CORE — USERS & AUTH
 // ═══════════════════════════════════════════════════════════
@@ -191,6 +235,11 @@ model User {
   ign               String     @unique
   mainRole          MainRole
   photo             String?
+  favoriteHero      String?
+  favoriteSkin      String?
+  rankBadge         String?
+  region            String?
+  headline          String?    @db.VarChar(120)
   status            UserStatus @default(ACTIVE)
   emailVerified     Boolean    @default(false)
   emailVerifyToken  String?
@@ -218,9 +267,29 @@ model User {
   notificationPreferences NotificationPreference[]
   scrimVaultSubmissions   ScrimVault[]        @relation("SubmittedBy")
   auditLogs               AdminAuditLog[]     @relation("AdminActor")
+  communityPosts          CommunityPost[]
+  communityReactions      CommunityReaction[]
+  communityComments       CommunityComment[]
+  communityReports        ContentReport[]     @relation("Reporter")
+  pollVotes               PollVote[]
+  pollsCreated            Poll[]              @relation("PollCreator")
+  triviaXpEvents          UserXpEvent[]
+  heroBuilds              HeroBuild[]
+  heroComments            HeroComment[]
+  clipWins                ClipOfWeek[]        @relation("ClipWinner")
+  squadListings           SquadListing[]
+  rankGoals               RankGoal[]
+  rankSnapshots           RankSnapshot[]
+  badges                  UserBadge[]
+  memes                   MemePost[]
+  heroCatalogEntries      HeroCatalog[]        @relation("HeroCatalogCreator")
+  challengesInitiated     MatchChallenge[]     @relation("ChallengeInitiator")
+  challengesResponded     MatchChallenge[]     @relation("ChallengeResponder")
+  triviaVotes             TriviaVote[]
 
   @@index([email])
   @@index([ign])
+  @@index([region])
   @@index([status])
   @@map("users")
 }
@@ -304,12 +373,14 @@ model Team {
   id              String     @id @default(uuid())
   name            String     @unique
   tag             String     @unique @db.VarChar(5)
+  teamCode        String?    @unique @db.VarChar(6)
   logo            String?
   banner          String?
   color           String?    @db.VarChar(7)
   region          String     // Accra | Kumasi | Takoradi | Tema | Cape Coast
   captainId       String?
   status          TeamStatus @default(ACTIVE)
+  isRecruiting    Boolean    @default(true)
   trophies        String[]   @default([])
   // Career totals — auto-computed, never manually edited
   totalPrizeMoney Int        @default(0) // in pesewas for precision
@@ -333,9 +404,13 @@ model Team {
   inviteLinks       TeamInviteLink[]
   groupStandings    GroupStageStanding[]
   draftEntries      MatchDraft[]
+  challengesSent    MatchChallenge[]           @relation("ChallengeChallengerTeam")
+  challengesReceived MatchChallenge[]          @relation("ChallengeChallengedTeam")
+  scrimAvailabilities WeeklyScrimAvailability[]
 
   @@index([status])
   @@index([region])
+  @@index([isRecruiting])
   @@map("teams")
 }
 
@@ -584,11 +659,72 @@ model Match {
   performances MatchPerformance[]
   drafts       MatchDraft[]
   dispute      MatchDispute?
+  challengeRequest MatchChallenge? @relation("ChallengeScheduledMatch")
 
   @@index([tournamentId])
   @@index([status])
   @@index([scheduledTime])
   @@map("matches")
+}
+
+model MatchChallenge {
+  id               String               @id @default(uuid())
+  challengerTeamId String
+  challengedTeamId String
+  initiatedById    String
+  respondedById    String?
+  weekStart        DateTime
+  message          String?
+  status           MatchChallengeStatus @default(PENDING)
+  acceptedAt       DateTime?
+  rejectedAt       DateTime?
+  scheduledAt      DateTime?
+  scheduledMatchId String?              @unique
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  challengerTeam Team            @relation("ChallengeChallengerTeam", fields: [challengerTeamId], references: [id])
+  challengedTeam Team            @relation("ChallengeChallengedTeam", fields: [challengedTeamId], references: [id])
+  initiatedBy    User            @relation("ChallengeInitiator", fields: [initiatedById], references: [id])
+  respondedBy    User?           @relation("ChallengeResponder", fields: [respondedById], references: [id])
+  scheduledMatch Match?          @relation("ChallengeScheduledMatch", fields: [scheduledMatchId], references: [id])
+
+  @@index([challengerTeamId])
+  @@index([challengedTeamId])
+  @@index([status])
+  @@index([weekStart])
+  @@map("match_challenges")
+}
+
+model WeeklyScrimPing {
+  id          String   @id @default(uuid())
+  weekStart   DateTime @unique
+  scrimDate   DateTime
+  message     String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([scrimDate])
+  @@map("weekly_scrim_pings")
+}
+
+model WeeklyScrimAvailability {
+  id          String   @id @default(uuid())
+  teamId      String
+  captainId   String
+  weekStart   DateTime
+  isAvailable Boolean  @default(false)
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([teamId, weekStart])
+  @@index([weekStart, isAvailable])
+  @@index([captainId])
+  @@map("weekly_scrim_availability")
 }
 
 // Screenshot proof — required before score can be finalised
@@ -810,6 +946,22 @@ model HeroMeta {
   @@map("hero_meta")
 }
 
+model HeroCatalog {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  imageUrl    String
+  active      Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User? @relation("HeroCatalogCreator", fields: [createdById], references: [id])
+
+  @@index([active, createdAt])
+  @@map("hero_catalog")
+}
+
 // ═══════════════════════════════════════════════════════════
 // AWARDS
 // ═══════════════════════════════════════════════════════════
@@ -975,4 +1127,371 @@ model NotificationPreference {
   user User @relation(fields: [userId], references: [id])
 
   @@map("notification_preferences")
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMMUNITY FEED
+// ═══════════════════════════════════════════════════════════
+
+model CommunityPost {
+  id              String            @id @default(uuid())
+  authorId        String
+  type            CommunityPostType
+  title           String?
+  content         String            @db.Text
+  mediaUrl        String?
+  heroSlug        String?
+  tags            String[]          @default([])
+  upvoteCount     Int               @default(0)
+  downvoteCount   Int               @default(0)
+  reactionScore   Int               @default(0)
+  isClipOfWeek    Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  author    User                @relation(fields: [authorId], references: [id])
+  reactions CommunityReaction[]
+  comments  CommunityComment[]
+  reports   ContentReport[]
+  clipOfWeek ClipOfWeek?
+
+  @@index([type, createdAt])
+  @@index([reactionScore])
+  @@index([isClipOfWeek])
+  @@map("community_posts")
+}
+
+model CommunityReaction {
+  id        String                @id @default(uuid())
+  postId    String
+  userId    String
+  type      CommunityReactionType @default(UPVOTE)
+  createdAt DateTime              @default(now())
+
+  post CommunityPost @relation(fields: [postId], references: [id])
+  user User          @relation(fields: [userId], references: [id])
+
+  @@unique([postId, userId])
+  @@index([type])
+  @@map("community_reactions")
+}
+
+model CommunityComment {
+  id        String             @id @default(uuid())
+  postId    String
+  userId    String
+  parentId  String?
+  content   String             @db.Text
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  deletedAt DateTime?
+
+  post     CommunityPost      @relation(fields: [postId], references: [id])
+  user     User               @relation(fields: [userId], references: [id])
+  parent   CommunityComment?  @relation("CommentThread", fields: [parentId], references: [id])
+  replies  CommunityComment[] @relation("CommentThread")
+  reports  ContentReport[]
+
+  @@index([postId, createdAt])
+  @@index([parentId])
+  @@map("community_comments")
+}
+
+model ContentReport {
+  id          String     @id @default(uuid())
+  reporterId  String
+  postId      String?
+  commentId   String?
+  reason      String
+  status      ReportStatus @default(OPEN)
+  createdAt   DateTime   @default(now())
+  reviewedAt  DateTime?
+
+  reporter User              @relation("Reporter", fields: [reporterId], references: [id])
+  post     CommunityPost?    @relation(fields: [postId], references: [id])
+  comment  CommunityComment? @relation(fields: [commentId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([postId])
+  @@index([commentId])
+  @@map("content_reports")
+}
+
+// ═══════════════════════════════════════════════════════════
+// POLLS + TRIVIA + XP
+// ═══════════════════════════════════════════════════════════
+
+model Poll {
+  id          String     @id @default(uuid())
+  question    String
+  status      PollStatus @default(DRAFT)
+  expiresAt   DateTime?
+  createdById String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  createdBy User?        @relation("PollCreator", fields: [createdById], references: [id])
+  options   PollOption[]
+  votes     PollVote[]
+
+  @@index([status, createdAt])
+  @@map("polls")
+}
+
+model PollOption {
+  id         String   @id @default(uuid())
+  pollId     String
+  text       String
+  voteCount  Int      @default(0)
+
+  poll Poll @relation(fields: [pollId], references: [id])
+  votes PollVote[]
+
+  @@index([pollId])
+  @@map("poll_options")
+}
+
+model PollVote {
+  id        String   @id @default(uuid())
+  pollId    String
+  optionId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  poll   Poll       @relation(fields: [pollId], references: [id])
+  option PollOption @relation(fields: [optionId], references: [id])
+  user   User       @relation(fields: [userId], references: [id])
+
+  @@unique([pollId, userId])
+  @@index([optionId])
+  @@map("poll_votes")
+}
+
+model TriviaFact {
+  id         String   @id @default(uuid())
+  title      String
+  teaser     String
+  reveal     String
+  heroSlug   String?
+  images     String[] @default([])
+  isActive   Boolean  @default(true)
+  periodFrom DateTime?
+  periodTo   DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  votes TriviaVote[]
+
+  @@index([isActive, createdAt])
+  @@map("trivia_facts")
+}
+
+model TriviaVote {
+  id        String   @id @default(uuid())
+  triviaId  String
+  userId    String
+  choice    Boolean
+  createdAt DateTime @default(now())
+
+  trivia TriviaFact @relation(fields: [triviaId], references: [id])
+  user   User       @relation(fields: [userId], references: [id])
+
+  @@unique([triviaId, userId])
+  @@index([triviaId])
+  @@index([userId])
+  @@map("trivia_votes")
+}
+
+model UserXpEvent {
+  id        String      @id @default(uuid())
+  userId    String
+  type      XpEventType
+  xp        Int         @default(0)
+  metadata  String?
+  createdAt DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("user_xp_events")
+}
+
+// ═══════════════════════════════════════════════════════════
+// HERO PAGES + CLIP OF THE WEEK
+// ═══════════════════════════════════════════════════════════
+
+model HeroBuild {
+  id           String   @id @default(uuid())
+  heroSlug     String
+  title        String
+  description  String?  @db.Text
+  buildImageUrl String?
+  createdById  String
+  upvoteCount  Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  createdBy User @relation(fields: [createdById], references: [id])
+
+  @@index([heroSlug, createdAt])
+  @@map("hero_builds")
+}
+
+model HeroComment {
+  id        String   @id @default(uuid())
+  heroSlug  String
+  userId    String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([heroSlug, createdAt])
+  @@map("hero_comments")
+}
+
+model ClipOfWeek {
+  id         String   @id @default(uuid())
+  postId      String  @unique
+  winnerId    String
+  weekStart   DateTime
+  weekEnd     DateTime
+  bannerText  String?
+  createdAt   DateTime @default(now())
+
+  post    CommunityPost @relation(fields: [postId], references: [id])
+  winner  User          @relation("ClipWinner", fields: [winnerId], references: [id])
+
+  @@index([weekStart, weekEnd])
+  @@map("clip_of_week")
+}
+
+// ═══════════════════════════════════════════════════════════
+// SQUAD FINDER + RANK TRACKER
+// ═══════════════════════════════════════════════════════════
+
+model SquadListing {
+  id           String   @id @default(uuid())
+  userId       String
+  rankBadge    String
+  preferredRole MainRole
+  region       String
+  message      String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([active, region, preferredRole])
+  @@map("squad_listings")
+}
+
+model RankGoal {
+  id            String   @id @default(uuid())
+  userId        String
+  currentRank   String
+  targetRank    String
+  matchesPlayed Int      @default(0)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user      User           @relation(fields: [userId], references: [id])
+  snapshots RankSnapshot[]
+
+  @@index([userId, active])
+  @@map("rank_goals")
+}
+
+model RankSnapshot {
+  id          String   @id @default(uuid())
+  rankGoalId  String
+  userId      String
+  rankBadge   String
+  stars       Int      @default(0)
+  recordedAt  DateTime @default(now())
+
+  rankGoal RankGoal @relation(fields: [rankGoalId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@index([rankGoalId, recordedAt])
+  @@map("rank_snapshots")
+}
+
+// ═══════════════════════════════════════════════════════════
+// TITLES/BADGES + MEMES + STREAMERS
+// ═══════════════════════════════════════════════════════════
+
+model BadgeTitle {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  userBadges UserBadge[]
+
+  @@map("badge_titles")
+}
+
+model UserBadge {
+  id         String   @id @default(uuid())
+  userId     String
+  badgeId    String
+  highlighted Boolean @default(false)
+  earnedAt   DateTime @default(now())
+
+  user  User       @relation(fields: [userId], references: [id])
+  badge BadgeTitle @relation(fields: [badgeId], references: [id])
+
+  @@unique([userId, badgeId])
+  @@index([highlighted])
+  @@map("user_badges")
+}
+
+model MemeTemplate {
+  id        String   @id @default(uuid())
+  name      String
+  imageUrl  String
+  heroSlug  String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  memes MemePost[]
+
+  @@index([active])
+  @@map("meme_templates")
+}
+
+model MemePost {
+  id         String   @id @default(uuid())
+  userId     String
+  templateId String?
+  caption    String?
+  imageUrl   String
+  createdAt  DateTime @default(now())
+
+  user     User          @relation(fields: [userId], references: [id])
+  template MemeTemplate? @relation(fields: [templateId], references: [id])
+
+  @@index([createdAt])
+  @@map("meme_posts")
+}
+
+model StreamerSpotlight {
+  id         String   @id @default(uuid())
+  name       String
+  platform   String
+  handle     String
+  profileUrl String
+  imageUrl   String?
+  weekStart  DateTime
+  weekEnd    DateTime
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@index([active, weekStart])
+  @@map("streamer_spotlights")
 }

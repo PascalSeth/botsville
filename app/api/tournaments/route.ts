@@ -102,9 +102,19 @@ export async function POST(request: NextRequest) {
       pointsFormulas,
     } = body;
 
+    const normalizedLocation = typeof location === "string" ? location.trim() : "";
+
+    const normalizedPrizePool = typeof prizePool === "string" && prizePool.trim().length > 0
+      ? prizePool.trim()
+      : null;
+
     // Validation
-    if (!seasonId || !name || !format || !location || !date || !registrationDeadline || !slots) {
-      return apiError("Season ID, name, format, location, date, registration deadline, and slots are required");
+    if (!seasonId || !name || !format || !date || !registrationDeadline || !slots) {
+      return apiError("Season ID, name, format, date, registration deadline, and slots are required");
+    }
+
+    if (!isOnline && !normalizedLocation) {
+      return apiError("Location is required for offline tournaments");
     }
 
     if (!Object.values(TournamentFormat).includes(format)) {
@@ -147,7 +157,7 @@ export async function POST(request: NextRequest) {
         subtitle: subtitle || null,
         description: description || null,
         format: format as TournamentFormat,
-        location,
+        location: normalizedLocation || "Online",
         isOnline: Boolean(isOnline),
         date: startDate,
         registrationDeadline: deadline,
@@ -158,7 +168,7 @@ export async function POST(request: NextRequest) {
         heroImage: heroImage || null,
         banner: banner || null,
         rules: rules || [],
-        prizePool: prizePool || null,
+        prizePool: normalizedPrizePool,
       },
     });
 

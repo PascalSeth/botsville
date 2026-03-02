@@ -1,457 +1,857 @@
 'use client';
 
 import Image from 'next/image';
-import { Button } from '@/components/ui/button';
-import { motion, useMotionValue, useTransform, useSpring, animate, cubicBezier } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
+import {
+  motion,
+  animate,
+  cubicBezier,
+  useAnimationFrame,
+} from 'framer-motion';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
-import { Trophy, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 
-// ── Mock data ──────────────────────────────────────────────
-const TOP_TEAMS = [
-  { rank: 1, name: 'CERUS AL EGAN', points: '10145' },
-  { rank: 2, name: 'AD57 AUY',      points: '10003' },
-  { rank: 3, name: 'AEDF AJAY',     points: '9045'  },
+// ─────────────────────────────────────────────────────────────
+// DATA
+// ─────────────────────────────────────────────────────────────
+const TEAMS = [
+  { rank: 1, name: 'CERUS AL EGAN', points: 10145, logo: '/mlbb_logo.png' },
+  { rank: 2, name: 'AD57 AUY',       points: 10003, logo: '/mlbb_logo.png' },
+  { rank: 3, name: 'AEDF AJAY',      points:  9045, logo: '/mlbb_logo.png' },
+  { rank: 4, name: 'NOVA STRIKE',    points:  8870, logo: '/mlbb_logo.png' },
+  { rank: 5, name: 'LEGION GH',      points:  8610, logo: '/mlbb_logo.png' },
+  { rank: 6, name: 'DARK PACT',      points:  8200, logo: '/mlbb_logo.png' },
 ];
 
-// ── Animation variants ─────────────────────────────────────
-const fadeUp = {
-  hidden: { opacity: 0, y: 40 },
-  visible: (delay = 0) => ({
-    opacity: 1, y: 0,
-    transition: { duration: 0.8, ease: cubicBezier(0.22, 1, 0.36, 1), delay },
-  }),
+const EASE = cubicBezier(0.22, 1, 0.36, 1);
+
+type TickerTeam = {
+  rank: number;
+  name: string;
+  points: number;
+  logo: string;
 };
 
-const fadeIn = {
-  hidden: { opacity: 0 },
-  visible: (delay = 0) => ({
-    opacity: 1,
-    transition: { duration: 0.9, ease: cubicBezier(0.22, 1, 0.36, 1), delay },
-  }),
+type HeroCatalogItem = {
+  id: string;
+  key: string;
+  name: string;
+  imageUrl: string;
 };
 
-const slideRight = {
-  hidden: { opacity: 0, x: 60 },
-  visible: (delay = 0) => ({
-    opacity: 1, x: 0,
-    transition: { duration: 0.9, ease: cubicBezier(0.22, 1, 0.36, 1), delay },
-  }),
+type HeroPanelStats = {
+  season: string;
+  teams: string;
+  players: string;
+  prize: string;
 };
 
-// ── Animated number counter ────────────────────────────────
-const AnimatedNumber = ({ value }: { value: string }) => {
+// ─────────────────────────────────────────────────────────────
+// ANIMATED NUMBER
+// ─────────────────────────────────────────────────────────────
+const AnimatedNumber = ({ value }: { value: number }) => {
   const [display, setDisplay] = useState('0');
-  const num = parseInt(value.replace(/\D/g, ''), 10);
   useEffect(() => {
-    const controls = animate(0, num, {
-      duration: 1.6, ease: 'easeOut', delay: 0.8,
+    const c = animate(0, value, {
+      duration: 1.8, ease: 'easeOut', delay: 0.8,
       onUpdate: v => setDisplay(Math.round(v).toLocaleString()),
     });
-    return controls.stop;
-  }, [num]);
-  return <span>{display}</span>;
+    return c.stop;
+  }, [value]);
+  return <>{display}</>;
 };
 
-// ── Orb Effect ─────────────────────────────────────────────
-const OrbEffect = () => (
+// ─────────────────────────────────────────────────────────────
+// STAGE OVERLAYS
+// ─────────────────────────────────────────────────────────────
+const StageOverlays = () => (
   <>
-    <motion.div
-      className="absolute top-1/4 left-1/3 w-96 h-96 rounded-full pointer-events-none"
-      style={{ background: 'radial-gradient(circle, rgba(30,80,200,0.18) 0%, transparent 70%)', filter: 'blur(40px)' }}
-      animate={{ scale: [1, 1.15, 1], opacity: [0.6, 1, 0.6] }}
-      transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-    />
-    <motion.div
-      className="absolute bottom-0 right-1/4 w-80 h-80 rounded-full pointer-events-none"
-      style={{ background: 'radial-gradient(circle, rgba(220,120,0,0.12) 0%, transparent 70%)', filter: 'blur(50px)' }}
-      animate={{ scale: [1, 1.2, 1], opacity: [0.4, 0.8, 0.4] }}
-      transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-    />
+    {/* Scanlines */}
+    <div className="absolute inset-0 pointer-events-none z-[2] opacity-[0.018]"
+      style={{ backgroundImage: 'repeating-linear-gradient(0deg,transparent,transparent 2px,#fff 2px,#fff 3px)', backgroundSize: '100% 3px' }} />
+    {/* Film grain */}
+    <div className="absolute inset-0 pointer-events-none z-[2] mix-blend-overlay opacity-[0.06]"
+      style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`, backgroundSize: '200px' }} />
+    {/* Radial vignette — strongest at edges */}
+    <div className="absolute inset-0 pointer-events-none z-[2]"
+      style={{ background: 'radial-gradient(ellipse 85% 85% at 50% 45%, transparent 25%, rgba(0,0,0,0.65) 80%, rgba(0,0,0,0.92) 100%)' }} />
+    {/* Bottom-to-top gradient — feeds into info band */}
+    <div className="absolute bottom-0 left-0 right-0 pointer-events-none z-[3]"
+      style={{ height: '45%', background: 'linear-gradient(to top, rgba(5,8,18,1) 0%, rgba(5,8,18,0.85) 40%, transparent 100%)' }} />
+    {/* Subtle top darkening */}
+    <div className="absolute top-0 left-0 right-0 pointer-events-none z-[2]"
+      style={{ height: '20%', background: 'linear-gradient(to bottom, rgba(5,8,18,0.7) 0%, transparent 100%)' }} />
   </>
 );
 
-// ── Scanline overlay ───────────────────────────────────────
-const ScanlineOverlay = () => (
-  <div
-    className="absolute inset-0 z-[1] pointer-events-none opacity-[0.03]"
-    style={{
-      backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, #fff 2px, #fff 3px)',
-      backgroundSize: '100% 3px',
-    }}
-  />
+// ─────────────────────────────────────────────────────────────
+// ORB LIGHT FIELD
+// ─────────────────────────────────────────────────────────────
+const OrbField = () => (
+  <div className="absolute inset-0 z-[1] pointer-events-none overflow-hidden">
+    {/* Main backlight behind character */}
+    <motion.div className="absolute rounded-full"
+      style={{ top: '10%', left: '50%', transform: 'translateX(-50%)', width: '70%', height: '80%',
+        background: 'radial-gradient(ellipse, rgba(20,55,200,0.28) 0%, rgba(20,55,200,0.08) 45%, transparent 70%)', filter: 'blur(60px)' }}
+      animate={{ scale: [1, 1.08, 1], opacity: [0.7, 1, 0.7] }}
+      transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }} />
+    {/* Gold glow from below */}
+    <motion.div className="absolute rounded-full"
+      style={{ bottom: '-15%', left: '50%', transform: 'translateX(-50%)', width: '60%', height: '50%',
+        background: 'radial-gradient(ellipse, rgba(232,160,0,0.22) 0%, transparent 65%)', filter: 'blur(50px)' }}
+      animate={{ opacity: [0.5, 1, 0.5], scale: [0.95, 1.06, 0.95] }}
+      transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 1 }} />
+    {/* Side rim — left */}
+    <motion.div className="absolute rounded-full"
+      style={{ top: '20%', left: '-10%', width: '40%', height: '60%',
+        background: 'radial-gradient(circle, rgba(100,0,200,0.1) 0%, transparent 65%)', filter: 'blur(70px)' }}
+      animate={{ opacity: [0.3, 0.6, 0.3] }}
+      transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 2 }} />
+    {/* Side rim — right */}
+    <motion.div className="absolute rounded-full"
+      style={{ top: '20%', right: '-10%', width: '40%', height: '60%',
+        background: 'radial-gradient(circle, rgba(200,80,0,0.1) 0%, transparent 65%)', filter: 'blur(70px)' }}
+      animate={{ opacity: [0.3, 0.6, 0.3] }}
+      transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 4 }} />
+  </div>
 );
 
-// ── Desktop floating hero character (mouse parallax) ───────
-const HeroCharacter = () => {
-  const mouseX = useMotionValue(0);
-  const mouseY = useMotionValue(0);
-  const rotateX = useTransform(mouseY, [-300, 300], [6, -6]);
-  const rotateY = useTransform(mouseX, [-300, 300], [-6, 6]);
-  const springRotateX = useSpring(rotateX, { stiffness: 60, damping: 20 });
-  const springRotateY = useSpring(rotateY, { stiffness: 60, damping: 20 });
+// ─────────────────────────────────────────────────────────────
+// GHOST TITLE WATERMARK — sits behind character
+// ─────────────────────────────────────────────────────────────
+const GhostTitle = () => (
+  <div className="absolute inset-0 z-[4] flex items-center justify-center pointer-events-none select-none overflow-hidden">
+    <motion.div
+      initial={{ opacity: 0, scale: 1.08 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 1.6, delay: 0.6, ease: EASE }}
+      className="font-black uppercase text-center leading-none"
+      style={{
+        fontFamily: '"Anton", "Barlow Condensed", sans-serif',
+        fontSize: 'clamp(100px, 22vw, 320px)',
+        letterSpacing: '-0.04em',
+        WebkitTextStroke: '1px rgba(232,160,0,0.18)',
+        color: 'transparent',
+        lineHeight: 0.85,
+        whiteSpace: 'nowrap',
+      }}>
+      MLBB
+    </motion.div>
+  </div>
+);
 
-  useEffect(() => {
-    const handleMove = (e: MouseEvent) => {
-      mouseX.set(e.clientX - window.innerWidth / 2);
-      mouseY.set(e.clientY - window.innerHeight / 2);
-    };
-    window.addEventListener('mousemove', handleMove);
-    return () => window.removeEventListener('mousemove', handleMove);
-  }, [mouseX, mouseY]);
-
+// ─────────────────────────────────────────────────────────────
+// HERO CHARACTER — centered, float only
+// ─────────────────────────────────────────────────────────────
+const HeroCharacter = ({ heroImage, onClick }: { heroImage: string; onClick?: () => void }) => {
   return (
     <motion.div
-      className="absolute bottom-0 left-0 h-full w-[260px] sm:w-[320px] md:w-[400px] lg:w-[460px] pointer-events-none select-none z-10"
-      initial={{ opacity: 0, x: -80, scale: 0.92 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      transition={{ duration: 1.1, ease: cubicBezier(0.22, 1, 0.36, 1), delay: 0.2 }}
-      style={{ rotateX: springRotateX, rotateY: springRotateY, perspective: 1000 }}
-    >
+      className="absolute bottom-0  left-0 z-[30] pointer-events-auto select-none cursor-pointer"
+      style={{
+        width: 'clamp(300px, 42vw, 620px)',
+        height: '95%',
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label="Choose hero cutout"
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if ((event.key === 'Enter' || event.key === ' ') && onClick) {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      initial={{ opacity: 0, y: 80, scale: 0.94 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 1.4, delay: 0.3, ease: EASE }}>
       <motion.div
-        className="w-full h-full relative"
-        animate={{ y: [0, -14, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-      >
+        className="relative w-full h-full"
+        animate={{ y: [0, -18, 0] }}
+        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}>
+        {/* Ground shadow puddle */}
         <motion.div
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 w-40 h-6 rounded-full pointer-events-none"
-          style={{ background: 'radial-gradient(ellipse, rgba(232,160,0,0.5) 0%, transparent 70%)', filter: 'blur(8px)' }}
-          animate={{ opacity: [0.4, 0.9, 0.4], scaleX: [0.8, 1.1, 0.8] }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        />
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full"
+          style={{ width: '52%', height: 30, background: 'radial-gradient(ellipse, rgba(232,160,0,0.7) 0%, transparent 70%)', filter: 'blur(16px)' }}
+          animate={{ opacity: [0.35, 0.9, 0.35], scaleX: [0.7, 1.1, 0.7] }}
+          transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }} />
         <Image
-          src="/stunchou.png" alt="MLBB Hero" fill
-          className="object-contain object-bottom drop-shadow-[0_0_40px_rgba(232,160,0,0.3)]"
-          priority
-        />
+          src={heroImage} alt="MLBB Hero" fill
+          className="object-contain object-bottom-left"
+          style={{ filter: 'drop-shadow(0 0 80px rgba(232,160,0,0.4)) drop-shadow(0 0 200px rgba(20,50,200,0.3))' }}
+          priority />
       </motion.div>
     </motion.div>
   );
 };
 
-// ── Hero text ──────────────────────────────────────────────
-const HeroText = ({ mobile = false }: { mobile?: boolean }) => (
-  <div className={`flex flex-col items-start gap-4 ${mobile ? '' : 'z-20'}`}>
-    <motion.div
-      variants={fadeUp} initial="hidden" animate="visible" custom={mobile ? 0.1 : 0.3}
-      className="flex items-center gap-2"
-    >
-      <span className="w-6 h-[2px] bg-[#e8a000]" />
-      <span className="text-[#e8a000] text-[10px] font-bold uppercase tracking-[0.25em]">
-        Season 4 · Live Now
-      </span>
-    </motion.div>
-
-    <motion.h1
-      variants={fadeUp} initial="hidden" animate="visible" custom={mobile ? 0.2 : 0.45}
-      className={`font-black text-white leading-[1.0] tracking-tight uppercase ${mobile ? 'text-4xl sm:text-5xl' : 'text-4xl sm:text-5xl lg:text-6xl'}`}
-      style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-    >
-      GHANA
-      <br />
-      <span className="text-transparent" style={{ WebkitTextStroke: '2px rgba(232,160,0,0.8)' }}>MLBB</span>
-      <br />
-      <span className="text-white">BE AGENDA</span>
-    </motion.h1>
-
-    {!mobile && (
-      <motion.p
-        variants={fadeUp} initial="hidden" animate="visible" custom={0.6}
-        className="text-gray-400 text-sm max-w-xs leading-relaxed hidden sm:block"
-      >
-        Ghana&apos;s premier Mobile Legends competition. Compete, rise, and claim the crown.
-      </motion.p>
-    )}
-
-    <motion.div
-      variants={fadeUp} initial="hidden" animate="visible" custom={mobile ? 0.3 : 0.75}
-      className="flex flex-wrap gap-3"
-    >
-      <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-        <Button
-          variant="outline"
-          className="relative overflow-hidden border-[#e8a000] text-[#e8a000] hover:text-black font-bold uppercase tracking-widest px-5 py-2 text-xs sm:text-sm group transition-colors duration-300"
-        >
-          <span className="absolute inset-0 bg-[#e8a000] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
-          <Link href="register-team" className="relative z-10">REGISTER TEAM</Link>
-        </Button>
-      </motion.div>
-      <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-        <Button
-          variant="secondary"
-          className="text-white/60 hover:text-white font-semibold uppercase tracking-widest px-4 py-2 text-xs sm:text-sm transition-colors"
-        >
-          View Brackets →
-        </Button>
-      </motion.div>
-    </motion.div>
-  </div>
-);
-
-// ── Team row ───────────────────────────────────────────────
-const TeamRow = ({ rank, name, points, index }: { rank: number; name: string; points: string; index: number }) => (
+// ─────────────────────────────────────────────────────────────
+// TOP BAR — BEAGENDA + header actions (floats over stage)
+// ─────────────────────────────────────────────────────────────
+const TopBar = () => (
   <motion.div
-    variants={fadeUp} initial="hidden" animate="visible" custom={0.9 + index * 0.12}
-    className="flex items-center justify-between gap-3 py-2.5 border-b border-white/[0.07] last:border-0 group cursor-default"
-  >
-    <div className="flex items-center gap-3">
-      <span className="text-[#e8a000] font-black text-xs w-4 tabular-nums">{rank}</span>
-      <div className="w-7 h-7 rounded bg-white/10 overflow-hidden relative shrink-0 ring-1 ring-white/10 group-hover:ring-[#e8a000]/40 transition-all">
-        <Image src="/mlbb_logo.png" alt={name} fill className="object-cover" />
-      </div>
-      <span className="text-white/80 text-[11px] font-semibold uppercase tracking-wider group-hover:text-white transition-colors truncate">
-        {name}
+    className="absolute top-0 left-0 right-0 z-[10] flex items-center justify-between px-6 md:px-10 py-5"
+    initial={{ opacity: 0, y: -16 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay: 0.4, duration: 0.7, ease: EASE }}>
+    <Link href="/" className="group">
+      <span
+        className="text-white font-black uppercase text-lg"
+        style={{ fontFamily: '"Anton", "Barlow Condensed", sans-serif', letterSpacing: '0.08em' }}>
+        BEAGENDA
       </span>
-    </div>
-    <span className="text-[#e8a000] text-xs font-black tabular-nums shrink-0">
-      <AnimatedNumber value={points} />
-    </span>
+    </Link>
+
   </motion.div>
 );
 
-// ── Top teams panel ────────────────────────────────────────
-const TopTeamsPanel = ({ compact = false }: { compact?: boolean }) => (
+// ─────────────────────────────────────────────────────────────
+// HERO SIDE PANEL — right middle (stats + register)
+// ─────────────────────────────────────────────────────────────
+const HeroSidePanel = ({
+  mobile = false,
+  stats,
+  onRegisterClick,
+}: {
+  mobile?: boolean;
+  stats: HeroPanelStats;
+  onRegisterClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+}) => (
   <motion.div
-    variants={slideRight} initial="hidden" animate="visible" custom={0.6}
-    className={`
-      bg-black/40 backdrop-blur-xl border border-white/10 overflow-hidden shrink-0 z-20
-      shadow-[0_0_60px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.08)]
-      ${compact ? 'w-full' : 'w-full max-w-[260px] sm:max-w-[280px]'}
-    `}
-  >
-    <div className="flex items-center justify-between px-4 py-3 bg-white/[0.04] border-b border-white/10">
-      <div>
-        <p className="text-[9px] text-[#e8a000]/70 uppercase tracking-[0.2em] font-bold">Top Teams</p>
-        <p className="text-white font-black text-sm uppercase tracking-wide mt-0.5">Ghana</p>
-      </div>
-      <motion.div
-        animate={{ rotate: [0, 5, -5, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-      >
-        <Image src="/mlbb_logo.png" alt="MLBB Logo" width={28} height={28} className="object-contain" />
-      </motion.div>
-    </div>
-    <div className="px-4 py-1">
-      {TOP_TEAMS.map((team, i) => (
-        <TeamRow key={team.rank} {...team} index={i} />
+    className={`absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-[10] ${mobile ? 'w-[120px]' : 'w-[150px]'}`}
+    initial={{ opacity: 0, x: 16 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ delay: 0.65, duration: 0.7, ease: EASE }}>
+    <div
+      className="flex flex-col"
+      style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(5,8,18,0.52)', backdropFilter: 'blur(10px)' }}>
+      {[
+        { label: 'Season', value: stats.season },
+        { label: 'Teams', value: stats.teams },
+        { label: 'Players', value: stats.players },
+        { label: 'Prize', value: stats.prize },
+      ].map((s, i, arr) => (
+        <div
+          key={s.label}
+          className={`flex flex-col items-center ${mobile ? 'py-2.5 px-2' : 'py-3 px-3'}`}
+          style={{ borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.08)' : 'none' }}>
+          <span
+            className={`${mobile ? 'text-xs' : 'text-sm'} font-black text-white leading-none`}
+            style={{ fontFamily: '"Anton", "Barlow Condensed", sans-serif' }}>
+            {s.value}
+          </span>
+          <span className={`${mobile ? 'text-[7px]' : 'text-[8px]'} uppercase mt-0.5`} style={{ color: '#e8a000', letterSpacing: '0.22em' }}>
+            {s.label}
+          </span>
+        </div>
       ))}
+
+      <Link
+        href="/register-team"
+        onClick={onRegisterClick}
+        className={`${mobile ? 'px-2 py-2.5 text-[8px]' : 'px-3 py-3 text-[9px]'} font-black uppercase text-center`}
+        style={{ background: '#e8a000', color: '#000', letterSpacing: '0.16em' }}>
+        <span className="inline-flex items-center gap-1.5">
+          Register Team
+          <ChevronRight size={mobile ? 10 : 11} />
+        </span>
+      </Link>
     </div>
-    <motion.div variants={fadeIn} initial="hidden" animate="visible" custom={1.3} className="px-4 pb-3 pt-1">
-      <button className="w-full text-[10px] text-white/40 hover:text-[#e8a000] uppercase tracking-widest font-bold transition-colors py-1">
-        View Full Leaderboard →
-      </button>
-    </motion.div>
   </motion.div>
 );
 
-// ── Mobile Hero (< md) ─────────────────────────────────────
-// Full-bleed character art + gradient overlay, text pinned to bottom
-const MobileHero = () => (
-  <section className="md:hidden relative w-full overflow-hidden bg-[#060a14]">
+// ─────────────────────────────────────────────────────────────
+// TICKER
+// ─────────────────────────────────────────────────────────────
+const TeamTicker = () => {
+  const [tickerTeams, setTickerTeams] = useState<TickerTeam[]>(TEAMS);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const xRef = useRef(0);
 
-    {/* ── Act 1: Cinematic character panel ── */}
-    <div className="relative w-full h-[62vw] min-h-[260px] max-h-[340px]">
-      {/* BG image */}
-      <div className="absolute inset-0">
-        <Image
-          src="https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1200&q=80"
-          alt="" fill className="object-cover object-center" priority
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#060a14]/90 via-[#060a14]/50 to-[#060a14]/70" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#060a14] via-transparent to-[#060a14]/60" />
-      </div>
-      <ScanlineOverlay />
-      <OrbEffect />
+  useEffect(() => {
+    const loadTickerTeams = async () => {
+      try {
+        const response = await fetch('/api/leaderboards/teams?limit=8', { cache: 'no-store' });
+        if (!response.ok) {
+          return;
+        }
 
-      {/* Hero character — centred, tall, fills the frame */}
-      <motion.div
-        className="absolute bottom-0 right-0 w-[58%] h-[110%] pointer-events-none select-none"
-        initial={{ opacity: 0, x: 40 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 1, ease: cubicBezier(0.22, 1, 0.36, 1), delay: 0.15 }}
-      >
-        <motion.div
-          className="relative w-full h-full"
-          animate={{ y: [0, -8, 0] }}
-          transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut' }}
-        >
-          {/* Ground glow */}
-          <motion.div
-            className="absolute bottom-2 left-1/2 -translate-x-1/2 w-32 h-5 rounded-full"
-            style={{ background: 'radial-gradient(ellipse, rgba(232,160,0,0.55) 0%, transparent 70%)', filter: 'blur(6px)' }}
-            animate={{ opacity: [0.3, 0.8, 0.3], scaleX: [0.8, 1.15, 0.8] }}
-            transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          <Image
-            src="/stunchou.png" alt="MLBB Hero" fill
-            className="object-contain object-bottom drop-shadow-[0_0_30px_rgba(232,160,0,0.35)]"
-            priority
-          />
-        </motion.div>
-      </motion.div>
+        const data = await response.json();
+        const standings = Array.isArray(data?.standings) ? data.standings : [];
 
-      {/* Season badge — top left */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4, duration: 0.5 }}
-        className="absolute top-4 left-4 flex items-center gap-1.5"
-      >
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
-          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
-        </span>
-        <span className="text-[#e8a000] text-[9px] font-black tracking-[0.2em] uppercase">Season 4 · Live</span>
-      </motion.div>
-    </div>
+        const mappedTeams: TickerTeam[] = standings
+          .map((standing: { rank?: number; points?: number; team?: { name?: string; logo?: string } }, index: number) => ({
+            rank: typeof standing?.rank === 'number' ? standing.rank : index + 1,
+            name: typeof standing?.team?.name === 'string' && standing.team.name.trim().length > 0
+              ? standing.team.name
+              : `Team ${index + 1}`,
+            points: typeof standing?.points === 'number' ? standing.points : 0,
+            logo: typeof standing?.team?.logo === 'string' && standing.team.logo.trim().length > 0
+              ? standing.team.logo
+              : '/mlbb_logo.png',
+          }))
+          .filter((team: TickerTeam) => team.name.length > 0);
 
-    {/* ── Act 2: Text + CTA ── */}
-    <div className="relative px-5 pt-4 pb-5 bg-[#060a14]">
-      {/* Gold accent left border */}
-      <div className="absolute left-0 top-4 bottom-5 w-0.5 bg-gradient-to-b from-[#e8a000] via-[#e8a000]/40 to-transparent" />
+        if (mappedTeams.length > 0) {
+          setTickerTeams(mappedTeams);
+        }
+      } catch {
+        // Keep fallback teams
+      }
+    };
 
-      <motion.h1
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, ease: cubicBezier(0.22, 1, 0.36, 1), delay: 0.25 }}
-        className="font-black text-white leading-[1.0] tracking-tight uppercase text-[2.6rem] sm:text-5xl"
-        style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-      >
-        GHANA
-        <br />
-        <span className="text-transparent" style={{ WebkitTextStroke: '2px rgba(232,160,0,0.85)' }}>MLBB</span>
-        <br />
-        BE AGENDA
-      </motion.h1>
+    loadTickerTeams().catch(() => undefined);
+  }, []);
 
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4, duration: 0.6 }}
-        className="text-gray-500 text-xs leading-relaxed mt-2 mb-4 max-w-[280px]"
-      >
-        Ghana&apos;s premier Mobile Legends competition. Compete, rise, claim the crown.
-      </motion.p>
+  const tickerDupe = [...tickerTeams, ...tickerTeams];
 
-      {/* CTA row */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5, duration: 0.6 }}
-        className="flex gap-2 flex-wrap"
-      >
-        <Link
-          href="register-team"
-          className="relative overflow-hidden flex items-center gap-1.5 border border-[#e8a000] text-[#e8a000] font-black uppercase tracking-[0.12em] px-4 py-2.5 text-[11px] group transition-colors duration-300"
-        >
-          <span className="absolute inset-0 bg-[#e8a000] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
-          <span className="relative z-10 group-hover:text-black transition-colors duration-300">Register Team</span>
-          <ChevronRight size={11} className="relative z-10 group-hover:text-black transition-colors duration-300" />
-        </Link>
-        <button className="text-white/50 hover:text-white font-semibold uppercase tracking-widest px-3 py-2.5 text-[11px] transition-colors">
-          Brackets →
-        </button>
-      </motion.div>
-    </div>
-
-    {/* ── Act 3: Leaderboard strip ── */}
-    <div className="px-4 pb-5">
-      <div className="flex items-center gap-2 mb-3">
-        <Trophy size={11} className="text-[#e8a000]" />
-        <p className="text-[#e8a000]/70 text-[9px] tracking-[0.2em] uppercase font-black">Top Teams · Ghana</p>
-      </div>
-
-      {/* Horizontal scrollable team chips */}
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-        {TOP_TEAMS.map((team, i) => (
-          <motion.div
-            key={team.rank}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 + i * 0.1, duration: 0.4 }}
-            className="flex items-center gap-2 bg-black/40 border border-white/[0.08] px-3 py-2 shrink-0"
-          >
-            <span className="text-[#e8a000] font-black text-[10px] w-3 tabular-nums">{team.rank}</span>
-            <div className="w-5 h-5 rounded bg-white/10 overflow-hidden relative shrink-0">
-              <Image src="/mlbb_logo.png" alt={team.name} fill className="object-cover" />
+  useAnimationFrame(() => {
+    const t = trackRef.current;
+    if (!t) return;
+    xRef.current -= 0.48;
+    if (Math.abs(xRef.current) >= t.scrollWidth / 2) xRef.current = 0;
+    t.style.transform = `translateX(${xRef.current}px)`;
+  });
+  return (
+    <div className="flex-1 overflow-hidden"
+      style={{ maskImage: 'linear-gradient(90deg, transparent 0%, black 5%, black 95%, transparent 100%)' }}>
+      <div ref={trackRef} className="flex gap-2 py-2 pr-3 will-change-transform" style={{ width: 'max-content' }}>
+        {tickerDupe.map((team, i) => (
+          <div key={i}
+            className="group flex items-center gap-3 px-4 py-2 shrink-0 rounded-md transition-colors duration-200 cursor-default"
+            style={{
+              minWidth: 220,
+              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(255,255,255,0.03)',
+            }}>
+            <div
+              className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+              style={{
+                background: team.rank <= 3 ? '#e8a000' : 'rgba(255,255,255,0.08)',
+                color: team.rank <= 3 ? '#000' : 'rgba(255,255,255,0.7)',
+              }}>
+              <span className="text-[10px] font-black tabular-nums leading-none">{team.rank}</span>
             </div>
-            <div className="flex flex-col">
-              <span className="text-white text-[10px] font-bold uppercase tracking-wide leading-none">{team.name}</span>
-              <span className="text-[#e8a000] text-[9px] font-black tabular-nums">
-                <AnimatedNumber value={team.points} />
+            <div className="relative w-8 h-8 rounded-md shrink-0 overflow-hidden"
+              style={{ border: '1px solid rgba(255,255,255,0.12)' }}>
+              <Image src={team.logo} alt={team.name} fill className="object-cover" />
+            </div>
+            <div className="flex flex-col leading-none">
+              <span className="text-[10px] font-black uppercase"
+                style={{ color: 'rgba(255,255,255,0.88)', fontFamily: '"Anton", "Barlow Condensed", sans-serif', letterSpacing: '0.1em' }}>
+                {team.name}
+              </span>
+              <span className="text-[9px] font-bold tabular-nums mt-0.5"
+                style={{ color: team.rank <= 3 ? '#e8a000' : 'rgba(255,255,255,0.62)' }}>
+                <AnimatedNumber value={team.points} /> PTS
               </span>
             </div>
-          </motion.div>
+            <span className="ml-auto text-[9px] font-bold uppercase"
+              style={{ color: team.rank <= 3 ? '#e8a000' : 'rgba(255,255,255,0.38)', letterSpacing: '0.16em' }}>
+              #{team.rank}
+            </span>
+          </div>
         ))}
+      </div>
+    </div>
+  );
+};
+
+const TickerBar = ({ delay = 0 }: { delay?: number }) => (
+  <motion.div
+    className="relative flex overflow-hidden shrink-0"
+    style={{
+      height: 62,
+      borderTop: '1px solid rgba(255,255,255,0.08)',
+      borderBottom: '1px solid rgba(255,255,255,0.06)',
+      background: 'linear-gradient(180deg, rgba(6,10,24,0.96) 0%, rgba(3,6,18,0.95) 100%)',
+      backdropFilter: 'blur(20px)',
+    }}
+    initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+    transition={{ delay, duration: 0.7, ease: EASE }}>
+    <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(90deg, rgba(232,160,0,0.05) 0%, transparent 22%, transparent 78%, rgba(232,160,0,0.05) 100%)' }} />
+
+    {/* Gold label */}
+    <div className="relative flex items-center gap-3 px-5 shrink-0"
+      style={{ background: '#e8a000', minWidth: 170 }}>
+      <Image src="/mlbb_logo.png" alt="logo" width={22} height={22} className="object-contain brightness-0 shrink-0" />
+      <div className="flex flex-col leading-none">
+        <span className="text-[7px] font-black tracking-[0.3em] uppercase" style={{ color: 'rgba(0,0,0,0.45)' }}>Rankings</span>
+        <span className="text-[11px] font-black uppercase tracking-wide text-black">Top Teams Live</span>
+      </div>
+      <svg viewBox="0 0 30 100" preserveAspectRatio="none"
+        className="absolute right-0 translate-x-full top-0 h-full w-[30px]" style={{ color: '#e8a000' }}>
+        <polygon points="30,0 30,100 0,100" fill="currentColor" />
+      </svg>
+    </div>
+    <TeamTicker />
+  </motion.div>
+);
+
+const HeroSelectionModal = ({
+  open,
+  heroes,
+  search,
+  selectedKey,
+  isSaving,
+  error,
+  onClose,
+  onSearchChange,
+  onSelect,
+}: {
+  open: boolean;
+  heroes: HeroCatalogItem[];
+  search: string;
+  selectedKey: string | null;
+  isSaving: boolean;
+  error: string | null;
+  onClose: () => void;
+  onSearchChange: (value: string) => void;
+  onSelect: (hero: HeroCatalogItem) => void;
+}) => {
+  const filteredHeroes = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return heroes;
+    return heroes.filter((hero) =>
+      hero.name.toLowerCase().includes(query) || hero.key.toLowerCase().includes(query)
+    );
+  }, [heroes, search]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
+      <button
+        type="button"
+        aria-label="Close hero selector"
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div
+        className="relative w-full max-w-2xl rounded-xl border border-white/15 bg-[#070b1d] p-4 md:p-5"
+        style={{ boxShadow: '0 20px 70px rgba(0,0,0,0.45)' }}>
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <h3 className="text-white font-black uppercase tracking-[0.16em] text-sm">Select Hero Cutout</h3>
+          <button
+            type="button"
+            className="text-xs uppercase tracking-[0.12em] text-white/70 hover:text-white"
+            onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <input
+          type="text"
+          placeholder="Search heroes..."
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          className="w-full mb-4 rounded-md border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#e8a000]"
+        />
+
+        {error && (
+          <p className="text-[11px] text-red-300 mb-3 uppercase tracking-[0.08em]">{error}</p>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[56vh] overflow-y-auto pr-1">
+          {filteredHeroes.map((hero) => {
+            const isActive = selectedKey === hero.key;
+            return (
+              <button
+                key={hero.id}
+                type="button"
+                disabled={isSaving}
+                onClick={() => onSelect(hero)}
+                className="group rounded-lg border overflow-hidden text-left disabled:opacity-70"
+                style={{
+                  borderColor: isActive ? '#e8a000' : 'rgba(255,255,255,0.14)',
+                  background: 'rgba(255,255,255,0.03)',
+                }}>
+                <div className="relative aspect-[3/4]">
+                  <Image src={hero.imageUrl} alt={hero.name} fill className="object-cover" />
+                </div>
+                <div className="px-2.5 py-2">
+                  <p className="text-[11px] font-black uppercase truncate" style={{ color: isActive ? '#e8a000' : 'rgba(255,255,255,0.9)' }}>
+                    {hero.name}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const LoginRequiredModal = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center px-4">
+      <button
+        type="button"
+        aria-label="Close login required modal"
+        className="absolute inset-0 bg-black/75 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      <div className="relative w-full max-w-md overflow-hidden rounded-xl border border-white/15 bg-[#0a0a0f]">
+        <div className="absolute inset-0">
+          <Image src="/gif/chou.gif" alt="" fill className="object-cover opacity-25" />
+          <div className="absolute inset-0 bg-[#05070f]/80" />
+        </div>
+
+        <div className="relative p-6 sm:p-7">
+          <h2 className="text-white font-black text-lg tracking-[0.14em] uppercase mb-2">Login Required</h2>
+          <p className="text-[#b3b3c2] text-xs tracking-wide leading-relaxed mb-6">
+            You need to be logged in before you can register a team.
+          </p>
+
+          <div className="flex items-center gap-2.5">
+            <Link
+              href="/login?callbackUrl=/register-team"
+              onClick={onClose}
+              className="flex-1 bg-[#e8a000] text-black text-[10px] font-black tracking-[0.18em] uppercase py-3 text-center">
+              Login
+            </Link>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 border border-white/20 text-white text-[10px] font-black tracking-[0.18em] uppercase py-3 hover:bg-white/5 transition-colors cursor-pointer">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────
+// DESKTOP HERO
+// Layout: full-viewport stage (video + character + ghost title)
+//         → info band (title left / stats+cta right)
+//         → ticker
+// ─────────────────────────────────────────────────────────────
+const DesktopHero = ({
+  heroImage,
+  onHeroClick,
+  stats,
+  onRegisterClick,
+}: {
+  heroImage: string;
+  onHeroClick: () => void;
+  stats: HeroPanelStats;
+  onRegisterClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+}) => (
+  <section className="hidden md:flex flex-col w-full overflow-hidden" style={{ background: '#050812' }}>
+    {/* Stage */}
+    <div className="relative flex-1" style={{ height: '78vh', minHeight: 440, maxHeight: 680 }}>
+      {/* Video */}
+      <div className="absolute inset-0 z-0">
+        <video autoPlay loop muted playsInline preload="metadata"
+          className="w-full h-full object-cover object-center scale-[1.06]">
+          <source src="/gif/heros.mp4" type="video/mp4" />
+        </video>
+        {/* Desaturate + darken video heavily so it's pure atmosphere */}
+        <div className="absolute inset-0" style={{ background: 'rgba(5,8,18,0.55)', mixBlendMode: 'multiply' }} />
+      </div>
+
+      <OrbField />
+      <StageOverlays />
+      <GhostTitle />
+      <HeroCharacter heroImage={heroImage} onClick={onHeroClick} />
+      <TopBar />
+      <HeroSidePanel stats={stats} onRegisterClick={onRegisterClick} />
+    </div>
+
+    <TickerBar delay={1.1} />
+  </section>
+);
+
+// ─────────────────────────────────────────────────────────────
+// MOBILE HERO
+// Full-bleed video+character top, title+CTA below, ticker last
+// ─────────────────────────────────────────────────────────────
+const MobileHero = ({
+  heroImage,
+  onHeroClick,
+  stats,
+  onRegisterClick,
+}: {
+  heroImage: string;
+  onHeroClick: () => void;
+  stats: HeroPanelStats;
+  onRegisterClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+}) => (
+  <section className="md:hidden flex flex-col w-full overflow-hidden" style={{ background: '#050812' }}>
+
+    {/* Stage */}
+    <div className="relative" style={{ height: '75vw', minHeight: 260, maxHeight: 380 }}>
+      <div className="absolute inset-0 z-0">
+        <video autoPlay loop muted playsInline preload="metadata" className="w-full h-full object-cover">
+          <source src="/gif/heros2.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0" style={{ background: 'rgba(5,8,18,0.55)', mixBlendMode: 'multiply' }} />
+      </div>
+
+      <OrbField />
+      <StageOverlays />
+
+      {/* Ghost title — mobile */}
+      <div className="absolute inset-0 z-[4] flex items-center justify-center pointer-events-none select-none overflow-hidden">
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1 }}
-          className="flex items-center shrink-0"
-        >
-          <Link href="/leaderboard" className="text-white/30 hover:text-[#e8a000] text-[9px] uppercase tracking-widest font-bold px-3 whitespace-nowrap transition-colors">
-            All →
-          </Link>
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          transition={{ duration: 1.6, delay: 0.5 }}
+          className="font-black uppercase"
+          style={{
+            fontFamily: '"Anton", "Barlow Condensed", sans-serif',
+            fontSize: 'clamp(90px, 28vw, 160px)',
+            letterSpacing: '-0.04em',
+            WebkitTextStroke: '1px rgba(232,160,0,0.15)',
+            color: 'transparent',
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+          }}>
+          MLBB
         </motion.div>
       </div>
+
+      {/* Character centered on mobile */}
+      <motion.div
+        className="absolute bottom-0 left-0 z-[30] pointer-events-auto select-none cursor-pointer"
+        style={{ width: '72%', height: '105%' }}
+        role="button"
+        tabIndex={0}
+        aria-label="Choose hero cutout"
+        onClick={onHeroClick}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onHeroClick();
+          }
+        }}
+        initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.1, delay: 0.25, ease: EASE }}>
+        <motion.div className="relative w-full h-full" animate={{ y: [0, -10, 0] }}
+          transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}>
+          <motion.div className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full"
+            style={{ width: '45%', height: 18, background: 'radial-gradient(ellipse, rgba(232,160,0,0.7) 0%, transparent 70%)', filter: 'blur(10px)' }}
+            animate={{ opacity: [0.3, 0.85, 0.3], scaleX: [0.7, 1.12, 0.7] }}
+            transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }} />
+          <Image src={heroImage} alt="MLBB Hero" fill
+            className="object-contain object-bottom-left"
+            style={{ filter: 'drop-shadow(0 0 40px rgba(232,160,0,0.45)) drop-shadow(0 0 100px rgba(20,50,200,0.3))' }}
+            priority />
+        </motion.div>
+      </motion.div>
+
+      {/* Mobile top bar */}
+      <div className="absolute top-0 left-0 right-0 z-[10] flex items-center justify-between px-4 py-4">
+        <Link href="/" className="group">
+          <span
+            className="text-white font-black uppercase text-sm"
+            style={{ fontFamily: '"Anton", "Barlow Condensed", sans-serif', letterSpacing: '0.08em' }}>
+            BEAGENDA
+          </span>
+        </Link>
+      </div>
+
+      <HeroSidePanel mobile stats={stats} onRegisterClick={onRegisterClick} />
     </div>
 
-    {/* Bottom fade */}
-    <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-[#060a14] to-transparent pointer-events-none" />
+    <TickerBar delay={0.9} />
   </section>
 );
 
-// ── Desktop Hero (≥ md) ────────────────────────────────────
-const DesktopHero = () => (
-  <section className="hidden md:flex relative w-full min-h-[380px] h-[55vw] max-h-[520px] md:max-h-[480px] overflow-hidden items-center">
-    {/* Background */}
-    <div className="absolute inset-0 z-0">
-      <Image
-        src="https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1600&q=80"
-        alt="Background" fill className="object-cover object-center scale-105" priority
+// ─────────────────────────────────────────────────────────────
+// EXPORT
+// ─────────────────────────────────────────────────────────────
+export const Hero = () => {
+  const [heroImage, setHeroImage] = useState('/stunchou.png');
+  const [heroCatalog, setHeroCatalog] = useState<HeroCatalogItem[]>([]);
+  const [selectedHeroKey, setSelectedHeroKey] = useState<string | null>(null);
+  const [isHeroModalOpen, setIsHeroModalOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [heroSearch, setHeroSearch] = useState('');
+  const [isSavingHero, setIsSavingHero] = useState(false);
+  const [heroSelectionError, setHeroSelectionError] = useState<string | null>(null);
+  const [panelStats, setPanelStats] = useState<HeroPanelStats>({
+    season: 'S4',
+    teams: '6',
+    players: '120+',
+    prize: '₵12.8K',
+  });
+
+  useEffect(() => {
+    const loadHeroData = async () => {
+      try {
+        const [catalogResponse, profileResponse] = await Promise.all([
+          fetch('/api/heroes/catalog'),
+          fetch('/api/users/profile'),
+        ]);
+
+        if (!catalogResponse.ok) {
+          setHeroImage('/stunchou.png');
+          return;
+        }
+
+        const catalogData = await catalogResponse.json();
+        const heroes: HeroCatalogItem[] = Array.isArray(catalogData?.heroes) ? catalogData.heroes : [];
+        setHeroCatalog(heroes);
+
+        if (!heroes.length) {
+          setHeroImage('/stunchou.png');
+          return;
+        }
+
+        if (!profileResponse.ok) {
+          setIsAuthenticated(false);
+          setSelectedHeroKey(heroes[0]?.key ?? null);
+          setHeroImage(heroes[0]?.imageUrl || '/stunchou.png');
+          return;
+        }
+
+        setIsAuthenticated(true);
+
+        const profileData = await profileResponse.json();
+        const favoriteHeroKey = typeof profileData?.favoriteHero === 'string' ? profileData.favoriteHero : null;
+        if (!favoriteHeroKey) {
+          setHeroImage('/stunchou.png');
+          return;
+        }
+
+        const selectedHero = heroes.find((hero) => hero.key === favoriteHeroKey);
+        if (selectedHero) {
+          setSelectedHeroKey(selectedHero.key);
+          setHeroImage(selectedHero.imageUrl);
+          return;
+        }
+
+        setSelectedHeroKey(heroes[0]?.key ?? null);
+        setHeroImage(heroes[0]?.imageUrl || '/stunchou.png');
+      } catch {
+        setHeroImage('/stunchou.png');
+      }
+    };
+
+    loadHeroData().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const loadPanelStats = async () => {
+      try {
+        const [leaderboardResponse, teamsResponse] = await Promise.all([
+          fetch('/api/leaderboards/teams?limit=50', { cache: 'no-store' }),
+          fetch('/api/teams?limit=50', { cache: 'no-store' }),
+        ]);
+
+        const leaderboardData = leaderboardResponse.ok ? await leaderboardResponse.json() : null;
+        const teamsData = teamsResponse.ok ? await teamsResponse.json() : null;
+
+        const standings = Array.isArray(leaderboardData?.standings) ? leaderboardData.standings : [];
+        const teams = Array.isArray(teamsData?.teams) ? teamsData.teams : [];
+
+        const seasonName: string | undefined = leaderboardData?.season?.name;
+        const seasonText = seasonName && typeof seasonName === 'string'
+          ? seasonName
+          : 'ACTIVE';
+
+        const teamsCount = Number(leaderboardData?.pagination?.total ?? teams.length ?? 0);
+        const playersCount = teams.reduce((total: number, team: { _count?: { players?: number } }) => {
+          const count = typeof team?._count?.players === 'number' ? team._count.players : 0;
+          return total + count;
+        }, 0);
+
+        const topPrize = standings.reduce((maxValue: number, standing: { team?: { totalPrizeMoney?: number } }) => {
+          const prize = Number(standing?.team?.totalPrizeMoney ?? 0);
+          return Number.isFinite(prize) ? Math.max(maxValue, prize) : maxValue;
+        }, 0);
+
+        setPanelStats({
+          season: seasonText,
+          teams: String(teamsCount || 0),
+          players: playersCount > 0 ? `${playersCount}+` : '0',
+          prize: topPrize > 0 ? `₵${Math.round(topPrize).toLocaleString()}` : '₵0',
+        });
+      } catch {
+        // Keep fallback panel stats
+      }
+    };
+
+    loadPanelStats().catch(() => undefined);
+  }, []);
+
+  const handleSelectHero = async (hero: HeroCatalogItem) => {
+    setHeroSelectionError(null);
+    setSelectedHeroKey(hero.key);
+    setHeroImage(hero.imageUrl);
+
+    try {
+      setIsSavingHero(true);
+      const response = await fetch('/api/users/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favoriteHero: hero.key }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        const message = typeof data?.error === 'string' ? data.error : 'Could not save hero choice.';
+        setHeroSelectionError(message);
+      }
+    } catch {
+      setHeroSelectionError('Could not save hero choice.');
+    } finally {
+      setIsSavingHero(false);
+    }
+  };
+
+  const handleRegisterClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (isAuthenticated) return;
+    event.preventDefault();
+    setIsLoginModalOpen(true);
+  };
+
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@700;800;900&display=swap');
+      `}</style>
+      <MobileHero
+        heroImage={heroImage}
+        onHeroClick={() => setIsHeroModalOpen(true)}
+        stats={panelStats}
+        onRegisterClick={handleRegisterClick}
       />
-      <motion.div
-        className="absolute inset-0"
-        animate={{ scale: [1.05, 1.12] }}
-        transition={{ duration: 18, ease: 'linear', repeat: Infinity, repeatType: 'reverse' }}
-        style={{
-          backgroundImage: "url('https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1600&q=80')",
-          backgroundSize: 'cover', backgroundPosition: 'center',
+      <DesktopHero
+        heroImage={heroImage}
+        onHeroClick={() => setIsHeroModalOpen(true)}
+        stats={panelStats}
+        onRegisterClick={handleRegisterClick}
+      />
+      <HeroSelectionModal
+        open={isHeroModalOpen}
+        heroes={heroCatalog}
+        search={heroSearch}
+        selectedKey={selectedHeroKey}
+        isSaving={isSavingHero}
+        error={heroSelectionError}
+        onClose={() => {
+          setIsHeroModalOpen(false);
+          setHeroSearch('');
+          setHeroSelectionError(null);
+        }}
+        onSearchChange={setHeroSearch}
+        onSelect={(hero) => {
+          setIsHeroModalOpen(false);
+          handleSelectHero(hero).catch(() => undefined);
         }}
       />
-      <div className="absolute inset-0 bg-gradient-to-r from-[#060a14]/95 via-[#060a14]/65 to-[#060a14]/80" />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#060a14] via-transparent to-[#060a14]/50" />
-    </div>
-
-    <OrbEffect />
-    <ScanlineOverlay />
-
-    <motion.div
-      className="absolute top-0 bottom-0 left-[38%] w-px pointer-events-none"
-      style={{ background: 'linear-gradient(to bottom, transparent, rgba(232,160,0,0.15), transparent)' }}
-      initial={{ scaleY: 0, opacity: 0 }}
-      animate={{ scaleY: 1, opacity: 1 }}
-      transition={{ duration: 1.2, delay: 0.4, ease: cubicBezier(0.22, 1, 0.36, 1) }}
-    />
-
-    <HeroCharacter />
-
-    <div className="relative z-20 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-6">
-      <div className="hidden md:block w-[300px] lg:w-[380px] shrink-0" />
-      <HeroText />
-      <div className="hidden lg:block">
-        <TopTeamsPanel />
-      </div>
-    </div>
-
-    <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-[#060a14] to-transparent pointer-events-none z-20" />
-  </section>
-);
-
-// ── Main Export ────────────────────────────────────────────
-export const Hero = () => (
-  <>
-    <MobileHero />
-    <DesktopHero />
-  </>
-);
+      <LoginRequiredModal
+        open={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+      />
+    </>
+  );
+};

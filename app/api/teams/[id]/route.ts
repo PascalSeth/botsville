@@ -77,7 +77,7 @@ export async function PUT(
     const user = await requireActiveUser();
     const { id } = await params;
     const body = await request.json();
-    const { name, tag, region, color, logo, banner } = body;
+    const { name, tag, region, color, logo, banner, isRecruiting } = body;
 
     // Get team and verify captain
     const team = await prisma.team.findUnique({
@@ -141,6 +141,12 @@ export async function PUT(
 
     if (logo !== undefined) updateData.logo = logo || null;
     if (banner !== undefined) updateData.banner = banner || null;
+    if (isRecruiting !== undefined) {
+      if (typeof isRecruiting !== "boolean") {
+        return apiError("isRecruiting must be a boolean");
+      }
+      updateData.isRecruiting = isRecruiting;
+    }
 
     if (Object.keys(updateData).length === 0) {
       return apiError("No fields to update");

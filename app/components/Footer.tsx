@@ -6,9 +6,24 @@ import Link from 'next/link';
 import { Facebook, Twitter, Instagram, Youtube } from 'lucide-react';
 
 const LINKS = {
-  Competition: ['Tournaments', 'Rules & Guidelines', 'Registration', 'Leaderboard'],
-  Community:   ['Discord Server', 'Forums', 'Fan Art', 'Merchandise'],
-  Platform:    ['About Us', 'News', 'Match Schedule', 'Contact'],
+  Competition: [
+    { label: 'Tournaments', href: '/tournaments' },
+    { label: 'Leaderboard', href: '/leaderboard' },
+    { label: 'My Team', href: '/my-team' },
+    { label: 'Register Team', href: '/register-team' },
+  ],
+  Community: [
+    { label: 'Community Feed', href: '/community' },
+    { label: 'Polls', href: '/polls' },
+    { label: 'Squad Finder', href: '/squad-finder' },
+    { label: 'Memes', href: '/memes' },
+  ],
+  Platform: [
+    { label: 'News', href: '/news' },
+    { label: 'Rank Tracker', href: '/rank-tracker' },
+    { label: 'Streamers', href: '/streamers' },
+    { label: 'Teams', href: '/teams' },
+  ],
 };
 
 const SOCIALS = [
@@ -35,7 +50,7 @@ export const Footer = () => {
             <Link href="/" className="flex items-center gap-3 w-fit">
               <Image
                 src="/mlbb_logobg.png"
-                alt="Ghana Nagends"
+                alt="Botsville Logo"
                 width={48}
                 height={48}
                 className="object-contain"
@@ -70,14 +85,14 @@ export const Footer = () => {
               </h4>
               <ul className="flex flex-col gap-2.5">
                 {items.map((item) => (
-                  <li key={item}>
-                    <a
-                      href="#"
+                  <li key={item.label}>
+                    <Link
+                      href={item.href}
                       className="text-[#444] text-[12px] tracking-wide hover:text-[#e8a000] transition-colors duration-200 flex items-center gap-1.5 group"
                     >
                       <span className="w-1 h-px bg-[#333] group-hover:bg-[#e8a000] group-hover:w-2.5 transition-all duration-200" />
-                      {item}
-                    </a>
+                      {item.label}
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -88,7 +103,7 @@ export const Footer = () => {
         {/* Bottom bar */}
         <div className="border-t border-white/[0.04] pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-[#333] text-[11px] tracking-wide">
-            &copy; {new Date().getFullYear()} Ghana Nagends MLBB Community. All rights reserved.
+            &copy; {new Date().getFullYear()} Botsville MLBB Community. All rights reserved.
           </p>
           <div className="flex items-center gap-4">
             {['Privacy Policy', 'Terms of Use'].map((l) => (

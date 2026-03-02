@@ -22,6 +22,7 @@ import {
   BestRoleAwards,
   MobileScrimAndAwards,
 } from '../components/sections/ScrimVaultAwards'
+import { CommunityHighlights } from '../components/sections/CommunityHighlights'
 
 function Home() {
   return (
@@ -30,10 +31,12 @@ function Home() {
       <Hero />
 
       {/* Self-switching: MobileNewsSection lg:hidden / DesktopNewsSection hidden lg:block */}
-      <NewsSection />
 
       {/* Self-switching: MobileMatchCard lg:hidden / DesktopMatchRow hidden lg:block */}
       <MatchSchedule />
+
+      <CommunityHighlights />
+      <NewsSection />
 
       {/* Mobile combined section — lg:hidden */}
       <MobileScrimAndAwards />

@@ -57,7 +57,7 @@ async function main() {
       email: ADMIN_EMAIL,
       ign: ADMIN_IGN,
       password: hashedPassword,
-      mainRole: MainRole.SUPPORT,
+      mainRole: MainRole.ROAM,
       emailVerified: false,
     },
   });

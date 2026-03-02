@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
@@ -14,6 +14,8 @@ import {
   UsersRound,
   Swords,
   Newspaper,
+  ImagePlus,
+  Brain,
   Video,
   Palette,
   FileText,
@@ -22,6 +24,7 @@ import {
   Menu,
   LogOut,
   ExternalLink,
+  Bell,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 
@@ -34,6 +37,8 @@ const SIDEBAR_NAV: { label: string; href: string; icon: React.ReactNode; roles?:
   { label: "Tournaments", href: "/dashboard/tournaments", icon: <Trophy size={18} /> },
   { label: "Matches", href: "/dashboard/matches", icon: <Swords size={18} /> },
   { label: "News", href: "/dashboard/news", icon: <Newspaper size={18} /> },
+  { label: "Trivia", href: "/dashboard/trivia", icon: <Brain size={18} />, roles: ["SUPER_ADMIN", "CONTENT_ADMIN"] },
+  { label: "Heroes", href: "/dashboard/heroes", icon: <ImagePlus size={18} /> },
   { label: "Scrim vault", href: "/dashboard/scrim-vault", icon: <Video size={18} /> },
   { label: "Fan art", href: "/dashboard/fan-art", icon: <Palette size={18} /> },
   { label: "Audit log", href: "/dashboard/audit-log", icon: <FileText size={18} /> },
@@ -48,6 +53,207 @@ type User = {
   role?: string | null;
 };
 
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  linkUrl?: string | null;
+  read: boolean;
+  createdAt: string;
+};
+
+function formatNotificationTime(createdAt: string) {
+  const date = new Date(createdAt);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMinutes = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+function DashboardNotificationBell({ isLoggedIn }: { isLoggedIn: boolean }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!isLoggedIn) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch("/api/notifications?limit=8", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+
+      const payload = (await response.json()) as {
+        notifications?: NotificationItem[];
+        pagination?: { unreadCount?: number };
+      };
+
+      setNotifications(payload.notifications ?? []);
+      setUnreadCount(payload.pagination?.unreadCount ?? 0);
+    } catch {
+      // ignore navbar errors
+    } finally {
+      setLoading(false);
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setNotifications([]);
+      setUnreadCount(0);
+      setIsOpen(false);
+      return;
+    }
+
+    void fetchNotifications();
+    const interval = setInterval(() => {
+      void fetchNotifications();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [fetchNotifications, isLoggedIn]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void fetchNotifications();
+  }, [fetchNotifications, isOpen]);
+
+  const markOneAsRead = async (notificationId: string) => {
+    const current = notifications.find((item) => item.id === notificationId);
+    if (!current || current.read) return;
+
+    setNotifications((prev) =>
+      prev.map((item) => (item.id === notificationId ? { ...item, read: true } : item))
+    );
+    setUnreadCount((prev) => Math.max(0, prev - 1));
+
+    try {
+      await fetch("/api/notifications", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notificationIds: [notificationId] }),
+      });
+    } catch {
+      // optimistic update only
+    }
+  };
+
+  const markAllAsRead = async () => {
+    if (unreadCount === 0) return;
+
+    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+    setUnreadCount(0);
+
+    try {
+      await fetch("/api/notifications", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markAllRead: true }),
+      });
+    } catch {
+      // optimistic update only
+    }
+  };
+
+  if (!isLoggedIn) return null;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen((prev) => !prev)}
+        className="relative flex h-8 w-8 items-center justify-center rounded border border-white/10 text-[#666] hover:text-[#e8a000] hover:border-[#e8a000]/30 transition-colors"
+        aria-label="Notifications"
+      >
+        <Bell size={15} />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#e8a000] text-[9px] font-black leading-4 text-black text-center">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 top-full mt-2 w-[320px] max-w-[calc(100vw-2rem)] bg-[#0d0d14] border border-white/10 shadow-xl z-50"
+          >
+            <div className="px-3 py-2 border-b border-white/5 flex items-center justify-between">
+              <p className="text-white font-bold text-xs tracking-wider uppercase">Notifications</p>
+              <button
+                onClick={markAllAsRead}
+                disabled={unreadCount === 0}
+                className="text-[10px] font-bold uppercase tracking-wider text-[#888] hover:text-[#e8a000] disabled:opacity-50"
+              >
+                Mark all read
+              </button>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto">
+              {loading && notifications.length === 0 ? (
+                <p className="px-3 py-4 text-xs text-[#777]">Loading notifications...</p>
+              ) : notifications.length === 0 ? (
+                <p className="px-3 py-4 text-xs text-[#777]">No notifications yet.</p>
+              ) : (
+                notifications.map((item) => {
+                  const content = (
+                    <div className="flex items-start gap-2">
+                      <span className={`mt-1 w-1.5 h-1.5 rounded-full ${item.read ? "bg-[#333]" : "bg-[#e8a000]"}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-bold text-white truncate">{item.title}</p>
+                        <p className="text-[11px] text-[#aaa] leading-relaxed">{item.message}</p>
+                        <p className="text-[10px] text-[#666] mt-1">{formatNotificationTime(item.createdAt)}</p>
+                      </div>
+                    </div>
+                  );
+
+                  return item.linkUrl ? (
+                    <Link
+                      key={item.id}
+                      href={item.linkUrl}
+                      onClick={() => {
+                        void markOneAsRead(item.id);
+                        setIsOpen(false);
+                      }}
+                      className="block px-3 py-2 border-b border-white/5 hover:bg-white/5 transition-colors"
+                    >
+                      {content}
+                    </Link>
+                  ) : (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        void markOneAsRead(item.id);
+                      }}
+                      className="w-full text-left px-3 py-2 border-b border-white/5 hover:bg-white/5 transition-colors"
+                    >
+                      {content}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export function DashboardShell({
   children,
   user,
@@ -58,6 +264,7 @@ export function DashboardShell({
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isLoggedIn = Boolean(user?.id);
   const role = (user as { role?: string | null }).role ?? null;
 
   const filteredNav = SIDEBAR_NAV.filter(
@@ -245,6 +452,7 @@ export function DashboardShell({
           <div className="hidden lg:block w-8" />
 
           <div className="flex flex-1 items-center justify-end gap-3">
+            <DashboardNotificationBell isLoggedIn={isLoggedIn} />
             <Link
               href="/"
               className="hidden sm:flex items-center gap-1.5 rounded border border-white/10 px-3 py-1.5 text-[10px] font-bold tracking-wider uppercase text-[#666] hover:text-[#e8a000] hover:border-[#e8a000]/30 transition-colors"

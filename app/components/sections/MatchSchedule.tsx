@@ -1,157 +1,286 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { Eye, Bell, Radio } from 'lucide-react';
-import {
-  motion,
-  useMotionValue,
-  useSpring,
-  useTransform,
-  useInView,
-  type MotionValue,
-} from 'framer-motion';
+import { Eye, Bell, Radio, Clock, Trophy, Swords, ChevronRight } from 'lucide-react';
+import { motion, useInView, AnimatePresence } from 'framer-motion';
 
-// ── Data ───────────────────────────────────────────────────
-const MATCHES = [
-  {
-    id: 1,
-    time: '14:00',
-    elapsed: '38:22',
-    teamA: { name: 'Kryptonite',    tag: 'KRP', logo: '⚡' },
-    teamB: { name: 'Phoenix Force', tag: 'PHX', logo: '🔥' },
-    status: 'LIVE',
-    scoreA: 4,
-    scoreB: 3,
-    stage: 'Grand Finals · Map 2',
-  },
-  {
-    id: 2,
-    time: '16:00',
-    elapsed: null,
-    teamA: { name: 'Scarlet Knights', tag: 'SKN', logo: '🛡️' },
-    teamB: { name: 'Viper Squad',     tag: 'VPR', logo: '🐍' },
-    status: 'UPCOMING',
-    scoreA: null,
-    scoreB: null,
-    stage: 'Semi Finals · Bo3',
-  },
-  {
-    id: 3,
-    time: '18:30',
-    elapsed: null,
-    teamA: { name: 'Omega Gaming', tag: 'OMG', logo: '🌀' },
-    teamB: { name: 'Titan Crew',   tag: 'TCW', logo: '⚔️' },
-    status: 'UPCOMING',
-    scoreA: null,
-    scoreB: null,
-    stage: 'Semi Finals · Bo3',
-  },
-];
+/* ────────────────────────────────────────────────────────── */
+/*  Types                                                     */
+/* ────────────────────────────────────────────────────────── */
+type MatchTeam = { name: string; tag: string; logo: string | null };
 
-// ── Live badge ─────────────────────────────────────────────
-const LiveBadge = () => (
-  <span className="inline-flex items-center gap-1.5 bg-red-600/10 border border-red-500/30 text-red-400 text-[9px] font-black tracking-[0.2em] uppercase px-2 py-1">
-    <span className="relative flex h-1.5 w-1.5">
-      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+type ScheduleMatch = {
+  id: string;
+  time: string;
+  elapsed: string | null;
+  teamA: MatchTeam;
+  teamB: MatchTeam;
+  status: 'LIVE' | 'UPCOMING' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED';
+  scoreA: number;
+  scoreB: number;
+  stage: string;
+};
+
+type TournamentListItem = { id: string; _count?: { matches?: number } };
+type TournamentListResponse = { tournaments?: TournamentListItem[] };
+
+type ApiMatch = {
+  id: string;
+  scheduledTime: string;
+  elapsed: string | null;
+  status: 'LIVE' | 'UPCOMING' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED';
+  scoreA: number;
+  scoreB: number;
+  stage: string | null;
+  teamA: { name: string; tag: string | null; logo: string | null };
+  teamB: { name: string; tag: string | null; logo: string | null };
+};
+
+/* ────────────────────────────────────────────────────────── */
+/*  Helpers                                                   */
+/* ────────────────────────────────────────────────────────── */
+const formatMatchTime = (value: string) => {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '--:--';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+};
+
+const buildTeamTag = (name: string, tag?: string | null) => {
+  if (tag?.trim()) return tag.trim().toUpperCase();
+  return (
+    name
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 3)
+      .map((p) => p[0]?.toUpperCase() ?? '')
+      .join('') || 'TM'
+  );
+};
+
+/* ────────────────────────────────────────────────────────── */
+/*  Data hook                                                 */
+/* ────────────────────────────────────────────────────────── */
+const useRealtimeMatches = () => {
+  const [matches, setMatches] = useState<ScheduleMatch[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        const tRes = await fetch('/api/tournaments?limit=20', { cache: 'no-store' });
+        if (!tRes.ok) { if (mounted) { setMatches([]); setLoading(false); } return; }
+
+        const tData: TournamentListResponse = await tRes.json();
+        const list = Array.isArray(tData?.tournaments) ? tData.tournaments : [];
+        const target = list.find((t) => (t._count?.matches ?? 0) > 0) ?? list[0];
+        if (!target?.id) { if (mounted) { setMatches([]); setLoading(false); } return; }
+
+        const mRes = await fetch('/api/tournaments/' + target.id + '/matches', { cache: 'no-store' });
+        if (!mRes.ok) { if (mounted) { setMatches([]); setLoading(false); } return; }
+
+        const mData: ApiMatch[] = await mRes.json();
+        if (!mounted) return;
+
+        const mapped: ScheduleMatch[] = (Array.isArray(mData) ? mData : []).slice(0, 8).map((m) => ({
+          id: m.id,
+          time: formatMatchTime(m.scheduledTime),
+          elapsed: m.elapsed,
+          teamA: { name: m.teamA?.name || 'Team A', tag: buildTeamTag(m.teamA?.name || 'Team A', m.teamA?.tag), logo: m.teamA?.logo || null },
+          teamB: { name: m.teamB?.name || 'Team B', tag: buildTeamTag(m.teamB?.name || 'Team B', m.teamB?.tag), logo: m.teamB?.logo || null },
+          status: m.status,
+          scoreA: typeof m.scoreA === 'number' ? m.scoreA : 0,
+          scoreB: typeof m.scoreB === 'number' ? m.scoreB : 0,
+          stage: m.stage || 'Match',
+        }));
+        setMatches(mapped);
+      } catch {
+        if (mounted) setMatches([]);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    load().catch(() => undefined);
+    const iv = setInterval(() => { load().catch(() => undefined); }, 30_000);
+    return () => { mounted = false; clearInterval(iv); };
+  }, []);
+
+  return { matches, loading };
+};
+
+/* ────────────────────────────────────────────────────────── */
+/*  Status config                                             */
+/* ────────────────────────────────────────────────────────── */
+const statusConfig = {
+  LIVE:      { label: 'Live',      bg: 'bg-red-500/15',     text: 'text-red-400',        border: 'border-red-500/30',     dot: 'bg-red-500' },
+  UPCOMING:  { label: 'Upcoming',  bg: 'bg-amber-500/10',   text: 'text-amber-400/70',   border: 'border-amber-500/20',   dot: 'bg-amber-500' },
+  COMPLETED: { label: 'Completed', bg: 'bg-emerald-500/10', text: 'text-emerald-400/70', border: 'border-emerald-500/20', dot: 'bg-emerald-500' },
+  FORFEITED: { label: 'Forfeited', bg: 'bg-zinc-500/10',    text: 'text-zinc-400/70',    border: 'border-zinc-500/20',    dot: 'bg-zinc-500' },
+  DISPUTED:  { label: 'Disputed',  bg: 'bg-orange-500/10',  text: 'text-orange-400/70',  border: 'border-orange-500/20',  dot: 'bg-orange-500' },
+} as const;
+
+const StatusPill = ({ status }: { status: ScheduleMatch['status'] }) => {
+  const cfg = statusConfig[status];
+  return (
+    <span className={'inline-flex items-center gap-1.5 ' + cfg.bg + ' ' + cfg.text + ' ' + cfg.border + ' border text-[10px] font-semibold tracking-wide uppercase px-2.5 py-0.5 rounded-full'}>
+      <span className="relative flex h-1.5 w-1.5">
+        {status === 'LIVE' && (
+          <span className={'animate-ping absolute inline-flex h-full w-full rounded-full ' + cfg.dot + ' opacity-60'} />
+        )}
+        <span className={'relative inline-flex rounded-full h-1.5 w-1.5 ' + cfg.dot} />
+      </span>
+      {cfg.label}
     </span>
-    Live
-  </span>
+  );
+};
+
+/* ────────────────────────────────────────────────────────── */
+/*  Team avatar                                              */
+/* ────────────────────────────────────────────────────────── */
+const TeamAvatar = ({ team, size = 'md' }: { team: MatchTeam; size?: 'sm' | 'md' }) => {
+  const dims = size === 'sm' ? 'w-8 h-8 text-[10px]' : 'w-10 h-10 text-xs';
+  return (
+    <div className={dims + ' rounded-lg bg-white/6 border border-white/10 flex items-center justify-center font-bold text-white/60 shrink-0 uppercase tracking-wider'}>
+      {team.tag.slice(0, 3)}
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────── */
+/*  Score block                                               */
+/* ────────────────────────────────────────────────────────── */
+const ScoreBlock = ({ match }: { match: ScheduleMatch }) => {
+  const hasScore = match.status === 'LIVE' || match.status === 'COMPLETED';
+  if (!hasScore) {
+    return (
+      <div className="flex flex-col items-center gap-0.5">
+        <span className="text-white/20 text-[10px] font-bold tracking-widest uppercase">VS</span>
+        <span className="text-white/30 text-[10px] font-mono">{match.time}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <div className="flex items-center gap-1.5">
+        <span className={'text-xl font-black font-mono tabular-nums ' + (match.status === 'LIVE' ? 'text-white' : match.scoreA > match.scoreB ? 'text-white' : 'text-white/40')}>
+          {match.scoreA}
+        </span>
+        <span className="text-white/20 text-sm font-light">&ndash;</span>
+        <span className={'text-xl font-black font-mono tabular-nums ' + (match.status === 'LIVE' ? 'text-white' : match.scoreB > match.scoreA ? 'text-white' : 'text-white/40')}>
+          {match.scoreB}
+        </span>
+      </div>
+      {match.status === 'LIVE' && match.elapsed && (
+        <span className="text-red-400/80 text-[10px] font-mono">{match.elapsed}</span>
+      )}
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────── */
+/*  Skeleton loader                                          */
+/* ────────────────────────────────────────────────────────── */
+const SkeletonCard = () => (
+  <div className="animate-pulse rounded-xl bg-white/3 border border-white/6 p-4">
+    <div className="flex items-center justify-between mb-3">
+      <div className="h-4 w-16 bg-white/6 rounded-full" />
+      <div className="h-4 w-12 bg-white/6 rounded-full" />
+    </div>
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center gap-2.5 flex-1">
+        <div className="w-10 h-10 bg-white/6 rounded-lg" />
+        <div className="h-4 w-20 bg-white/6 rounded" />
+      </div>
+      <div className="h-6 w-14 bg-white/6 rounded" />
+      <div className="flex items-center gap-2.5 flex-1 justify-end">
+        <div className="h-4 w-20 bg-white/6 rounded" />
+        <div className="w-10 h-10 bg-white/6 rounded-lg" />
+      </div>
+    </div>
+  </div>
 );
 
-// ── MOBILE card (< lg) ─────────────────────────────────────
-const MobileMatchCard = ({ match, index }: { match: typeof MATCHES[0]; index: number }) => {
+/* ────────────────────────────────────────────────────────── */
+/*  Empty state                                              */
+/* ────────────────────────────────────────────────────────── */
+const EmptyState = () => (
+  <motion.div
+    initial={{ opacity: 0, y: 12 }}
+    animate={{ opacity: 1, y: 0 }}
+    className="col-span-full flex flex-col items-center justify-center py-16 text-center"
+  >
+    <div className="w-16 h-16 rounded-2xl bg-white/4 border border-white/8 flex items-center justify-center mb-4">
+      <Swords size={24} className="text-white/20" />
+    </div>
+    <p className="text-white/50 text-sm font-medium">No matches scheduled yet</p>
+    <p className="text-white/25 text-xs mt-1">Check back soon for upcoming battles</p>
+  </motion.div>
+);
+
+/* ────────────────────────────────────────────────────────── */
+/*  MOBILE match card                                        */
+/* ────────────────────────────────────────────────────────── */
+const MobileMatchCard = ({ match, index }: { match: ScheduleMatch; index: number }) => {
   const isLive = match.status === 'LIVE';
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, delay: index * 0.1, ease: [0.25, 0.46, 0.45, 0.94] }}
-      whileTap={{ scale: 0.985 }}
-      className={`
-        relative overflow-hidden cursor-pointer border
-        ${isLive
-          ? 'bg-[#e8a000]/5 border-[#e8a000]/35'
-          : 'bg-[#0f0f15] border-white/7'
-        }
-      `}
+      transition={{ duration: 0.4, delay: index * 0.06, ease: [0.25, 0.46, 0.45, 0.94] }}
+      className={
+        'relative rounded-xl overflow-hidden border transition-all duration-300 ' +
+        (isLive
+          ? 'bg-red-500/4 border-red-500/20'
+          : 'bg-white/2 border-white/6 active:bg-white/4')
+      }
     >
-      {/* Live pulsing top bar */}
       {isLive && (
         <motion.div
-          className="absolute top-0 left-0 right-0 h-0.5 bg-linear-to-r from-transparent via-[#e8a000] to-transparent"
-          animate={{ opacity: [0.6, 1, 0.6] }}
+          className="absolute top-0 left-0 right-0 h-0.5 bg-linear-to-r from-transparent via-red-500 to-transparent"
+          animate={{ opacity: [0.5, 1, 0.5] }}
           transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
         />
       )}
 
       <div className="p-4">
-        {/* Top row: stage + time/badge + action */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            {isLive ? <LiveBadge /> : (
-              <span className="text-[#e8a000]/70 text-[9px] tracking-[0.15em] uppercase font-bold">{match.time}</span>
-            )}
-            <span className="text-[#444] text-[9px] tracking-[0.12em] uppercase">{match.stage}</span>
+            <StatusPill status={match.status} />
+            <span className="text-white/30 text-[10px] font-medium tracking-wide">{match.stage}</span>
           </div>
           {isLive ? (
-            <motion.button
-              whileTap={{ scale: 0.92 }}
-              className="flex items-center gap-1.5 bg-[#e8a000] text-black text-[9px] font-black tracking-[0.15em] uppercase px-3 py-1.5"
-            >
-              <Eye size={9} />
+            <button className="flex items-center gap-1 bg-red-500 hover:bg-red-400 text-white text-[10px] font-bold tracking-wide uppercase px-3 py-1.5 rounded-lg transition-colors">
+              <Eye size={10} />
               Watch
-            </motion.button>
+            </button>
           ) : (
-            <motion.button
-              whileTap={{ scale: 0.92 }}
-              className="flex items-center gap-1.5 border border-white/10 text-[#555] text-[9px] font-black tracking-[0.15em] uppercase px-3 py-1.5"
-            >
-              <Bell size={9} />
+            <button className="flex items-center gap-1 text-white/30 hover:text-[#e8a000] text-[10px] font-medium tracking-wide transition-colors">
+              <Bell size={10} />
               Remind
-            </motion.button>
+            </button>
           )}
         </div>
 
-        {/* Teams vs score — big and bold */}
-        <div className="flex items-center gap-3">
-          {/* Team A */}
-          <div className="flex-1 flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-white/6 border border-white/10 flex items-center justify-center text-base shrink-0">
-              {match.teamA.logo}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            <TeamAvatar team={match.teamA} size="sm" />
+            <div className="min-w-0">
+              <p className="text-white font-bold text-sm truncate">{match.teamA.name}</p>
+              <p className="text-white/30 text-[10px] font-medium">{match.teamA.tag}</p>
             </div>
-            <span className="text-white font-black text-sm tracking-wide uppercase leading-tight">
-              {match.teamA.name}
-            </span>
           </div>
 
-          {/* Score / VS */}
-          <div className="shrink-0 flex flex-col items-center">
-            {isLive ? (
-              <div className="flex items-center gap-2 bg-[#0d0d12] border border-[#e8a000]/25 px-3 py-1.5">
-                <span className="text-white font-black text-xl font-mono leading-none">{match.scoreA}</span>
-                <span className="text-[#333] text-sm font-mono">:</span>
-                <span className="text-white font-black text-xl font-mono leading-none">{match.scoreB}</span>
-              </div>
-            ) : (
-              <div className="px-3">
-                <span className="text-[#2a2a2a] font-black text-[10px] tracking-[0.3em] uppercase">VS</span>
-              </div>
-            )}
-            {isLive && (
-              <span className="text-[#666] font-mono text-[9px] mt-1">{match.elapsed}</span>
-            )}
-          </div>
+          <ScoreBlock match={match} />
 
-          {/* Team B */}
-          <div className="flex-1 flex items-center gap-2.5 justify-end">
-            <span className="text-white font-black text-sm tracking-wide uppercase leading-tight text-right">
-              {match.teamB.name}
-            </span>
-            <div className="w-8 h-8 bg-white/6 border border-white/10 flex items-center justify-center text-base shrink-0">
-              {match.teamB.logo}
+          <div className="flex items-center gap-2.5 flex-1 min-w-0 justify-end">
+            <div className="min-w-0 text-right">
+              <p className="text-white font-bold text-sm truncate">{match.teamB.name}</p>
+              <p className="text-white/30 text-[10px] font-medium">{match.teamB.tag}</p>
             </div>
+            <TeamAvatar team={match.teamB} size="sm" />
           </div>
         </div>
       </div>
@@ -159,338 +288,353 @@ const MobileMatchCard = ({ match, index }: { match: typeof MATCHES[0]; index: nu
   );
 };
 
-// ── DESKTOP row (≥ lg) ─────────────────────────────────────
-const DesktopMatchRow = ({ match, index }: { match: typeof MATCHES[0]; index: number }) => {
+/* ────────────────────────────────────────────────────────── */
+/*  DESKTOP match card                                       */
+/* ────────────────────────────────────────────────────────── */
+const DesktopMatchCard = ({ match, index }: { match: ScheduleMatch; index: number }) => {
   const isLive = match.status === 'LIVE';
   return (
     <motion.div
-      initial={{ opacity: 0, x: -24 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.5, delay: index * 0.12, ease: [0.25, 0.46, 0.45, 0.94] }}
-      whileHover={{ scale: 1.006 }}
-      className={`
-        group relative flex items-stretch gap-0 border transition-colors duration-300 cursor-pointer
-        ${isLive
-          ? 'bg-[#e8a000]/4 border-[#e8a000]/30 hover:border-[#e8a000]/60'
-          : 'bg-[#0f0f15] border-white/5 hover:border-white/12 hover:bg-white/2'
-        }
-      `}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, delay: index * 0.07, ease: [0.25, 0.46, 0.45, 0.94] }}
+      whileHover={{ y: -2 }}
+      className={
+        'group relative rounded-xl overflow-hidden border cursor-pointer transition-all duration-300 ' +
+        (isLive
+          ? 'bg-red-500/3 border-red-500/20 hover:border-red-500/40 hover:bg-red-500/5'
+          : 'bg-white/2 border-white/6 hover:border-white/12 hover:bg-white/4')
+      }
     >
       {isLive && (
         <motion.div
-          className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#e8a000]"
-          animate={{ opacity: [1, 0.3, 1] }}
-          transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute top-0 left-0 right-0 h-0.5 bg-linear-to-r from-transparent via-red-500 to-transparent"
+          animate={{ opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
         />
       )}
 
-      {/* Time */}
-      <div className="shrink-0 w-24 xl:w-28 flex flex-col justify-center gap-1 px-4 xl:px-5 py-4 border-r border-white/5">
-        {isLive ? (
-          <>
-            <LiveBadge />
-            <span className="text-[#666] font-mono text-[9px] tracking-wide mt-1">{match.elapsed}</span>
-          </>
-        ) : (
-          <>
-            <span className="text-white font-black font-mono text-lg xl:text-xl tracking-tight leading-none">{match.time}</span>
-            <span className="text-[#e8a000]/60 text-[9px] tracking-[0.12em] uppercase mt-0.5">Upcoming</span>
-          </>
-        )}
-      </div>
-
-      {/* Stage + Teams */}
-      <div className="flex-1 flex flex-col justify-center gap-2 px-5 xl:px-6 py-4 min-w-0">
-        <p className="text-[#555] text-[9px] tracking-[0.18em] uppercase leading-none">
-          {match.stage}
-        </p>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-white/6 border border-white/10 flex items-center justify-center text-base shrink-0">
-              {match.teamA.logo}
-            </div>
-            <span className="text-white font-black text-sm xl:text-base tracking-wide uppercase whitespace-nowrap">
-              {match.teamA.name}
-            </span>
+      <div className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <StatusPill status={match.status} />
+            <span className="text-white/25 text-[11px] font-medium">{match.stage}</span>
           </div>
-
-          <div className="shrink-0">
+          <div className="flex items-center gap-2">
             {isLive ? (
-              <div className="flex items-center gap-2 bg-[#0d0d12] border border-[#e8a000]/20 px-3 py-1">
-                <span className="text-white font-black text-lg font-mono leading-none">{match.scoreA}</span>
-                <span className="text-[#444] text-xs">:</span>
-                <span className="text-white font-black text-lg font-mono leading-none">{match.scoreB}</span>
-              </div>
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                className="flex items-center gap-1.5 bg-red-500 hover:bg-red-400 text-white text-[11px] font-bold tracking-wide uppercase px-4 py-1.5 rounded-lg transition-colors duration-200"
+              >
+                <Eye size={12} />
+                Watch Live
+              </motion.button>
             ) : (
-              <span className="text-[#2a2a2a] font-black text-[9px] tracking-[0.25em] uppercase px-1">VS</span>
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                className="flex items-center gap-1.5 text-white/25 hover:text-[#e8a000] text-[11px] font-medium tracking-wide transition-colors duration-200"
+              >
+                <Bell size={12} />
+                Set Reminder
+              </motion.button>
             )}
           </div>
+        </div>
 
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 xl:w-7 xl:h-7 bg-white/6 border border-white/10 flex items-center justify-center text-sm shrink-0">
-              {match.teamB.logo}
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <TeamAvatar team={match.teamA} />
+            <div className="min-w-0">
+              <p className="text-white font-bold text-base truncate group-hover:text-white/90 transition-colors">
+                {match.teamA.name}
+              </p>
+              <p className="text-white/30 text-[11px] font-medium">{match.teamA.tag}</p>
             </div>
-            <span className="text-white font-black text-sm xl:text-base tracking-wide uppercase whitespace-nowrap">
-              {match.teamB.name}
-            </span>
+          </div>
+
+          <ScoreBlock match={match} />
+
+          <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
+            <div className="min-w-0 text-right">
+              <p className="text-white font-bold text-base truncate group-hover:text-white/90 transition-colors">
+                {match.teamB.name}
+              </p>
+              <p className="text-white/30 text-[11px] font-medium">{match.teamB.tag}</p>
+            </div>
+            <TeamAvatar team={match.teamB} />
           </div>
         </div>
       </div>
-
-      {/* Action */}
-      <div className="shrink-0 flex items-center px-4 xl:px-5 border-l border-white/5">
-        {isLive ? (
-          <motion.button
-            whileHover={{ scale: 1.06 }}
-            whileTap={{ scale: 0.96 }}
-            className="flex items-center gap-1.5 bg-[#e8a000] hover:bg-[#ffb800] text-black text-[10px] font-black tracking-[0.15em] uppercase px-4 py-2 transition-colors duration-200"
-          >
-            <Eye size={11} />
-            Watch
-          </motion.button>
-        ) : (
-          <motion.button
-            whileHover={{ scale: 1.06 }}
-            whileTap={{ scale: 0.96 }}
-            className="flex items-center gap-1.5 border border-white/10 hover:border-[#e8a000]/50 text-[#666] hover:text-[#e8a000] text-[10px] font-black tracking-[0.15em] uppercase px-4 py-2 transition-all duration-200"
-          >
-            <Bell size={11} />
-            Remind
-          </motion.button>
-        )}
-      </div>
     </motion.div>
   );
 };
 
-// ── Floating Hero (desktop only) ───────────────────────────
-const FloatingHero = ({
-  src, alt, side, glowColor, glowPos, mouseX, mouseY,
-}: {
-  src: string; alt: string; side: 'left' | 'right';
-  glowColor: string; glowPos: string;
-  mouseX: MotionValue<number>;
-  mouseY: MotionValue<number>;
-}) => {
-  const factor = side === 'left' ? -1 : 1;
-  const rawX = useTransform(mouseX, [-0.5, 0.5], [factor * -12, factor * 12]);
-  const rawY = useTransform(mouseY, [-0.5, 0.5], [-8, 8]);
-  const springX = useSpring(rawX, { stiffness: 60, damping: 18 });
-  const springY = useSpring(rawY, { stiffness: 60, damping: 18 });
+/* ────────────────────────────────────────────────────────── */
+/*  Filter tabs                                               */
+/* ────────────────────────────────────────────────────────── */
+type FilterTab = 'ALL' | 'LIVE' | 'UPCOMING' | 'COMPLETED';
+const FILTER_TABS: { key: FilterTab; label: string; icon: React.ReactNode }[] = [
+  { key: 'ALL', label: 'All', icon: <Swords size={13} /> },
+  { key: 'LIVE', label: 'Live', icon: <Radio size={13} /> },
+  { key: 'UPCOMING', label: 'Upcoming', icon: <Clock size={13} /> },
+  { key: 'COMPLETED', label: 'Results', icon: <Trophy size={13} /> },
+];
 
-  return (
-    <motion.div
-      aria-hidden="true"
-      className={`
-        hidden lg:block
-        absolute bottom-0 ${side === 'left' ? 'left-0' : 'right-0'} z-0 pointer-events-none select-none
-        lg:w-60 lg:h-95
-        xl:w-70 xl:h-110
-      `}
-      style={{ x: springX, y: springY, scaleX: side === 'left' ? -1 : -1 }}
-      initial={{ y: 60, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 1, ease: [0.22, 1, 0.36, 1], delay: side === 'left' ? 0.1 : 0.25 }}
-    >
-      <motion.div
-        className="relative w-full h-full"
-        animate={{ y: [0, -10, 0] }}
-        transition={{ duration: side === 'left' ? 4.2 : 3.8, repeat: Infinity, ease: 'easeInOut', delay: side === 'left' ? 0 : 0.8 }}
-      >
-        <Image
-          src={src} alt={alt} fill
-          className="object-contain object-bottom"
-          style={{
-            maskImage: 'linear-gradient(to top, black 55%, transparent 100%)',
-            filter: `drop-shadow(0 0 30px ${glowColor}) drop-shadow(0 0 60px ${glowColor})`,
-          }}
-        />
-        <motion.div
-          className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-8 rounded-full blur-xl"
-          style={{ background: glowColor }}
-          animate={{ opacity: [0.25, 0.55, 0.25], scaleX: [0.85, 1.1, 0.85] }}
-          transition={{ duration: side === 'left' ? 4.2 : 3.8, repeat: Infinity, ease: 'easeInOut', delay: side === 'left' ? 0 : 0.8 }}
-        />
-      </motion.div>
-      <div className={`absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_${side},${glowPos},transparent_70%)]`} />
-      {[...Array(4)].map((_, i) => (
-        <motion.div
-          key={i}
-          className="absolute w-0.5 h-0.5 rounded-full"
-          style={{ background: glowColor, left: `${20 + i * 18}%`, bottom: `${15 + (i % 2) * 20}%` }}
-          animate={{ y: [0, -(20 + i * 10), 0], opacity: [0, 0.9, 0], scale: [0.5, 1.5, 0.5] }}
-          transition={{ duration: 2.5 + i * 0.4, repeat: Infinity, delay: i * 0.6, ease: 'easeOut' }}
-        />
-      ))}
-    </motion.div>
-  );
-};
-
-// ── Mobile hero banner (< lg) ──────────────────────────────
-// Two heroes face each other in a cinematic strip at the top of the section
-const MobileHeroBanner = () => (
-  <div className="lg:hidden relative h-36 sm:h-44 overflow-hidden bg-[#080810]">
-    {/* Left hero */}
-    <motion.div
-      className="absolute bottom-0 left-0 w-35 sm:w-45 h-full pointer-events-none"
-      style={{ scaleX: -1 }}
-      initial={{ x: -30, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-    >
-      <motion.div
-        className="relative w-full h-full"
-        animate={{ y: [0, -6, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-      >
-        <Image
-          src="/heroes/freya.png" alt="" fill
-          className="object-contain object-bottom"
-          style={{
-            maskImage: 'linear-gradient(to top, black 50%, transparent 100%)',
-            filter: 'drop-shadow(0 0 20px rgba(232,64,64,0.6))',
-          }}
-        />
-        <motion.div
-          className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-5 rounded-full blur-lg bg-red-500"
-          animate={{ opacity: [0.3, 0.6, 0.3], scaleX: [0.8, 1.1, 0.8] }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        />
-      </motion.div>
-    </motion.div>
-
-    {/* Right hero */}
-    <motion.div
-      className="absolute bottom-0 right-0 w-35 sm:w-45 h-full pointer-events-none"
-      style={{ scaleX: -1 }}
-
-      initial={{ x: 30, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
-    >
-      <motion.div
-        className="relative w-full h-full"
-        animate={{ y: [0, -6, 0] }}
-        transition={{ duration: 3.7, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }}
-      >
-        <Image
-          src="/heroes/seiya.png" alt="" fill
-          className="object-contain object-bottom"
-          style={{
-            maskImage: 'linear-gradient(to top, black 50%, transparent 100%)',
-            filter: 'drop-shadow(0 0 20px rgba(74,144,217,0.6))',
-          }}
-        />
-        <motion.div
-          className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-5 rounded-full blur-lg bg-blue-500"
-          animate={{ opacity: [0.3, 0.6, 0.3], scaleX: [0.8, 1.1, 0.8] }}
-          transition={{ duration: 3.7, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }}
-        />
-      </motion.div>
-    </motion.div>
-
-    {/* Centre VS clash glow */}
-    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(232,160,0,0.08),transparent_65%)]" />
-    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-px h-full bg-linear-to-t from-[#e8a000]/20 to-transparent" />
-
-    {/* Bottom fade into section */}
-    <div className="absolute bottom-0 left-0 right-0 h-12 bg-linear-to-t from-[#0a0a0f] to-transparent" />
-  </div>
-);
-
-// ── Main Export ────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────── */
+/*  Main Export                                              */
+/* ────────────────────────────────────────────────────────── */
 export const MatchSchedule = () => {
+  const { matches, loading } = useRealtimeMatches();
   const sectionRef = useRef<HTMLElement>(null);
-  const inView = useInView(sectionRef, { once: true, margin: '-60px' });
+  const inView = useInView(sectionRef, { once: true, margin: '-40px' });
+  const [activeTab, setActiveTab] = useState<FilterTab>('ALL');
 
-  const mouseX = useMotionValue(0);
-  const mouseY = useMotionValue(0);
+  const liveCount = matches.filter((m) => m.status === 'LIVE').length;
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    mouseX.set((e.clientX - rect.left) / rect.width - 0.5);
-    mouseY.set((e.clientY - rect.top) / rect.height - 0.5);
-  };
-  const handleMouseLeave = () => { mouseX.set(0); mouseY.set(0); };
+  const filtered = activeTab === 'ALL'
+    ? matches
+    : matches.filter((m) => m.status === activeTab);
 
   return (
     <section
       id="schedule"
       ref={sectionRef}
       className="relative bg-[#0a0a0f] overflow-hidden"
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
     >
-      {/* ── Mobile hero banner — only on < lg ── */}
-      <MobileHeroBanner />
+      {/* ── Hero background images ── */}
+      <div className="absolute inset-0 hidden lg:flex pointer-events-none select-none" aria-hidden="true">
+        {/* Left hero — Freya */}
+        <div className="relative w-1/2 h-full overflow-hidden">
+          <Image
+            src="/heroes/freya.png"
+            alt=""
+            fill
+            className="object-cover object-top opacity-[0.2]"
+            style={{ maskImage: 'linear-gradient(to right, black 40%, transparent 100%)' }}
+            priority
+          />
+          <div className="absolute inset-0 bg-linear-to-r from-transparent to-[#0a0a0f]" />
+          <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0f] via-transparent to-[#0a0a0f]/80" />
+        </div>
+        {/* Right hero — Seiya */}
+        <div className="relative w-1/2 h-full overflow-hidden">
+          <Image
+            src="/heroes/seiya.png"
+            alt=""
+            fill
+            className="object-cover object-top opacity-[0.2]"
+            style={{ maskImage: 'linear-gradient(to left, black 40%, transparent 100%)' }}
+            priority
+          />
+          <div className="absolute inset-0 bg-linear-to-l from-transparent to-[#0a0a0f]" />
+          <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0f] via-transparent to-[#0a0a0f]/80" />
+        </div>
+      </div>
 
-      {/* ── Desktop floating heroes — only on lg+ ── */}
-      <FloatingHero
-        src="/heroes/freya.png" alt="" side="left"
-        glowColor="rgba(232,64,64,0.55)" glowPos="rgba(232,64,64,0.12)"
-        mouseX={mouseX} mouseY={mouseY}
+      {/* Mobile hero bg — subtle single blend */}
+      <div className="absolute inset-0 lg:hidden pointer-events-none select-none" aria-hidden="true">
+        <div className="absolute inset-0 flex">
+          <div className="relative w-1/2 h-full overflow-hidden">
+            <Image src="/heroes/freya.png" alt="" fill className="object-cover object-top opacity-[0.04]" />
+            <div className="absolute inset-0 bg-linear-to-r from-transparent to-[#0a0a0f]" />
+          </div>
+          <div className="relative w-1/2 h-full overflow-hidden">
+            <Image src="/heroes/seiya.png" alt="" fill className="object-cover object-top opacity-[0.04]" />
+            <div className="absolute inset-0 bg-linear-to-l from-transparent to-[#0a0a0f]" />
+          </div>
+        </div>
+        <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0f] via-transparent to-[#0a0a0f]" />
+      </div>
+
+      {/* ── Animated background effects ── */}
+      {/* Grid pattern overlay */}
+      <div
+        className="absolute inset-0 opacity-[0.03] pointer-events-none"
+        style={{
+          backgroundImage: 'linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)',
+          backgroundSize: '60px 60px',
+        }}
       />
-      <FloatingHero
-        src="/heroes/seiya.png" alt="" side="right"
-        glowColor="rgba(74,144,217,0.55)" glowPos="rgba(74,144,217,0.12)"
-        mouseX={mouseX} mouseY={mouseY}
+
+      {/* Pulsing gradient orbs */}
+      <motion.div
+        className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-[140px] pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(232,64,64,0.08), transparent 70%)' }}
+        animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
+        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-[140px] pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(74,144,217,0.08), transparent 70%)' }}
+        animate={{ scale: [1.2, 1, 1.2], opacity: [0.5, 0.8, 0.5] }}
+        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut', delay: 4 }}
+      />
+      <motion.div
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-150 h-100 rounded-full blur-[120px] pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(232,160,0,0.06), transparent 70%)' }}
+        animate={{ scale: [1, 1.15, 1], opacity: [0.4, 0.7, 0.4] }}
+        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
       />
 
-      {/* Bottom shimmer line */}
-      <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-[#e84040]/30 via-[#e8a000]/30 to-[#4a90d9]/30 pointer-events-none" />
+      {/* Floating particles */}
+      {[...Array(12)].map((_, i) => (
+        <motion.div
+          key={'ms-p-' + i}
+          className="absolute w-px h-px rounded-full bg-white/20 pointer-events-none"
+          style={{
+            left: (8 + ((i * 37) % 84)) + '%',
+            top: (5 + ((i * 23) % 90)) + '%',
+          }}
+          animate={{
+            y: [0, -(30 + (i % 4) * 15), 0],
+            opacity: [0, 0.6, 0],
+            scale: [0, 1.5 + (i % 3) * 0.5, 0],
+          }}
+          transition={{
+            duration: 4 + (i % 3) * 2,
+            repeat: Infinity,
+            delay: i * 0.7,
+            ease: 'easeInOut',
+          }}
+        />
+      ))}
 
-      {/* ── Content ── */}
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-12">
+      {/* Animated horizontal accent line */}
+      <div className="absolute top-0 left-0 right-0 h-px overflow-hidden">
+        <motion.div
+          className="h-full w-1/3 bg-linear-to-r from-transparent via-[#e8a000]/40 to-transparent"
+          animate={{ x: ['-100%', '400%'] }}
+          transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+        />
+      </div>
+
+      {/* Subtle top border glow */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-white/6 to-transparent" />
+
+      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-16">
 
         {/* Header */}
         <motion.div
-          className="flex items-center justify-between mb-4 lg:mb-6"
-          initial={{ opacity: 0, y: -10 }}
+          className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6 lg:mb-8"
+          initial={{ opacity: 0, y: -12 }}
           animate={inView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.5, ease: 'easeOut' }}
         >
-          <div className="flex items-center gap-3 flex-wrap">
-            <h2 className="text-white font-black text-xs sm:text-sm tracking-[0.2em] uppercase border-l-2 border-[#e8a000] pl-3">
-              Match Schedule
-            </h2>
-            <span className="flex items-center gap-1.5 text-[#e8a000] text-[9px] tracking-[0.15em] uppercase">
-              <Radio size={10} className="animate-pulse" />
-              1 Live now
-            </span>
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <h2 className="text-white font-extrabold text-lg sm:text-xl tracking-tight">
+                Match Schedule
+              </h2>
+              {liveCount > 0 && (
+                <span className="flex items-center gap-1.5 bg-red-500/15 text-red-400 text-[10px] font-semibold tracking-wide uppercase px-2.5 py-0.5 rounded-full border border-red-500/25">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-60" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+                  </span>
+                  {liveCount} Live
+                </span>
+              )}
+            </div>
+            <p className="text-white/30 text-sm">
+              Follow the action across all tournaments
+            </p>
           </div>
-          <a href="#" className="text-[#444] hover:text-[#e8a000] text-[10px] tracking-[0.15em] uppercase transition-colors">
-            Full Schedule →
+
+          <a
+            href="/tournaments"
+            className="flex items-center gap-1 text-white/30 hover:text-[#e8a000] text-xs font-medium tracking-wide transition-colors duration-200 shrink-0"
+          >
+            View all schedules
+            <ChevronRight size={14} />
           </a>
         </motion.div>
 
-        {/* ── MOBILE: cards stack ── */}
-        <div className="flex flex-col gap-2 lg:hidden">
-          {MATCHES.map((match, i) => (
-            <MobileMatchCard key={match.id} match={match} index={i} />
-          ))}
+        {/* Filter tabs */}
+        <motion.div
+          className="flex items-center gap-1.5 mb-5 lg:mb-6 overflow-x-auto pb-1 -mx-1 px-1"
+          initial={{ opacity: 0 }}
+          animate={inView ? { opacity: 1 } : {}}
+          transition={{ duration: 0.4, delay: 0.1 }}
+        >
+          {FILTER_TABS.map((tab) => {
+            const count = tab.key === 'ALL'
+              ? matches.length
+              : matches.filter((m) => m.status === tab.key).length;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={
+                  'flex items-center gap-1.5 text-[11px] font-semibold tracking-wide px-3.5 py-2 rounded-lg transition-all duration-200 whitespace-nowrap shrink-0 ' +
+                  (isActive
+                    ? 'bg-white/8 text-white border border-white/12'
+                    : 'text-white/30 hover:text-white/50 hover:bg-white/3 border border-transparent')
+                }
+              >
+                {tab.icon}
+                {tab.label}
+                {count > 0 && (
+                  <span className={'text-[10px] font-bold ml-0.5 ' + (isActive ? 'text-[#e8a000]' : 'text-white/20')}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </motion.div>
+
+        {/* MOBILE: card list (< lg) */}
+        <div className="lg:hidden">
+          <AnimatePresence mode="wait">
+            {loading ? (
+              <motion.div key="skeleton" className="flex flex-col gap-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {[0, 1, 2].map((i) => <SkeletonCard key={i} />)}
+              </motion.div>
+            ) : filtered.length === 0 ? (
+              <EmptyState key="empty" />
+            ) : (
+              <motion.div key="cards" className="flex flex-col gap-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {filtered.map((match, i) => (
+                  <MobileMatchCard key={match.id} match={match} index={i} />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
-        {/* ── DESKTOP: table rows with padding for heroes ── */}
+        {/* DESKTOP: 2-col grid */}
         <div className="hidden lg:block">
-          <motion.div
-            className="flex items-center mb-2"
-            initial={{ opacity: 0 }}
-            animate={inView ? { opacity: 1 } : {}}
-            transition={{ duration: 0.4, delay: 0.15 }}
-          >
-            <div className="w-24 xl:w-28 shrink-0 text-[#333] text-[9px] uppercase tracking-widest px-4 xl:px-5">Time</div>
-            <div className="flex-1 text-[#333] text-[9px] uppercase tracking-widest px-5 xl:px-6">Stage · Teams</div>
-            <div className="shrink-0 text-right text-[#333] text-[9px] uppercase tracking-widest px-4 xl:px-5">Action</div>
-          </motion.div>
-
-          <div className="flex flex-col gap-1.5 lg:px-50 xl:px-60">
-            {MATCHES.map((match, i) => (
-              <DesktopMatchRow key={match.id} match={match} index={i} />
-            ))}
-          </div>
+          <AnimatePresence mode="wait">
+            {loading ? (
+              <motion.div key="skeleton" className="grid grid-cols-2 gap-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {[0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)}
+              </motion.div>
+            ) : filtered.length === 0 ? (
+              <EmptyState key="empty" />
+            ) : (
+              <motion.div key="cards" className="grid grid-cols-2 gap-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {filtered.map((match, i) => (
+                  <DesktopMatchCard key={match.id} match={match} index={i} />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
       </div>
+
+      {/* Bottom animated accent line */}
+      <div className="absolute bottom-0 left-0 right-0 h-px overflow-hidden">
+        <motion.div
+          className="h-full w-1/4 bg-linear-to-r from-transparent via-red-500/30 to-transparent"
+          animate={{ x: ['400%', '-100%'] }}
+          transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
+        />
+      </div>
+      <div className="absolute bottom-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-white/4 to-transparent" />
     </section>
   );
 };

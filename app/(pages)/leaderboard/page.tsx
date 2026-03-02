@@ -174,6 +174,10 @@ export default function LeaderboardPage() {
     );
   }
 
+  const uniqueStandings = Array.from(
+    new Map(standings.map((entry) => [entry.team.id, entry])).values()
+  );
+
   return (
     <main className="min-h-screen bg-[#08080d]">
 
@@ -218,7 +222,7 @@ export default function LeaderboardPage() {
 
           {/* Top 3 quick cards */}
           <div className="grid grid-cols-3 gap-3 mt-8 max-w-lg">
-            {standings.slice(0, 3).map((s, i) => {
+            {uniqueStandings.slice(0, 3).map((s, i) => {
               const teamColor = s.team.color || '#e8a000';
               return (
                 <div key={s.id} className="bg-[#0f0f18] border border-white/[0.06] p-3 relative overflow-hidden">
@@ -264,10 +268,10 @@ export default function LeaderboardPage() {
                 ))}
               </div>
               <div className="flex flex-col gap-1">
-                {standings.length === 0 ? (
+                {uniqueStandings.length === 0 ? (
                   <p className="text-[#333] text-center py-8">No standings available</p>
                 ) : (
-                  standings.map((s) => {
+                  uniqueStandings.map((s) => {
                     const teamColor = s.team.color || '#e8a000';
                     const prize = s.team.totalPrizeMoney > 0 ? `₵${(s.team.totalPrizeMoney / 100).toLocaleString()}` : '—';
                     return (

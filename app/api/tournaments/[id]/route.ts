@@ -8,6 +8,7 @@ import {
   isValidHexColor,
 } from "@/lib/api-utils";
 import { TournamentStatus } from "@/app/generated/prisma/enums";
+import { TournamentFormat } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
 
@@ -115,6 +116,12 @@ export async function PUT(
         return apiError("Invalid status");
       }
       updateData.status = body.status;
+    }
+    if (body.format !== undefined) {
+      if (!Object.values(TournamentFormat).includes(body.format)) {
+        return apiError("Invalid format");
+      }
+      updateData.format = body.format;
     }
     if (body.color !== undefined) {
       if (body.color && !isValidHexColor(body.color)) {

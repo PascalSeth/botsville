@@ -11,6 +11,26 @@ import { TeamStatus } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
 
+const TEAM_CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+function createTeamCode(length = 6): string {
+  let code = "";
+  for (let index = 0; index < length; index += 1) {
+    const charIndex = Math.floor(Math.random() * TEAM_CODE_CHARS.length);
+    code += TEAM_CODE_CHARS[charIndex];
+  }
+  return code;
+}
+
+async function generateUniqueTeamCode(): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const teamCode = createTeamCode(6);
+    const existing = await prisma.team.findUnique({ where: { teamCode } });
+    if (!existing) return teamCode;
+  }
+  throw new Error("Failed to generate unique team code");
+}
+
 // GET - List all teams
 export async function GET(request: NextRequest) {
   try {
@@ -123,7 +143,7 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireActiveUser();
     const body = await request.json();
-    const { name, tag, region, color, logo, banner } = body;
+    const { name, tag, region, color, logo, banner, isRecruiting } = body;
 
     // Validation
     if (!name || !tag || !region) {
@@ -144,6 +164,10 @@ export async function POST(request: NextRequest) {
 
     if (color && !isValidHexColor(color)) {
       return apiError("Invalid color format (must be hex, e.g., #FF0000)");
+    }
+
+    if (isRecruiting !== undefined && typeof isRecruiting !== "boolean") {
+      return apiError("isRecruiting must be a boolean");
     }
 
     // Check if user already has a team
@@ -197,17 +221,21 @@ export async function POST(request: NextRequest) {
       return apiError("Team tag already taken");
     }
 
+    const teamCode = await generateUniqueTeamCode();
+
     // Create team
     const team = await prisma.team.create({
       data: {
         name,
         tag: tagUpper,
+        teamCode,
         region,
         color: color || null,
         logo: logo || null,
         banner: banner || null,
         captainId: user.id,
         status: TeamStatus.ACTIVE,
+        isRecruiting: isRecruiting === undefined ? true : Boolean(isRecruiting),
       },
       include: {
         captain: {

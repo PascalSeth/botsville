@@ -15,10 +15,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Storage bucket names
 export const STORAGE_BUCKETS = {
+  IMAGES: 'images',
   TEAMS: 'teams',
   PLAYERS: 'players',
   FAN_ART: 'fan-art',
   SCRIM_VAULT: 'scrim-vault',
+  VIDEOS: 'videos',
 } as const;
 
 // Helper function to upload an image to Supabase storage
