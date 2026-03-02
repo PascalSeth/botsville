@@ -35,8 +35,8 @@ function Home() {
       {/* Self-switching: MobileMatchCard lg:hidden / DesktopMatchRow hidden lg:block */}
      {/* <MatchSchedule /> */}
 
-      <CommunityHighlights /> 
-      {/* <NewsSection /> */}
+      {/* <CommunityHighlights />  */}
+      <NewsSection />
 
       {/* Mobile combined section — lg:hidden */}
       <MobileScrimAndAwards />
