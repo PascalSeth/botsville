@@ -850,6 +850,7 @@ export const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [animateReady, setAnimateReady] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isLoggedIn = status === 'authenticated' && !!session?.user?.id;
@@ -865,6 +866,15 @@ export const Navbar = () => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [menuOpen]);
+
+  // Track viewport to disable heavy animations on mobile
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   // Defer heavier animated layers until after mount to avoid initial flicker
   useEffect(() => {
@@ -929,8 +939,8 @@ export const Navbar = () => {
 
         {/* Main bar */}
         <nav className="relative h-15 flex items-center justify-between px-4 sm:px-6 gap-4 border-b border-white/4 overflow-x-clip overflow-y-visible">
-          {/* Background animations (deferred until after mount to prevent initial flicker) */}
-          {animateReady && (
+          {/* Background animations (deferred until after mount; skip on mobile to prevent flicker) */}
+          {animateReady && !isMobile && (
             <>
               <GridBackground />
               <Particles />
