@@ -586,7 +586,7 @@ const MobileHero = ({
   <section className="md:hidden flex flex-col w-full overflow-hidden" style={{ background: '#050812' }}>
 
     {/* Stage */}
-    <div className="relative" style={{ height: '75vw', minHeight: 260, maxHeight: 380 }}>
+    <div className="relative" style={{ height: '55vw', minHeight: 200, maxHeight: 300 }}>
       <div className="absolute inset-0 z-0">
         <video autoPlay loop muted playsInline preload="metadata" className="w-full h-full object-cover">
           <source src="/gif/heros2.mp4" type="video/mp4" />
@@ -619,7 +619,7 @@ const MobileHero = ({
       {/* Character centered on mobile */}
       <motion.div
         className="absolute bottom-0 left-0 z-[30] pointer-events-auto select-none cursor-pointer"
-        style={{ width: '72%', height: '105%' }}
+        style={{ width: '72%', height: '90%' }}
         role="button"
         tabIndex={0}
         aria-label="Choose hero cutout"

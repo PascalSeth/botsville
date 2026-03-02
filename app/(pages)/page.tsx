@@ -36,7 +36,7 @@ function Home() {
      {/* <MatchSchedule /> */}
 
       {/* <CommunityHighlights />  */}
-      <NewsSection />
+      {/* <NewsSection /> */}
 
       {/* Mobile combined section — lg:hidden */}
       <MobileScrimAndAwards />
