@@ -99,22 +99,31 @@ const Noise = () => (
 );
 
 // Mobile-only background video: low-contrast, blurred, and non-interactive.
-const MobileBgVideo = () => (
-  <div className="absolute inset-0 lg:hidden pointer-events-none overflow-hidden" aria-hidden="true">
-    <video
-      autoPlay
-      loop
-      muted
-      playsInline
-      preload="metadata"
-      className="w-full h-full object-cover opacity-30 filter blur-sm scale-105"
-      style={{ transformOrigin: 'center' }}
-    >
-      <source src="/gif/heros2.mp4" type="video/mp4" />
-    </video>
-    <div className="absolute inset-0 bg-black/30" />
-  </div>
-);
+const MobileBgVideo = () => {
+  const [ok, setOk] = useState(true);
+
+  return (
+    <div className="absolute inset-0 lg:hidden pointer-events-none overflow-hidden" aria-hidden="true">
+      {ok ? (
+        <video
+          src="/gif/heros2.mp4"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          crossOrigin="anonymous"
+          onError={() => setOk(false)}
+          className="w-full h-full object-cover opacity-30 filter blur-sm scale-105"
+          style={{ transformOrigin: 'center' }}
+        />
+      ) : (
+        <div className="absolute inset-0 bg-cover bg-center opacity-30 filter blur-sm scale-105" style={{ backgroundImage: "url('/gif/heros2.jpg')" }} />
+      )}
+      <div className="absolute inset-0 bg-black/30" />
+    </div>
+  );
+};
 
 // ── Glowing orbs in bg ─────────────────────────────────────
 const GlowOrbs = () => (
@@ -482,62 +491,26 @@ const LeftPanel = ({ mode }: { mode: Mode }) => {
   const cfg = ROLE_CONFIG[activeRole];
 
   return (
-    <div className="hidden lg:flex relative flex-col justify-between overflow-hidden" style={{ background: '#050508' }}>
-      {/* Background video */}
-      <div className="absolute inset-0">
-        <video
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="metadata"
-          className="w-full h-full object-cover"
-          style={{ filter: 'brightness(0.15) saturate(0.5)' }}
-        >
-          <source src="/gif/heros2.mp4" type="video/mp4" />
-        </video>
-      </div>
+      <div className="hidden lg:flex relative flex-col justify-between overflow-hidden" style={{ background: '#050508' }}>
+        {/* Dynamic role glow */}
+        <div
+          className="absolute inset-0 transition-all duration-1000"
+          style={{ background: `radial-gradient(ellipse 70% 70% at 30% 70%, ${cfg.color}18, transparent 70%)` }}
+        />
 
-      {/* Dynamic role glow */}
-      <div
-        className="absolute inset-0 transition-all duration-1000"
-        style={{ background: `radial-gradient(ellipse 70% 70% at 30% 70%, ${cfg.color}18, transparent 70%)` }}
-      />
+        <GlowOrbs />
+        <Particles />
+        <Scanlines />
+        <Noise />
 
-      <GlowOrbs />
-      <Particles />
-      <Scanlines />
-      <Noise />
+        {/* Diagonal slash decorative */}
+        <div
+          className="absolute right-0 top-0 bottom-0 w-px opacity-20"
+          style={{ background: 'linear-gradient(180deg, transparent, #e8a000 30%, #a855f7 70%, transparent)' }}
+        />
 
-      {/* Diagonal slash decorative */}
-      <div
-        className="absolute right-0 top-0 bottom-0 w-px opacity-20"
-        style={{ background: 'linear-gradient(180deg, transparent, #e8a000 30%, #a855f7 70%, transparent)' }}
-      />
-
-      {/* Content */}
-      <div className="relative z-10 flex flex-col justify-between h-full p-12">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-4 group">
-          <div className="relative">
-            <div
-              className="absolute inset-0 rounded-full blur-xl opacity-60 transition-opacity duration-300 group-hover:opacity-100"
-              style={{ background: '#e8a000' }}
-            />
-            <Image src="/mlbb_logobg.png" alt="Botsville" width={48} height={48} className="relative object-contain" />
-          </div>
-          <div className="flex flex-col leading-none">
-            <span
-              className="font-black text-xl tracking-[0.15em] uppercase text-white"
-              style={{ fontFamily: '"Orbitron", "Rajdhani", sans-serif' }}
-            >Botsville</span>
-            <span
-              className="font-semibold text-sm tracking-[0.3em] uppercase"
-              style={{ color: '#e8a000', fontFamily: '"Orbitron", sans-serif' }}
-            >Ghana</span>
-          </div>
-        </Link>
-
+        {/* Content (logo removed for a cleaner login screen) */}
+        <div className="relative z-10 flex flex-col justify-between h-full p-12">
         {/* Headline */}
         <div>
           <div className="flex items-center gap-3 mb-4">
@@ -685,19 +658,10 @@ export default function AuthPage() {
                   <Noise />
 
           {/* Mobile header */}
-          <div
-            className="lg:hidden flex items-center justify-between px-5 py-4 relative z-10"
-            style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
-          >
-            <Link href="/" className="flex items-center gap-2.5">
-              <Image src="/mlbb_logobg.png" alt="BOtsvilel" width={34} height={34} className="object-contain" />
-              <div className="flex flex-col leading-none">
-                <span className="text-white font-black text-sm tracking-widest uppercase">Ghana</span>
-                <span className="text-[10px] tracking-widest uppercase" style={{ color: '#e8a000' }}>Nagends</span>
-              </div>
-            </Link>
-            <Link href="/" className="text-[10px] tracking-widest uppercase transition-colors hover:text-white" style={{ color: '#333' }}>← Home</Link>
-          </div>
+            <div className="lg:hidden flex items-center justify-end px-5 py-4 relative z-10"
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <Link href="/" className="text-[10px] tracking-widest uppercase transition-colors hover:text-white" style={{ color: '#333' }}>← Home</Link>
+            </div>
 
           {/* Form area */}
           <div className="relative z-10 flex-1 flex flex-col justify-center px-8 sm:px-12 lg:px-16 xl:px-20 py-10">
