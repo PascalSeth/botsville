@@ -98,6 +98,24 @@ const Noise = () => (
   />
 );
 
+// Mobile-only background video: low-contrast, blurred, and non-interactive.
+const MobileBgVideo = () => (
+  <div className="absolute inset-0 lg:hidden pointer-events-none overflow-hidden" aria-hidden="true">
+    <video
+      autoPlay
+      loop
+      muted
+      playsInline
+      preload="metadata"
+      className="w-full h-full object-cover opacity-30 filter blur-sm scale-105"
+      style={{ transformOrigin: 'center' }}
+    >
+      <source src="/gif/heros2.mp4" type="video/mp4" />
+    </video>
+    <div className="absolute inset-0 bg-black/30" />
+  </div>
+);
+
 // ── Glowing orbs in bg ─────────────────────────────────────
 const GlowOrbs = () => (
   <>
@@ -662,8 +680,9 @@ export default function AuthPage() {
 
         {/* Right Panel */}
         <div className="relative flex flex-col min-h-screen lg:min-h-0">
-          <Particles />
-          <Noise />
+                  <MobileBgVideo />
+                  <Particles />
+                  <Noise />
 
           {/* Mobile header */}
           <div
