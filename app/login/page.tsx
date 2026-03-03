@@ -352,6 +352,23 @@ const LoginForm = () => {
   );
 };
 
+// Small component that redirects authenticated users away from the login page.
+// It uses `useSearchParams` and therefore must be rendered inside a Suspense boundary.
+const AuthRedirect = () => {
+  const { status } = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  React.useEffect(() => {
+    if (status === 'authenticated') {
+      const cb = searchParams?.get('callbackUrl') || '/';
+      router.push(cb);
+    }
+  }, [status, router, searchParams]);
+
+  return null;
+};
+
 // ── Register Form ──────────────────────────────────────────
 const ROLE_MAP: Record<PlayerRole, string> = {
   EXP: 'EXP',
@@ -606,15 +623,21 @@ export default function AuthPage() {
   const [mode, setMode] = useState<Mode>('login');
   const { status } = useSession();
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   React.useEffect(() => {
     // If user is already authenticated, redirect away from the login page.
     if (status === 'authenticated') {
-      const cb = searchParams?.get('callbackUrl') || '/';
-      router.push(cb);
+      // Read callbackUrl from the raw browser URL to avoid using useSearchParams
+      // at the top-level (which can cause prerendering issues).
+      try {
+        const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+        const cb = params.get('callbackUrl') || '/';
+        router.push(cb);
+      } catch (e) {
+        router.push('/');
+      }
     }
-  }, [status, router, searchParams]);
+  }, [status, router]);
 
   return (
     <>
@@ -692,6 +715,7 @@ export default function AuthPage() {
               <div key={mode}>
                 {mode === 'login' ? (
                   <Suspense fallback={<div className="h-64 animate-pulse rounded" style={{ background: 'rgba(255,255,255,0.02)' }} />}>
+                    <AuthRedirect />
                     <LoginForm />
                   </Suspense>
                 ) : (
