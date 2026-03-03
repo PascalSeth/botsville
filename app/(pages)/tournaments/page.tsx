@@ -1,3 +1,5 @@
+'use client';
+
 // Floating animation for hero image
 const floatingHeroStyle: React.CSSProperties = {
   animation: 'hero-float 3.5s ease-in-out infinite',
