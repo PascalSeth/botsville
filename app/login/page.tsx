@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
 import { Eye, EyeOff, ChevronRight, AlertCircle } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────
@@ -604,6 +604,17 @@ const ModeTab = ({ label, active, onClick }: { label: string; active: boolean; o
 // ── Main ───────────────────────────────────────────────────
 export default function AuthPage() {
   const [mode, setMode] = useState<Mode>('login');
+  const { status } = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  React.useEffect(() => {
+    // If user is already authenticated, redirect away from the login page.
+    if (status === 'authenticated') {
+      const cb = searchParams?.get('callbackUrl') || '/';
+      router.push(cb);
+    }
+  }, [status, router, searchParams]);
 
   return (
     <>

@@ -7,11 +7,9 @@ export default async function proxy(request: NextRequest) {
   const isAuthenticated = Boolean(token);
   const hasAdminRole = Boolean(token?.role);
 
-  if (pathname.startsWith("/register-team") && !isAuthenticated) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("callbackUrl", `${request.nextUrl.pathname}${request.nextUrl.search}`);
-    return NextResponse.redirect(loginUrl);
-  }
+  // Client handles registration auth modal; avoid middleware redirect here to prevent
+  // navigation interception when token/cookies are not accessible in the middleware.
+  // Keep dashboard protection server-side.
 
   if (pathname.startsWith("/dashboard")) {
     if (!isAuthenticated) {

@@ -743,9 +743,13 @@ export const Hero = () => {
   };
 
   const handleRegisterClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (isAuthenticated) return;
-    event.preventDefault();
-    setIsLoginModalOpen(true);
+    // Only block navigation and show login modal when we know the user is unauthenticated.
+    // If session is still loading, allow the navigation to proceed.
+    if (status === 'authenticated') return;
+    if (status === 'unauthenticated') {
+      event.preventDefault();
+      setIsLoginModalOpen(true);
+    }
   };
 
   return (
