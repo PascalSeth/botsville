@@ -114,13 +114,13 @@ const MobileBgVideo = () => {
           preload="auto"
           crossOrigin="anonymous"
           onError={() => setOk(false)}
-          className="w-full h-full object-cover opacity-30 filter blur-sm scale-105"
+          className="w-full h-full object-cover opacity-60 blur-none scale-102"
           style={{ transformOrigin: 'center' }}
         />
       ) : (
-        <div className="absolute inset-0 bg-cover bg-center opacity-30 filter blur-sm scale-105" style={{ backgroundImage: "url('/gif/heros2.jpg')" }} />
+        <div className="absolute inset-0 bg-cover bg-center opacity-60 blur-none scale-102" style={{ backgroundImage: "url('/gif/heros2.jpg')" }} />
       )}
-      <div className="absolute inset-0 bg-black/30" />
+      <div className="absolute inset-0 bg-black/20" />
     </div>
   );
 };
