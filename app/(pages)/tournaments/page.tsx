@@ -1,3 +1,20 @@
+// Floating animation for hero image
+const floatingHeroStyle: React.CSSProperties = {
+  animation: 'hero-float 3.5s ease-in-out infinite',
+};
+
+// Add keyframes for floating effect
+if (typeof window !== 'undefined') {
+  const style = document.createElement('style');
+  style.innerHTML = `
+    @keyframes hero-float {
+      0% { transform: translateY(0px); }
+      50% { transform: translateY(-18px); }
+      100% { transform: translateY(0px); }
+    }
+  `;
+  document.head.appendChild(style);
+}
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -642,7 +659,10 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
             alt=""
             fill
             className="object-cover object-top"
-            style={{ filter: 'drop-shadow(-50px 0 90px rgba(232,160,0,0.10))' }}
+            style={{ 
+              filter: 'drop-shadow(-50px 0 90px rgba(232,160,0,0.10))',
+              ...floatingHeroStyle
+            }}
             priority
           />
           <div

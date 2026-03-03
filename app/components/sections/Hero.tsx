@@ -667,7 +667,7 @@ const MobileHero = ({
 // EXPORT
 // ─────────────────────────────────────────────────────────────
 export const Hero = () => {
-  const [heroImage, setHeroImage] = useState('/stunchou.png');
+  const [heroImage, setHeroImage] = useState<string | null>(null);
   const [heroCatalog, setHeroCatalog] = useState<HeroCatalogItem[]>([]);
   const [selectedHeroKey, setSelectedHeroKey] = useState<string | null>(null);
   const [isHeroModalOpen, setIsHeroModalOpen] = useState(false);
@@ -682,6 +682,7 @@ export const Hero = () => {
     players: '120+',
     prize: '₵12.8K',
   });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadHeroData = async () => {
@@ -691,24 +692,24 @@ export const Hero = () => {
           fetch('/api/users/profile'),
         ]);
 
-        if (!catalogResponse.ok) {
-          setHeroImage('/stunchou.png');
-          return;
-        }
+        let fallbackImage = null;
+        let fallbackKey = null;
 
-        const catalogData = await catalogResponse.json();
-        const heroes: HeroCatalogItem[] = Array.isArray(catalogData?.heroes) ? catalogData.heroes : [];
-        setHeroCatalog(heroes);
-
-        if (!heroes.length) {
-          setHeroImage('/stunchou.png');
-          return;
+        if (catalogResponse.ok) {
+          const catalogData = await catalogResponse.json();
+          const heroes: HeroCatalogItem[] = Array.isArray(catalogData?.heroes) ? catalogData.heroes : [];
+          setHeroCatalog(heroes);
+          if (heroes.length) {
+            fallbackImage = heroes[0].imageUrl;
+            fallbackKey = heroes[0].key;
+          }
         }
 
         if (!profileResponse.ok) {
           setIsAuthenticated(false);
-          setSelectedHeroKey(heroes[0]?.key ?? null);
-          setHeroImage(heroes[0]?.imageUrl || '/stunchou.png');
+          setSelectedHeroKey(fallbackKey);
+          setHeroImage(fallbackImage);
+          setLoading(false);
           return;
         }
 
@@ -717,24 +718,26 @@ export const Hero = () => {
         const profileData = await profileResponse.json();
         const favoriteHeroKey = typeof profileData?.favoriteHero === 'string' ? profileData.favoriteHero : null;
         if (!favoriteHeroKey) {
-          setHeroImage('/stunchou.png');
+          setHeroImage(fallbackImage);
+          setSelectedHeroKey(fallbackKey);
+          setLoading(false);
           return;
         }
 
-        const selectedHero = heroes.find((hero) => hero.key === favoriteHeroKey);
+        const selectedHero = heroCatalog.find((hero) => hero.key === favoriteHeroKey);
         if (selectedHero) {
           setSelectedHeroKey(selectedHero.key);
           setHeroImage(selectedHero.imageUrl);
-          return;
+        } else {
+          setHeroImage(fallbackImage);
+          setSelectedHeroKey(fallbackKey);
         }
-
-        setSelectedHeroKey(heroes[0]?.key ?? null);
-        setHeroImage(heroes[0]?.imageUrl || '/stunchou.png');
+        setLoading(false);
       } catch {
-        setHeroImage('/stunchou.png');
+        setHeroImage(null);
+        setLoading(false);
       }
     };
-
     loadHeroData().catch(() => undefined);
   }, []);
 
@@ -818,40 +821,85 @@ export const Hero = () => {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@700;800;900&display=swap');
       `}</style>
-      <MobileHero
-        heroImage={heroImage}
-        onHeroClick={() => setIsHeroModalOpen(true)}
-        stats={panelStats}
-        onRegisterClick={handleRegisterClick}
-      />
-      <DesktopHero
-        heroImage={heroImage}
-        onHeroClick={() => setIsHeroModalOpen(true)}
-        stats={panelStats}
-        onRegisterClick={handleRegisterClick}
-      />
-      <HeroSelectionModal
-        open={isHeroModalOpen}
-        heroes={heroCatalog}
-        search={heroSearch}
-        selectedKey={selectedHeroKey}
-        isSaving={isSavingHero}
-        error={heroSelectionError}
-        onClose={() => {
-          setIsHeroModalOpen(false);
-          setHeroSearch('');
-          setHeroSelectionError(null);
-        }}
-        onSearchChange={setHeroSearch}
-        onSelect={(hero) => {
-          setIsHeroModalOpen(false);
-          handleSelectHero(hero).catch(() => undefined);
-        }}
-      />
-      <LoginRequiredModal
-        open={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-      />
+      {loading ? (
+        <>
+          {/* Skeleton for DesktopHero */}
+          <section className="relative min-h-[420px] w-full bg-[#0a0a0f] overflow-hidden">
+            {/* Ghost title skeleton */}
+            <div className="absolute inset-0 z-[4] flex items-center justify-center pointer-events-none select-none overflow-hidden">
+              <div className="font-black uppercase animate-pulse"
+                style={{
+                  fontFamily: 'Anton, Barlow Condensed, sans-serif',
+                  fontSize: 'clamp(100px, 22vw, 320px)',
+                  letterSpacing: '-0.04em',
+                  WebkitTextStroke: '1px #444',
+                  color: 'transparent',
+                  lineHeight: 0.85,
+                  whiteSpace: 'nowrap',
+                  background: 'linear-gradient(90deg, #222 25%, #333 50%, #222 75%)',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                }}>
+                MLBB
+              </div>
+            </div>
+            {/* Hero image skeleton */}
+            <div className="absolute bottom-0 left-0 z-[30] pointer-events-auto select-none cursor-pointer animate-pulse"
+              style={{ width: 'clamp(300px, 42vw, 620px)', height: '95%' }}>
+              <div className="relative w-full h-full">
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-[#333] opacity-60" style={{ width: '52%', height: 30, filter: 'blur(16px)' }} />
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#222] via-[#333] to-[#222]" />
+              </div>
+            </div>
+            {/* Side panel skeleton */}
+            <div className="absolute right-8 top-1/2 -translate-y-1/2 z-[10] w-[150px] flex flex-col gap-2 animate-pulse">
+              <div className="h-10 bg-[#222] rounded mb-2" />
+              <div className="h-10 bg-[#222] rounded mb-2" />
+              <div className="h-10 bg-[#222] rounded mb-2" />
+              <div className="h-10 bg-[#222] rounded mb-2" />
+              <div className="h-9 bg-[#e8a000]/30 rounded mt-2" />
+            </div>
+          </section>
+          {/* Skeleton for MobileHero (optional, can be similar or omitted if not needed) */}
+        </>
+      ) : (
+        <>
+          <MobileHero
+            heroImage={heroImage || '/stunchou.png'}
+            onHeroClick={() => setIsHeroModalOpen(true)}
+            stats={panelStats}
+            onRegisterClick={handleRegisterClick}
+          />
+          <DesktopHero
+            heroImage={heroImage || '/stunchou.png'}
+            onHeroClick={() => setIsHeroModalOpen(true)}
+            stats={panelStats}
+            onRegisterClick={handleRegisterClick}
+          />
+          <HeroSelectionModal
+            open={isHeroModalOpen}
+            heroes={heroCatalog}
+            search={heroSearch}
+            selectedKey={selectedHeroKey}
+            isSaving={isSavingHero}
+            error={heroSelectionError}
+            onClose={() => {
+              setIsHeroModalOpen(false);
+              setHeroSearch('');
+              setHeroSelectionError(null);
+            }}
+            onSearchChange={setHeroSearch}
+            onSelect={(hero) => {
+              setIsHeroModalOpen(false);
+              handleSelectHero(hero).catch(() => undefined);
+            }}
+          />
+          <LoginRequiredModal
+            open={isLoginModalOpen}
+            onClose={() => setIsLoginModalOpen(false)}
+          />
+        </>
+      )}
     </>
   );
 };
