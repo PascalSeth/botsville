@@ -10,6 +10,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
+import { useHero } from '../../contexts/HeroContext';
 
 // ─────────────────────────────────────────────────────────────
 // DATA
@@ -667,9 +668,7 @@ const MobileHero = ({
 // EXPORT
 // ─────────────────────────────────────────────────────────────
 export const Hero = () => {
-  const [heroImage, setHeroImage] = useState<string | null>(null);
-  const [heroCatalog, setHeroCatalog] = useState<HeroCatalogItem[]>([]);
-  const [selectedHeroKey, setSelectedHeroKey] = useState<string | null>(null);
+  const { heroImage, loading, heroCatalog, selectedKey, selectHero } = useHero();
   const [isHeroModalOpen, setIsHeroModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -682,64 +681,8 @@ export const Hero = () => {
     players: '120+',
     prize: '₵12.8K',
   });
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const loadHeroData = async () => {
-      try {
-        const [catalogResponse, profileResponse] = await Promise.all([
-          fetch('/api/heroes/catalog'),
-          fetch('/api/users/profile'),
-        ]);
-
-        let fallbackImage = null;
-        let fallbackKey = null;
-
-        if (catalogResponse.ok) {
-          const catalogData = await catalogResponse.json();
-          const heroes: HeroCatalogItem[] = Array.isArray(catalogData?.heroes) ? catalogData.heroes : [];
-          setHeroCatalog(heroes);
-          if (heroes.length) {
-            fallbackImage = heroes[0].imageUrl;
-            fallbackKey = heroes[0].key;
-          }
-        }
-
-        if (!profileResponse.ok) {
-          setIsAuthenticated(false);
-          setSelectedHeroKey(fallbackKey);
-          setHeroImage(fallbackImage);
-          setLoading(false);
-          return;
-        }
-
-        setIsAuthenticated(true);
-
-        const profileData = await profileResponse.json();
-        const favoriteHeroKey = typeof profileData?.favoriteHero === 'string' ? profileData.favoriteHero : null;
-        if (!favoriteHeroKey) {
-          setHeroImage(fallbackImage);
-          setSelectedHeroKey(fallbackKey);
-          setLoading(false);
-          return;
-        }
-
-        const selectedHero = heroCatalog.find((hero) => hero.key === favoriteHeroKey);
-        if (selectedHero) {
-          setSelectedHeroKey(selectedHero.key);
-          setHeroImage(selectedHero.imageUrl);
-        } else {
-          setHeroImage(fallbackImage);
-          setSelectedHeroKey(fallbackKey);
-        }
-        setLoading(false);
-      } catch {
-        setHeroImage(null);
-        setLoading(false);
-      }
-    };
-    loadHeroData().catch(() => undefined);
-  }, []);
+  // hero data is provided by HeroContext (useHero)
 
   useEffect(() => {
     const loadPanelStats = async () => {
@@ -787,22 +730,9 @@ export const Hero = () => {
 
   const handleSelectHero = async (hero: HeroCatalogItem) => {
     setHeroSelectionError(null);
-    setSelectedHeroKey(hero.key);
-    setHeroImage(hero.imageUrl);
-
     try {
       setIsSavingHero(true);
-      const response = await fetch('/api/users/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ favoriteHero: hero.key }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        const message = typeof data?.error === 'string' ? data.error : 'Could not save hero choice.';
-        setHeroSelectionError(message);
-      }
+      await selectHero(hero);
     } catch {
       setHeroSelectionError('Could not save hero choice.');
     } finally {
@@ -880,7 +810,7 @@ export const Hero = () => {
             open={isHeroModalOpen}
             heroes={heroCatalog}
             search={heroSearch}
-            selectedKey={selectedHeroKey}
+            selectedKey={selectedKey}
             isSaving={isSavingHero}
             error={heroSelectionError}
             onClose={() => {

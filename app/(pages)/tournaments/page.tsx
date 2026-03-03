@@ -20,6 +20,7 @@ if (typeof window !== 'undefined') {
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import { useHero } from '../../contexts/HeroContext';
 // import { motion, AnimatePresence, cubicBezier } from 'framer-motion';
 import {
   Calendar, Clock, Trophy, ChevronRight, X,
@@ -758,43 +759,9 @@ export default function TournamentsPage() {
   const [featured, setFeatured] = useState<Tournament | null>(null);
   const [registering, setRegistering] = useState<Tournament | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedHeroImage, setSelectedHeroImage] = useState<string | null>(null);
+  const { heroImage: selectedHeroImage } = useHero();
 
-  useEffect(() => {
-    const fetchSelectedHeroImage = async () => {
-      try {
-        const [catalogResponse, profileResponse] = await Promise.all([
-          fetch('/api/heroes/catalog', { cache: 'no-store' }),
-          fetch('/api/users/profile', { cache: 'no-store' }),
-        ]);
-
-        if (!catalogResponse.ok || !profileResponse.ok) {
-          return;
-        }
-
-        const [catalogData, profileData] = await Promise.all([
-          catalogResponse.json(),
-          profileResponse.json(),
-        ]);
-
-        const heroes: HeroCatalogItem[] = Array.isArray(catalogData?.heroes) ? catalogData.heroes : [];
-        const favoriteHeroKey = typeof profileData?.favoriteHero === 'string' ? profileData.favoriteHero : null;
-
-        if (!favoriteHeroKey || heroes.length === 0) {
-          return;
-        }
-
-        const selected = heroes.find((hero) => hero.key === favoriteHeroKey);
-        if (selected?.imageUrl) {
-          setSelectedHeroImage(selected.imageUrl);
-        }
-      } catch (error) {
-        console.error('Failed to fetch selected hero image:', error);
-      }
-    };
-
-    fetchSelectedHeroImage();
-  }, []);
+  // selected hero is provided by global HeroProvider (useHero)
 
   useEffect(() => {
     const fetchTournaments = async () => {
