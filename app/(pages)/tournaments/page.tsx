@@ -22,17 +22,15 @@ const Scanlines = ({ opacity = 0.025 }: { opacity?: number }) => (
 
 const OrbEffect = ({ color = '#e8a000' }: { color?: string }) => (
   <>
-    <div className="absolute top-1/4 left-1/3 w-96 h-96 rounded-full pointer-events-none"
+    <div className="absolute top-1/4 left-1/3 w-[32rem] h-[32rem] rounded-full pointer-events-none"
       style={{
-        background: `radial-gradient(circle, ${color}22 0%, transparent 70%)`,
-        filter: 'blur(40px)',
+        background: `radial-gradient(circle, ${color}15 0%, ${color}08 40%, transparent 70%)`,
         animation: 'tourney-orb-a 6s ease-in-out infinite',
         willChange: 'transform, opacity',
       }} />
-    <div className="absolute bottom-0 right-1/4 w-72 h-72 rounded-full pointer-events-none"
+    <div className="absolute bottom-0 right-1/4 w-96 h-96 rounded-full pointer-events-none"
       style={{
-        background: 'radial-gradient(circle, rgba(30,80,200,0.15) 0%, transparent 70%)',
-        filter: 'blur(50px)',
+        background: 'radial-gradient(circle, rgba(30,80,200,0.10) 0%, rgba(30,80,200,0.04) 40%, transparent 65%)',
         animation: 'tourney-orb-b 8s ease-in-out 2s infinite',
         willChange: 'transform, opacity',
       }} />
@@ -234,12 +232,10 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
           <div className="absolute inset-0" style={{ background: `linear-gradient(125deg, ${(tournament.color || '#e8a000')}18, transparent 50%)` }} />
           <div className="absolute inset-0 bg-gradient-to-t from-[#07070d] to-transparent" />
           <Scanlines />
-          <OrbEffect color={tournament.color || '#e8a000'} />
 
-          <motion.div
+          <div
             className="absolute bottom-0 right-4 h-[130%] w-28 sm:w-36 pointer-events-none select-none"
-            initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8, ease }}>
+            style={{ animation: 'hero-slide-in 0.8s cubic-bezier(0.22,1,0.36,1) both' }}>
             <div className="relative w-full h-full"
               style={{ animation: 'hero-float 3.5s ease-in-out infinite', '--float-y': '-8px', willChange: 'transform' } as React.CSSProperties}>
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-20 h-4 rounded-full"
@@ -252,7 +248,7 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
               <Image src={tournament.heroImage || '/stunchou.png'} alt="" fill
                 className="object-contain object-bottom drop-shadow-[0_0_24px_rgba(232,160,0,0.4)]" />
             </div>
-          </motion.div>
+          </div>
 
           <button onClick={onClose}
             className="absolute top-3 right-3 w-7 h-7 bg-black/70 border border-white/10 flex items-center justify-center text-[#555] hover:text-white transition-colors z-10">
@@ -423,10 +419,9 @@ const FeaturedCard = ({
     : bannerSrc;
 
   return (
-    <motion.div
+    <div
       className="relative w-full overflow-hidden bg-[#07070d] border border-white/[0.08]"
-      initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.9, ease }}>
+      style={{ animation: 'fade-up 0.9s cubic-bezier(0.22,1,0.36,1) both' }}>
 
       <div className="absolute inset-0 z-0 overflow-hidden">
         <div className="absolute inset-0"
@@ -439,18 +434,14 @@ const FeaturedCard = ({
         <div className="absolute inset-0 bg-gradient-to-t from-[#07070d] via-transparent to-[#07070d]/50" />
       </div>
 
-      <motion.div className="absolute top-0 bottom-0 left-[55%] w-px pointer-events-none hidden lg:block"
-        style={{ background: `linear-gradient(to bottom, transparent, ${color}18, transparent)` }}
-        initial={{ scaleY: 0, opacity: 0 }} animate={{ scaleY: 1, opacity: 1 }}
-        transition={{ duration: 1.2, delay: 0.4, ease }} />
+      <div className="absolute top-0 bottom-0 left-[55%] w-px pointer-events-none hidden lg:block"
+        style={{ background: `linear-gradient(to bottom, transparent, ${color}18, transparent)`, animation: 'scale-y-in 1.2s cubic-bezier(0.22,1,0.36,1) 0.4s both', transformOrigin: 'top' }} />
 
       <Scanlines />
-      <OrbEffect color={color} />
 
-      <motion.div
+      <div
         className="absolute bottom-0 right-0 lg:right-[8%] h-[110%] w-[42%] sm:w-[36%] lg:w-[28%] pointer-events-none select-none z-10"
-        initial={{ opacity: 0, x: 60, scale: 0.92 }} animate={{ opacity: 1, x: 0, scale: 1 }}
-        transition={{ duration: 1.1, ease, delay: 0.3 }}>
+        style={{ animation: 'fade-scale-in 1.1s cubic-bezier(0.22,1,0.36,1) 0.3s both' }}>
         <div className="relative w-full h-full"
           style={{ animation: 'hero-float 4.2s ease-in-out infinite', '--float-y': '-16px', willChange: 'transform' } as React.CSSProperties}>
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-40 h-8 rounded-full"
@@ -463,7 +454,7 @@ const FeaturedCard = ({
           <Image src={heroSrc} alt="Tournament Hero" fill
             className="object-contain object-bottom drop-shadow-[0_0_48px_rgba(232,160,0,0.45)]" priority />
         </div>
-      </motion.div>
+      </div>
 
       <div className="relative z-20 px-6 sm:px-10 py-8 sm:py-12 flex flex-col gap-6 lg:max-w-[58%]">
         <div className="flex items-center gap-2 flex-wrap">
@@ -491,7 +482,7 @@ const FeaturedCard = ({
           ))}
         </div>
 
-        <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0.2}>
+        <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.2s both' }}>
           <p className="text-[9px] tracking-[0.4em] uppercase font-black mb-2" style={{ color: `${color}90` }}>{t.subtitle}</p>
           <h2 className="font-black uppercase leading-none text-white"
             style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(2.4rem, 6vw, 4.5rem)', letterSpacing: '-0.02em' }}>
@@ -499,7 +490,7 @@ const FeaturedCard = ({
           </h2>
           <div className="mt-3 h-0.5 w-24" style={{ background: `linear-gradient(90deg, ${color}, transparent)` }} />
           <p className="text-[#555] text-sm mt-3 leading-relaxed max-w-xs">{t.description}</p>
-        </motion.div>
+        </div>
 
         <div className="flex flex-col gap-1.5">
           {[
@@ -548,7 +539,7 @@ const FeaturedCard = ({
           )}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 };
 
@@ -567,19 +558,16 @@ const SmallCard = ({ t, active, onSelect, onRegister, index }: {
     : 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&q=80';
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.07 }}
+    <div
       onClick={onSelect}
       className="group relative cursor-pointer border overflow-hidden transition-all duration-300"
-      style={{ borderColor: active ? `${color}50` : 'rgba(255,255,255,0.06)', background: active ? `${color}0a` : 'transparent' }}>
+      style={{ borderColor: active ? `${color}50` : 'rgba(255,255,255,0.06)', background: active ? `${color}0a` : 'transparent', animation: `slide-in-right 0.4s cubic-bezier(0.22,1,0.36,1) ${index * 0.07}s both` }}>
       <div className="absolute left-0 top-0 bottom-0 w-0.5 transition-all" style={{ background: active ? color : 'transparent' }} />
 
       <div className="relative h-16 overflow-hidden shrink-0">
         <Image src={bannerSrc} alt="" fill className="object-cover brightness-20 group-hover:brightness-30 transition-all duration-500" />
         <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at left, ${color}30, transparent 60%)` }} />
         <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#08080e]/90" />
-        <Scanlines />
         <div className="absolute top-2 right-2">
           {isOpen
             ? <div className="w-1.5 h-1.5 rounded-full bg-[#27ae60]"
@@ -619,23 +607,20 @@ const SmallCard = ({ t, active, onSelect, onRegister, index }: {
           {isOpen ? 'Register →' : (t.status === 'CLOSED' || isFull ? 'Full' : 'Soon')}
         </button>
       </div>
-    </motion.div>
+    </div>
   );
 };
 
 // ── Past card ─────────────────────────────────────────────────
 const PastCard = ({ t, index }: { t: Tournament; index: number }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.4, delay: index * 0.08 }}
-    className="group relative border border-white/[0.05] hover:border-white/[0.12] bg-[#09090f] overflow-hidden transition-all duration-300">
+  <div
+    className="group relative border border-white/[0.05] hover:border-white/[0.12] bg-[#09090f] overflow-hidden transition-all duration-300"
+    style={{ animation: `fade-up-sm 0.4s cubic-bezier(0.22,1,0.36,1) ${index * 0.08}s both` }}>
     <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{ background: (t.color || '#e8a000') }} />
     <div className="relative h-32 overflow-hidden">
       <Image src={t.banner || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80'} alt="" fill className="object-cover brightness-25 group-hover:brightness-35 group-hover:scale-105 transition-all duration-500" />
       <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at bottom left, ${(t.color || '#e8a000')}35, transparent 60%)` }} />
       <div className="absolute inset-0 bg-gradient-to-t from-[#09090f] to-transparent" />
-      <Scanlines />
-      <OrbEffect color={t.color || '#e8a000'} />
       <Trophy size={18} className="absolute top-3 left-4" style={{ color: (t.color || '#e8a000') }} />
       <div className="absolute bottom-2 right-3 pointer-events-none select-none">
         <span className="font-black text-5xl leading-none" style={{ color: `${(t.color || '#e8a000')}0d`, fontFamily: "'Barlow Condensed', sans-serif" }}>
@@ -652,7 +637,7 @@ const PastCard = ({ t, index }: { t: Tournament; index: number }) => (
         <span className="px-2 py-1 bg-white/5 text-[#e8a000] text-[9px] font-black">View Details</span>
       </div>
     </div>
-  </motion.div>
+  </div>
 );
 
 // ══════════════════════════════════════════════════════════
@@ -681,11 +666,9 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
 
       {/* ══ LARGE HERO IMAGE — covers the entire right side, bleeds to edge ══
           This container handles the initial entrance animation (Slide In).   */}
-      <motion.div
+      <div
         className="absolute top-0 right-0 bottom-0 w-[62%] sm:w-[58%] lg:w-[52%] pointer-events-none select-none z-[2]"
-        initial={{ opacity: 0, x: 60 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 1.1, ease, delay: 0.2 }}
+        style={{ animation: 'hero-slide-in 1.1s cubic-bezier(0.22,1,0.36,1) 0.2s both' }}
       >
         {/* ══ FLOAT WRAPPER — Handles the idle floating animation ══ */}
         <div
@@ -719,40 +702,38 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
         <div className="absolute inset-0 bg-gradient-to-t from-[#08080e] via-transparent to-transparent" />
         {/* Top fade */}
         <div className="absolute inset-0 bg-gradient-to-b from-[#08080e]/60 via-transparent to-transparent" />
-      </motion.div>
+      </div>
 
       {/* Hairline vertical accent at the image's left fade boundary */}
-      <motion.div className="hidden md:block absolute top-0 bottom-0 left-[44%] sm:left-[46%] lg:left-[50%] w-px pointer-events-none z-[3]"
-        style={{ background: 'linear-gradient(to bottom, transparent, rgba(232,160,0,0.08), transparent)' }}
-        initial={{ scaleY: 0 }} animate={{ scaleY: 1 }}
-        transition={{ duration: 1.4, delay: 0.5, ease }} />
+      <div className="hidden md:block absolute top-0 bottom-0 left-[44%] sm:left-[46%] lg:left-[50%] w-px pointer-events-none z-[3]"
+        style={{ background: 'linear-gradient(to bottom, transparent, rgba(232,160,0,0.08), transparent)', animation: 'scale-y-in 1.4s cubic-bezier(0.22,1,0.36,1) 0.5s both', transformOrigin: 'top' }} />
 
       {/* ── Content — left side ── */}
       <div className="relative z-20 max-w-7xl mx-auto px-6 sm:px-10 lg:px-14 py-14 sm:py-20 flex flex-col justify-center" style={{ minHeight: '420px' }}>
         <div className="max-w-lg">
-          <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0.1}
+          <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.1s both' }}
             className="flex items-center gap-2 mb-4">
             <span className="w-6 h-0.5 bg-[#e8a000]" />
             <span className="text-[#e8a000] text-[9px] font-black tracking-[0.4em] uppercase">Ghana MLBB · Season 5</span>
-          </motion.div>
+          </div>
 
-          <motion.h1 variants={fadeUp} initial="hidden" animate="visible" custom={0.2}
+          <h1
             className="font-black uppercase leading-none text-white"
-            style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(3rem, 7vw, 5.5rem)', letterSpacing: '-0.02em' }}>
+            style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(3rem, 7vw, 5.5rem)', letterSpacing: '-0.02em', animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.2s both' }}>
             TOURNAMENT<br />
             <span style={{ WebkitTextStroke: '2px #e8a000', color: 'transparent' }}>HUB</span>
-          </motion.h1>
+          </h1>
 
-          <motion.p variants={fadeUp} initial="hidden" animate="visible" custom={0.35}
+          <p style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.35s both' }}
             className="text-[#444] text-sm mt-4 tracking-wide leading-relaxed max-w-sm">
             Register · Compete · Champion ·{' '}
             <span className="font-bold" style={{ color: '#27ae60' }}>
               {openCount} open now
             </span>
-          </motion.p>
+          </p>
 
           {/* Quick stats */}
-          <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0.45}
+          <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.45s both' }}
             className="flex items-center gap-8 mt-6">
             {[
               { label: 'Upcoming', val: upcomingCount,                                                color: '#e8a000' },
@@ -765,10 +746,10 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
                 <span className="text-[#2a2a2a] text-[8px] tracking-[0.2em] uppercase">{s.label}</span>
               </div>
             ))}
-          </motion.div>
+          </div>
 
           {/* CTAs */}
-          <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0.55}
+          <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.55s both' }}
             className="flex gap-3 mt-8 flex-wrap">
             <motion.a href="#upcoming" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
               className="relative overflow-hidden flex items-center gap-2 border border-[#e8a000] text-[#e8a000] font-black uppercase tracking-[0.15em] px-5 py-2.5 text-[11px] group transition-colors duration-300">
@@ -780,7 +761,7 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
               className="text-[#444] hover:text-white font-black uppercase tracking-widest px-4 py-2.5 text-[11px] transition-colors">
               Past Results →
             </motion.a>
-          </motion.div>
+          </div>
         </div>
       </div>
 
@@ -879,12 +860,12 @@ export default function TournamentsPage() {
 
         {/* ── UPCOMING ── */}
         <div id="upcoming" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
-          <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0.1}
+          <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.1s both' }}
             className="flex items-center gap-3 mb-8">
             <Flame size={14} className="text-[#e8a000]" />
             <span className="text-[#e8a000] text-[9px] font-black tracking-[0.4em] uppercase">Upcoming Tournaments</span>
             <div className="flex-1 h-px bg-white/[0.04]" />
-          </motion.div>
+          </div>
 
           {loading ? (
             <div className="flex items-center justify-center py-20">
@@ -944,12 +925,12 @@ export default function TournamentsPage() {
         {pastTournaments.length > 0 && (
           <div id="past" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-14">
             <div className="border-t border-white/[0.04] pt-10 mb-8">
-              <motion.div className="flex items-center gap-3">
+              <div className="flex items-center gap-3">
                 <Trophy size={14} className="text-[#e8a000]" />
                 <span className="text-[#e8a000] text-[9px] font-black tracking-[0.4em] uppercase">Past Results</span>
                 <div className="flex-1 h-px bg-white/[0.04]" />
                 <span className="text-[#222] text-[9px] tracking-widest uppercase">{pastTournaments.length} completed</span>
-              </motion.div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
