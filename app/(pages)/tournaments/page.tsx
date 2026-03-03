@@ -10,10 +10,6 @@ import {
 } from 'lucide-react';
 
 const ease = cubicBezier(0.22, 1, 0.36, 1);
-const fadeUp = {
-  hidden:  { opacity: 0, y: 40 },
-  visible: (d = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.8, ease, delay: d } }),
-};
 
 const Scanlines = ({ opacity = 0.025 }: { opacity?: number }) => (
   <div className="absolute inset-0 pointer-events-none z-[1]"
@@ -234,16 +230,12 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
           <Scanlines />
 
           <div
-            className="absolute bottom-0 right-4 h-[130%] w-28 sm:w-36 pointer-events-none select-none"
-            style={{ animation: 'hero-slide-in 0.8s cubic-bezier(0.22,1,0.36,1) both' }}>
-            <div className="relative w-full h-full"
-              style={{ animation: 'hero-float 3.5s ease-in-out infinite', '--float-y': '-8px', willChange: 'transform' } as React.CSSProperties}>
+            className="absolute bottom-0 right-4 h-[130%] w-28 sm:w-36 pointer-events-none select-none">
+            <div className="relative w-full h-full">
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-20 h-4 rounded-full"
                 style={{
                   background: `radial-gradient(ellipse, ${(tournament.color || '#e8a000')}60 0%, transparent 70%)`,
                   filter: 'blur(6px)',
-                  animation: 'hero-shadow-pulse 3.5s ease-in-out infinite',
-                  willChange: 'transform, opacity',
                 }} />
               <Image src={tournament.heroImage || '/stunchou.png'} alt="" fill
                 className="object-contain object-bottom drop-shadow-[0_0_24px_rgba(232,160,0,0.4)]" />
@@ -306,7 +298,7 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
               <p className="text-[#444] text-[9px] tracking-[0.3em] uppercase font-black mb-2">Select Your Team</p>
               <div className="flex flex-col gap-1">
                 {registeredTeams.length > 0 ? registeredTeams.map(tm => (
-                  <motion.button key={tm} onClick={() => setTeam(tm)} whileTap={{ scale: 0.98 }}
+                  <button key={tm} onClick={() => setTeam(tm)}
                     className="flex items-center justify-between px-3 py-2.5 border text-left transition-all duration-150 relative overflow-hidden group"
                     style={team === tm
                       ? { borderColor: `${(tournament.color || '#e8a000')}60`, background: `${(tournament.color || '#e8a000')}10` }
@@ -321,7 +313,7 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
                       {tm}
                     </span>
                     {team === tm && <CheckCircle size={12} style={{ color: (tournament.color || '#e8a000') }} />}
-                  </motion.button>
+                  </button>
                 )) : (
                   <div className="px-3 py-2.5 text-[11px] text-[#666]">No teams registered. <a href="/register-team" className="text-[#e8a000] hover:underline">Create one</a></div>
                 )}
@@ -356,15 +348,14 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
               </span>
             </label>
 
-            <motion.button
-              onClick={submit} disabled={!canSubmit} whileTap={{ scale: 0.98 }}
+            <button
+              onClick={submit} disabled={!canSubmit}
               className="relative w-full py-3 font-black text-[11px] tracking-[0.25em] uppercase overflow-hidden transition-all group disabled:opacity-30 disabled:cursor-not-allowed"
               style={canSubmit ? { background: (tournament.color || '#e8a000'), color: '#000' } : { background: '#111', color: '#333', border: '1px solid #222' }}>
               <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-white/20 skew-x-12 transition-transform duration-500 pointer-events-none" />
               <span className="relative flex items-center justify-center gap-2">
                 {loading
-                  ? <motion.div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full"
-                      animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.7, ease: 'linear' }} />
+                  ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
                   : !team ? 'Select a team first'
                   : !isCaptain ? 'Captain required'
                   : alreadyRegistered ? 'Already registered'
@@ -372,7 +363,7 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
                   : <><span>Lock In Your Squad</span><Zap size={12} /></>
                 }
               </span>
-            </motion.button>
+            </button>
 
             {alreadyRegistered && (
               <div className="bg-[#e8a000]/10 border border-[#e8a000]/30 px-3 py-2 text-[#e8a000] text-[11px] tracking-wide">
@@ -420,12 +411,10 @@ const FeaturedCard = ({
 
   return (
     <div
-      className="relative w-full overflow-hidden bg-[#07070d] border border-white/[0.08]"
-      style={{ animation: 'fade-up 0.9s cubic-bezier(0.22,1,0.36,1) both' }}>
+      className="relative w-full overflow-hidden bg-[#07070d] border border-white/[0.08]">
 
       <div className="absolute inset-0 z-0 overflow-hidden">
-        <div className="absolute inset-0"
-          style={{ animation: 'ken-burns-alt 18s linear infinite alternate', willChange: 'transform' }}>
+        <div className="absolute inset-0">
           <Image src={bannerSrc} alt="" fill className="object-cover brightness-25" />
         </div>
         <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at bottom left, ${color}40, transparent 55%)` }} />
@@ -435,21 +424,17 @@ const FeaturedCard = ({
       </div>
 
       <div className="absolute top-0 bottom-0 left-[55%] w-px pointer-events-none hidden lg:block"
-        style={{ background: `linear-gradient(to bottom, transparent, ${color}18, transparent)`, animation: 'scale-y-in 1.2s cubic-bezier(0.22,1,0.36,1) 0.4s both', transformOrigin: 'top' }} />
+        style={{ background: `linear-gradient(to bottom, transparent, ${color}18, transparent)` }} />
 
       <Scanlines />
 
       <div
-        className="absolute bottom-0 right-0 lg:right-[8%] h-[110%] w-[42%] sm:w-[36%] lg:w-[28%] pointer-events-none select-none z-10"
-        style={{ animation: 'fade-scale-in 1.1s cubic-bezier(0.22,1,0.36,1) 0.3s both' }}>
-        <div className="relative w-full h-full"
-          style={{ animation: 'hero-float 4.2s ease-in-out infinite', '--float-y': '-16px', willChange: 'transform' } as React.CSSProperties}>
+        className="absolute bottom-0 right-0 lg:right-[8%] h-[110%] w-[42%] sm:w-[36%] lg:w-[28%] pointer-events-none select-none z-10">
+        <div className="relative w-full h-full">
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-40 h-8 rounded-full"
             style={{
               background: `radial-gradient(ellipse, ${color}60 0%, transparent 70%)`,
               filter: 'blur(10px)',
-              animation: 'hero-shadow-pulse 4.2s ease-in-out infinite',
-              willChange: 'transform, opacity',
             }} />
           <Image src={heroSrc} alt="Tournament Hero" fill
             className="object-contain object-bottom drop-shadow-[0_0_48px_rgba(232,160,0,0.45)]" priority />
@@ -460,8 +445,7 @@ const FeaturedCard = ({
         <div className="flex items-center gap-2 flex-wrap">
           {t.status === 'OPEN' && !isFull && (
             <span
-              className="flex items-center gap-1.5 bg-black/60 border border-[#27ae60]/50 px-2.5 py-1 backdrop-blur-sm"
-              style={{ animation: 'reg-open-blink 1.8s ease-in-out infinite' }}>
+              className="flex items-center gap-1.5 bg-black/60 border border-[#27ae60]/50 px-2.5 py-1 backdrop-blur-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-[#27ae60]" />
               <span className="text-[#27ae60] text-[9px] font-black tracking-widest uppercase">Registration Open</span>
             </span>
@@ -482,7 +466,7 @@ const FeaturedCard = ({
           ))}
         </div>
 
-        <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.2s both' }}>
+        <div>
           <p className="text-[9px] tracking-[0.4em] uppercase font-black mb-2" style={{ color: `${color}90` }}>{t.subtitle}</p>
           <h2 className="font-black uppercase leading-none text-white"
             style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(2.4rem, 6vw, 4.5rem)', letterSpacing: '-0.02em' }}>
@@ -511,9 +495,7 @@ const FeaturedCard = ({
             <span className="text-[10px] font-black font-mono" style={{ color }}>{filled}/{t.slots}</span>
           </div>
           <div className="h-1 w-full max-w-xs bg-white/[0.06] overflow-hidden">
-            <motion.div className="h-full" style={{ background: color }}
-              initial={{ width: 0 }} animate={{ width: `${Math.min((filled / t.slots) * 100, 100)}%` }}
-              transition={{ duration: 1.2, delay: 0.5, ease: 'easeOut' }} />
+            <div className="h-full" style={{ background: color, width: `${Math.min((filled / t.slots) * 100, 100)}%` }} />
           </div>
         </div>
 
@@ -523,15 +505,14 @@ const FeaturedCard = ({
         </div>
 
         <div className="flex items-center gap-3">
-          <motion.button
-            whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+          <button
             onClick={isOpen ? onRegister : undefined} disabled={!isOpen}
             className="relative overflow-hidden flex items-center gap-2 font-black text-[11px] tracking-[0.2em] uppercase px-6 py-3 transition-all group disabled:opacity-40 disabled:cursor-not-allowed"
             style={isOpen ? { background: '#e8a000', color: '#000' } : { border: '1px solid #222', color: '#333', background: 'transparent' }}>
             <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-white/25 skew-x-12 transition-transform duration-500 pointer-events-none" />
             <span className="relative">{isOpen ? 'Register Now' : (t.status === 'CLOSED' || isFull ? 'Registration Full' : 'Coming Soon')}</span>
             {isOpen && <ArrowRight size={13} className="relative" />}
-          </motion.button>
+          </button>
           {isOpen && (
             <span className="text-[#333] text-[9px] tracking-widest uppercase">
               {slotsLeft} slot{slotsLeft !== 1 ? 's' : ''} left
@@ -561,7 +542,7 @@ const SmallCard = ({ t, active, onSelect, onRegister, index }: {
     <div
       onClick={onSelect}
       className="group relative cursor-pointer border overflow-hidden transition-all duration-300"
-      style={{ borderColor: active ? `${color}50` : 'rgba(255,255,255,0.06)', background: active ? `${color}0a` : 'transparent', animation: `slide-in-right 0.4s cubic-bezier(0.22,1,0.36,1) ${index * 0.07}s both` }}>
+      style={{ borderColor: active ? `${color}50` : 'rgba(255,255,255,0.06)', background: active ? `${color}0a` : 'transparent' }}>
       <div className="absolute left-0 top-0 bottom-0 w-0.5 transition-all" style={{ background: active ? color : 'transparent' }} />
 
       <div className="relative h-16 overflow-hidden shrink-0">
@@ -570,8 +551,7 @@ const SmallCard = ({ t, active, onSelect, onRegister, index }: {
         <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#08080e]/90" />
         <div className="absolute top-2 right-2">
           {isOpen
-            ? <div className="w-1.5 h-1.5 rounded-full bg-[#27ae60]"
-                style={{ animation: 'status-blink 1.6s ease-in-out infinite' }} />
+            ? <div className="w-1.5 h-1.5 rounded-full bg-[#27ae60]" />
             : <div className="w-1.5 h-1.5 rounded-full bg-[#333]" />
           }
         </div>
@@ -614,8 +594,7 @@ const SmallCard = ({ t, active, onSelect, onRegister, index }: {
 // ── Past card ─────────────────────────────────────────────────
 const PastCard = ({ t, index }: { t: Tournament; index: number }) => (
   <div
-    className="group relative border border-white/[0.05] hover:border-white/[0.12] bg-[#09090f] overflow-hidden transition-all duration-300"
-    style={{ animation: `fade-up-sm 0.4s cubic-bezier(0.22,1,0.36,1) ${index * 0.08}s both` }}>
+    className="group relative border border-white/[0.05] hover:border-white/[0.12] bg-[#09090f] overflow-hidden transition-all duration-300">
     <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{ background: (t.color || '#e8a000') }} />
     <div className="relative h-32 overflow-hidden">
       <Image src={t.banner || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80'} alt="" fill className="object-cover brightness-25 group-hover:brightness-35 group-hover:scale-105 transition-all duration-500" />
@@ -751,16 +730,16 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
           {/* CTAs */}
           <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.55s both' }}
             className="flex gap-3 mt-8 flex-wrap">
-            <motion.a href="#upcoming" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
-              className="relative overflow-hidden flex items-center gap-2 border border-[#e8a000] text-[#e8a000] font-black uppercase tracking-[0.15em] px-5 py-2.5 text-[11px] group transition-colors duration-300">
+            <a href="#upcoming"
+              className="relative overflow-hidden flex items-center gap-2 border border-[#e8a000] text-[#e8a000] font-black uppercase tracking-[0.15em] px-5 py-2.5 text-[11px] group transition-colors duration-300 hover:scale-[1.04] active:scale-[0.97]">
               <span className="absolute inset-0 bg-[#e8a000] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
               <span className="relative z-10 group-hover:text-black transition-colors duration-300">Browse Tournaments</span>
               <ChevronRight size={12} className="relative z-10 group-hover:text-black transition-colors duration-300" />
-            </motion.a>
-            <motion.a href="#past" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+            </a>
+            <a href="#past"
               className="text-[#444] hover:text-white font-black uppercase tracking-widest px-4 py-2.5 text-[11px] transition-colors">
               Past Results →
-            </motion.a>
+            </a>
           </div>
         </div>
       </div>
@@ -860,7 +839,7 @@ export default function TournamentsPage() {
 
         {/* ── UPCOMING ── */}
         <div id="upcoming" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
-          <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.1s both' }}
+          <div
             className="flex items-center gap-3 mb-8">
             <Flame size={14} className="text-[#e8a000]" />
             <span className="text-[#e8a000] text-[9px] font-black tracking-[0.4em] uppercase">Upcoming Tournaments</span>
