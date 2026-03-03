@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
-import { motion, AnimatePresence, cubicBezier } from 'framer-motion';
+// import { motion, AnimatePresence, cubicBezier } from 'framer-motion';
 import {
   Calendar, Clock, Trophy, ChevronRight, X,
   CheckCircle, AlertCircle, Swords, Lock, MapPin,
   Flame, ArrowRight, Zap,
 } from 'lucide-react';
 
-const ease = cubicBezier(0.22, 1, 0.36, 1);
+// const ease = cubicBezier(0.22, 1, 0.36, 1);
 
 const Scanlines = ({ opacity = 0.025 }: { opacity?: number }) => (
   <div className="absolute inset-0 pointer-events-none z-[1]"
@@ -208,12 +208,10 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    <div
       className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-end sm:items-center justify-center"
       onClick={onClose}>
-      <motion.div
-        initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 40, opacity: 0 }} transition={{ duration: 0.45, ease }}
+      <div
         className="relative w-full sm:max-w-lg bg-[#07070d] border-t sm:border overflow-hidden max-h-[94dvh] sm:max-h-[88vh] flex flex-col sm:mx-4"
         style={{ borderColor: `${(tournament.color || '#e8a000')}35` }}
         onClick={e => e.stopPropagation()}>
@@ -252,28 +250,23 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
         </div>
 
         <div className="overflow-y-auto flex-1 px-5 py-5 flex flex-col gap-5">
-          <AnimatePresence>
-            {done && (
-              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-                className="flex flex-col items-center gap-4 py-10 text-center">
-                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 200, delay: 0.1 }}
-                  className="w-16 h-16 border-2 border-[#27ae60] flex items-center justify-center">
-                  <CheckCircle size={32} className="text-[#27ae60]" />
-                </motion.div>
-                <div>
-                  <p className="text-white font-black text-2xl uppercase" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Squad Registered!</p>
-                  <p className="text-[#444] text-[11px] mt-1.5 tracking-wide leading-relaxed">
-                    <span className="font-bold" style={{ color: (tournament.color || '#e8a000') }}>{team}</span> is now registered for {tournament.name}. Confirmation incoming.
-                  </p>
-                </div>
-                <button onClick={onClose}
-                  className="px-8 py-2.5 font-black text-[11px] tracking-[0.25em] uppercase bg-[#e8a000] text-black hover:bg-[#ffb800] transition-colors">
-                  Let&apos;s Go
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {done && (
+            <div className="flex flex-col items-center gap-4 py-10 text-center">
+              <div className="w-16 h-16 border-2 border-[#27ae60] flex items-center justify-center">
+                <CheckCircle size={32} className="text-[#27ae60]" />
+              </div>
+              <div>
+                <p className="text-white font-black text-2xl uppercase" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Squad Registered!</p>
+                <p className="text-[#444] text-[11px] mt-1.5 tracking-wide leading-relaxed">
+                  <span className="font-bold" style={{ color: (tournament.color || '#e8a000') }}>{team}</span> is now registered for {tournament.name}. Confirmation incoming.
+                </p>
+              </div>
+              <button onClick={onClose}
+                className="px-8 py-2.5 font-black text-[11px] tracking-[0.25em] uppercase bg-[#e8a000] text-black hover:bg-[#ffb800] transition-colors">
+                Let&apos;s Go
+              </button>
+            </div>
+          )}
 
           {!done && <>
             <div className="grid grid-cols-2 gap-1.5">
@@ -374,8 +367,8 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
             )}
           </>}
         </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   );
 };
 
@@ -909,9 +902,9 @@ export default function TournamentsPage() {
           </div>
         )}
 
-        <AnimatePresence>
+        {/* AnimatePresence removed for static rendering */}
           {registering && <RegisterModal t={registering} onClose={() => setRegistering(null)} />}
-        </AnimatePresence>
+        {/* AnimatePresence removed for static rendering */}
       </main>
     </>
   );
