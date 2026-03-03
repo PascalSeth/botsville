@@ -492,6 +492,20 @@ const LeftPanel = ({ mode }: { mode: Mode }) => {
 
   return (
       <div className="hidden lg:flex relative flex-col justify-between overflow-hidden" style={{ background: '#050508' }}>
+        {/* Background video (desktop only) */}
+        <div className="absolute inset-0 hidden lg:block">
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="metadata"
+            className="w-full h-full object-cover"
+            style={{ filter: 'brightness(0.15) saturate(0.5)' }}
+          >
+            <source src="/gif/heros2.mp4" type="video/mp4" />
+          </video>
+        </div>
         {/* Dynamic role glow */}
         <div
           className="absolute inset-0 transition-all duration-1000"
