@@ -9,6 +9,7 @@ import {
 } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { ChevronRight } from 'lucide-react';
 import { useHero } from '../../contexts/HeroContext';
 
@@ -671,7 +672,8 @@ export const Hero = () => {
   const { heroImage, loading, heroCatalog, selectedKey, selectHero } = useHero();
   const [isHeroModalOpen, setIsHeroModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { status } = useSession();
+  const isAuthenticated = status === 'authenticated';
   const [heroSearch, setHeroSearch] = useState('');
   const [isSavingHero, setIsSavingHero] = useState(false);
   const [heroSelectionError, setHeroSelectionError] = useState<string | null>(null);
