@@ -21,14 +21,10 @@ const OrbEffect = ({ color = '#e8a000' }: { color?: string }) => (
     <div className="absolute top-1/4 left-1/3 w-[32rem] h-[32rem] rounded-full pointer-events-none"
       style={{
         background: `radial-gradient(circle, ${color}15 0%, ${color}08 40%, transparent 70%)`,
-        animation: 'tourney-orb-a 6s ease-in-out infinite',
-        willChange: 'transform, opacity',
       }} />
     <div className="absolute bottom-0 right-1/4 w-96 h-96 rounded-full pointer-events-none"
       style={{
         background: 'radial-gradient(circle, rgba(30,80,200,0.10) 0%, rgba(30,80,200,0.04) 40%, transparent 65%)',
-        animation: 'tourney-orb-b 8s ease-in-out 2s infinite',
-        willChange: 'transform, opacity',
       }} />
   </>
 );
@@ -629,8 +625,7 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
 
       {/* ── Dark bg + faint Ken Burns banner ── */}
       <div className="absolute inset-0">
-        <div className="absolute inset-0"
-          style={{ animation: 'ken-burns 20s linear infinite alternate', willChange: 'transform' }}>
+        <div className="absolute inset-0">
           <Image src={'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1600&q=80'} alt="" fill className="object-cover brightness-[0.1]" />
         </div>
         {/* Strong dark-to-transparent gradient from left so text is readable */}
@@ -647,14 +642,8 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
           This container handles the initial entrance animation (Slide In).   */}
       <div
         className="absolute top-0 right-0 bottom-0 w-[62%] sm:w-[58%] lg:w-[52%] pointer-events-none select-none z-[2]"
-        style={{ animation: 'hero-slide-in 1.1s cubic-bezier(0.22,1,0.36,1) 0.2s both' }}
       >
-        {/* ══ FLOAT WRAPPER — Handles the idle floating animation ══ */}
-        <div
-          className="absolute inset-0"
-          style={{ animation: 'hero-float 5s ease-in-out infinite', '--float-y': '-12px', willChange: 'transform' } as React.CSSProperties}
-        >
-          {/* The image — object-right-bottom so the character stands at the right edge */}
+        <div className="absolute inset-0">
           <Image
             src="/heroes/brody.png"
             alt=""
@@ -663,13 +652,10 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
             style={{ filter: 'drop-shadow(-50px 0 90px rgba(232,160,0,0.10))' }}
             priority
           />
-          {/* Ambient ground glow (Moves with the character) */}
           <div
             className="absolute bottom-0 left-0 right-0 h-44 pointer-events-none"
             style={{
               background: 'radial-gradient(ellipse at 65% 100%, rgba(232,160,0,0.16) 0%, transparent 62%)',
-              animation: 'hero-ground-glow 4s ease-in-out infinite',
-              willChange: 'opacity',
             }}
           />
         </div>
@@ -685,12 +671,12 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
 
       {/* Hairline vertical accent at the image's left fade boundary */}
       <div className="hidden md:block absolute top-0 bottom-0 left-[44%] sm:left-[46%] lg:left-[50%] w-px pointer-events-none z-[3]"
-        style={{ background: 'linear-gradient(to bottom, transparent, rgba(232,160,0,0.08), transparent)', animation: 'scale-y-in 1.4s cubic-bezier(0.22,1,0.36,1) 0.5s both', transformOrigin: 'top' }} />
+        style={{ background: 'linear-gradient(to bottom, transparent, rgba(232,160,0,0.08), transparent)' }} />
 
       {/* ── Content — left side ── */}
       <div className="relative z-20 max-w-7xl mx-auto px-6 sm:px-10 lg:px-14 py-14 sm:py-20 flex flex-col justify-center" style={{ minHeight: '420px' }}>
         <div className="max-w-lg">
-          <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.1s both' }}
+          <div
             className="flex items-center gap-2 mb-4">
             <span className="w-6 h-0.5 bg-[#e8a000]" />
             <span className="text-[#e8a000] text-[9px] font-black tracking-[0.4em] uppercase">Ghana MLBB · Season 5</span>
@@ -698,12 +684,12 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
 
           <h1
             className="font-black uppercase leading-none text-white"
-            style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(3rem, 7vw, 5.5rem)', letterSpacing: '-0.02em', animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.2s both' }}>
+            style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(3rem, 7vw, 5.5rem)', letterSpacing: '-0.02em' }}>
             TOURNAMENT<br />
             <span style={{ WebkitTextStroke: '2px #e8a000', color: 'transparent' }}>HUB</span>
           </h1>
 
-          <p style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.35s both' }}
+          <p
             className="text-[#444] text-sm mt-4 tracking-wide leading-relaxed max-w-sm">
             Register · Compete · Champion ·{' '}
             <span className="font-bold" style={{ color: '#27ae60' }}>
@@ -712,7 +698,7 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
           </p>
 
           {/* Quick stats */}
-          <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.45s both' }}
+          <div
             className="flex items-center gap-8 mt-6">
             {[
               { label: 'Upcoming', val: upcomingCount,                                                color: '#e8a000' },
@@ -728,7 +714,7 @@ const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcom
           </div>
 
           {/* CTAs */}
-          <div style={{ animation: 'fade-up 0.8s cubic-bezier(0.22,1,0.36,1) 0.55s both' }}
+          <div
             className="flex gap-3 mt-8 flex-wrap">
             <a href="#upcoming"
               className="relative overflow-hidden flex items-center gap-2 border border-[#e8a000] text-[#e8a000] font-black uppercase tracking-[0.15em] px-5 py-2.5 text-[11px] group transition-colors duration-300 hover:scale-[1.04] active:scale-[0.97]">
