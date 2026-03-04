@@ -91,7 +91,37 @@ export async function PUT(
     if (signatureHero !== undefined) updateData.signatureHero = signatureHero || null;
     if (photo !== undefined) updateData.photo = photo || null;
     if (realName !== undefined) updateData.realName = realName || null;
-    if (isSubstitute !== undefined) updateData.isSubstitute = Boolean(isSubstitute);
+
+    // Handle isSubstitute toggle with validation
+    if (isSubstitute !== undefined) {
+      const wantsToBeStarter = !Boolean(isSubstitute);
+      const currentlySubstitute = player.isSubstitute;
+      
+      // Promoting from sub to starter
+      if (wantsToBeStarter && currentlySubstitute) {
+        const currentStarters = player.team.players.filter(
+          (p) => p.id !== playerId && !p.isSubstitute
+        );
+        
+        // Check starter limit
+        if (currentStarters.length >= 5) {
+          return apiError(
+            "Team already has 5 starters. Demote another player to substitute first."
+          );
+        }
+        
+        // Check role conflict - use the new role if provided, otherwise current role
+        const targetRole = (role as string) ?? player.role;
+        const roleConflict = currentStarters.find((p) => p.role === targetRole);
+        if (roleConflict) {
+          return apiError(
+            `Cannot promote to starter: ${targetRole} role is already taken by ${roleConflict.ign}. Change role or demote that player first.`
+          );
+        }
+      }
+      
+      updateData.isSubstitute = Boolean(isSubstitute);
+    }
 
     if (Object.keys(updateData).length === 0) {
       return apiError("No fields to update");

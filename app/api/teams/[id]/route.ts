@@ -77,11 +77,17 @@ export async function PUT(
     const user = await requireActiveUser();
     const { id } = await params;
     const body = await request.json();
-    const { name, tag, region, color, logo, banner, isRecruiting } = body;
+    const { name, tag, region, color, logo, banner, isRecruiting, captainId } = body;
 
     // Get team and verify captain
     const team = await prisma.team.findUnique({
       where: { id },
+      include: {
+        players: {
+          where: { deletedAt: null },
+          select: { id: true, userId: true, ign: true },
+        },
+      },
     });
 
     if (!team || team.deletedAt) {
@@ -146,6 +152,20 @@ export async function PUT(
         return apiError("isRecruiting must be a boolean");
       }
       updateData.isRecruiting = isRecruiting;
+    }
+
+    // Captain transfer - only current captain can transfer
+    if (captainId !== undefined && captainId !== team.captainId) {
+      // Only current captain can transfer captaincy (not admins)
+      if (team.captainId !== user.id) {
+        return apiError("Only the current captain can transfer captaincy", 403);
+      }
+      // Verify new captain is a player on this team with a linked user account
+      const newCaptainPlayer = team.players.find((p) => p.userId === captainId);
+      if (!newCaptainPlayer) {
+        return apiError("New captain must be a player on this team with a linked account");
+      }
+      updateData.captainId = captainId;
     }
 
     if (Object.keys(updateData).length === 0) {

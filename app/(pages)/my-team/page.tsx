@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2, Pencil, Check, Camera } from 'lucide-react';
+import { Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2, Pencil, Check, Camera, Crown, ArrowUpDown } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 
@@ -154,10 +154,16 @@ export default function MyTeamPage() {
 
   // ── Player edit state ─────────────────────────────────────
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<{ ign: string; role: string; photo: string | null }>({ ign: '', role: 'EXP', photo: null });
+  const [editForm, setEditForm] = useState<{ ign: string; role: string; photo: string | null; isSubstitute: boolean }>({ ign: '', role: 'EXP', photo: null, isSubstitute: false });
   const [savingEditPlayer, setSavingEditPlayer] = useState(false);
   const [editPlayerError, setEditPlayerError] = useState<string | null>(null);
   const [editPhotoUploading, setEditPhotoUploading] = useState(false);
+
+  // ── Roster management state ───────────────────────────────
+  const [togglingSubPlayerId, setTogglingSubPlayerId] = useState<string | null>(null);
+  const [transferringCaptain, setTransferringCaptain] = useState(false);
+  const [manageError, setManageError] = useState<string | null>(null);
+  const [manageSuccess, setManageSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -343,13 +349,63 @@ export default function MyTeamPage() {
 
   const startEditPlayer = (player: Player) => {
     setEditingPlayerId(player.id);
-    setEditForm({ ign: player.ign, role: player.role, photo: player.photo });
+    setEditForm({ ign: player.ign, role: player.role, photo: player.photo, isSubstitute: player.isSubstitute });
     setEditPlayerError(null);
   };
 
   const cancelEditPlayer = () => {
     setEditingPlayerId(null);
     setEditPlayerError(null);
+  };
+
+  const togglePlayerSubstitute = async (player: Player) => {
+    if (!team) return;
+    setTogglingSubPlayerId(player.id);
+    setManageError(null);
+    setManageSuccess(null);
+    try {
+      const res = await fetch(`/api/teams/${team.id}/players/${player.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isSubstitute: !player.isSubstitute }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setManageError(data?.error ?? 'Failed to update player');
+        return;
+      }
+      setManageSuccess(player.isSubstitute ? `${player.ign} promoted to starter` : `${player.ign} moved to substitute`);
+      fetchMyTeam();
+    } catch {
+      setManageError('Failed to update player');
+    } finally {
+      setTogglingSubPlayerId(null);
+    }
+  };
+
+  const transferCaptaincy = async (newCaptainUserId: string, playerIgn: string) => {
+    if (!team || !confirm(`Transfer captain role to ${playerIgn}? You will no longer be the captain.`)) return;
+    setTransferringCaptain(true);
+    setManageError(null);
+    setManageSuccess(null);
+    try {
+      const res = await fetch(`/api/teams/${team.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ captainId: newCaptainUserId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setManageError(data?.error ?? 'Failed to transfer captaincy');
+        return;
+      }
+      setManageSuccess(`${playerIgn} is now the captain`);
+      fetchMyTeam();
+    } catch {
+      setManageError('Failed to transfer captaincy');
+    } finally {
+      setTransferringCaptain(false);
+    }
   };
 
   const handleEditPhotoChange = async (file: File) => {
@@ -386,7 +442,7 @@ export default function MyTeamPage() {
       const res = await fetch(`/api/teams/${team.id}/players/${editingPlayerId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ign: editForm.ign.trim(), role: editForm.role, photo: editForm.photo }),
+        body: JSON.stringify({ ign: editForm.ign.trim(), role: editForm.role, photo: editForm.photo, isSubstitute: editForm.isSubstitute }),
       });
       const data = await res.json();
       if (!res.ok) { setEditPlayerError(data?.error ?? 'Failed to save'); return; }
@@ -1187,34 +1243,99 @@ export default function MyTeamPage() {
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-black tracking-wider uppercase">Manage Players</h3>
-                <button onClick={() => setShowManageModal(false)} className="text-[#666] hover:text-white">
+                <button onClick={() => { setShowManageModal(false); setManageError(null); setManageSuccess(null); }} className="text-[#666] hover:text-white">
                   <X size={20} />
                 </button>
               </div>
+
+              {/* Roster Summary */}
+              {(() => {
+                const starters = team.players.filter(p => !p.isSubstitute);
+                const subs = team.players.filter(p => p.isSubstitute);
+                return (
+                  <div className="flex items-center gap-4 mb-4 pb-4 border-b border-white/10">
+                    <div className="text-center">
+                      <p className="text-xl font-black text-white">{starters.length}<span className="text-[#666]">/5</span></p>
+                      <p className="text-[9px] uppercase tracking-widest text-[#888]">Starters</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xl font-black text-[#666]">{subs.length}</p>
+                      <p className="text-[9px] uppercase tracking-widest text-[#555]">Subs</p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Error/Success Messages */}
+              {manageError && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+                  {manageError}
+                </div>
+              )}
+              {manageSuccess && (
+                <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs">
+                  {manageSuccess}
+                </div>
+              )}
               
               <div className="space-y-2">
                 {team.players.map((player) => {
                   const isEditing = editingPlayerId === player.id;
+                  const isCaptain = player.user?.id === team.captainId;
+                  const canMakeCaptain = team.isCaptain && player.user?.id && !isCaptain;
                   return (
                     <div key={player.id} className="border border-white/5 bg-[#0d0d14]">
                       {/* View row */}
                       {!isEditing && (
                         <div className="flex items-center justify-between p-3">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
+                            <div className="relative w-8 h-8 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
                               {player.photo
                                 ? <img src={player.photo} alt="" className="w-full h-full object-cover" />
                                 : <div className="w-full h-full flex items-center justify-center"><User size={12} className="text-[#333]" /></div>}
+                              {isCaptain && (
+                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#e8a000] rounded-full flex items-center justify-center">
+                                  <Crown size={8} className="text-black" />
+                                </div>
+                              )}
                             </div>
                             <div>
-                              <p className="text-white font-bold text-sm">{player.ign}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-white font-bold text-sm">{player.ign}</p>
+                                {isCaptain && <span className="text-[8px] text-[#e8a000] font-black tracking-wider">CAPTAIN</span>}
+                              </div>
                               <p className="text-[10px] text-[#666] uppercase">
                                 {player.role}
-                                {player.isSubstitute && <span className="ml-1 text-[#444]">(sub)</span>}
+                                {player.isSubstitute ? <span className="ml-1 text-[#444]">(sub)</span> : <span className="ml-1 text-emerald-600">(starter)</span>}
                               </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-1">
+                            {/* Toggle Starter/Sub */}
+                            {team.isCaptain && (
+                              <button
+                                onClick={() => togglePlayerSubstitute(player)}
+                                disabled={togglingSubPlayerId === player.id}
+                                className="text-[#555] hover:text-[#4a90d9] transition-colors p-1 disabled:opacity-50"
+                                title={player.isSubstitute ? 'Promote to starter' : 'Move to substitute'}
+                              >
+                                {togglingSubPlayerId === player.id
+                                  ? <Loader2 size={14} className="animate-spin" />
+                                  : <ArrowUpDown size={14} />}
+                              </button>
+                            )}
+                            {/* Make Captain */}
+                            {canMakeCaptain && (
+                              <button
+                                onClick={() => player.user?.id && transferCaptaincy(player.user.id, player.ign)}
+                                disabled={transferringCaptain}
+                                className="text-[#555] hover:text-[#e8a000] transition-colors p-1 disabled:opacity-50"
+                                title="Make captain"
+                              >
+                                {transferringCaptain ? <Loader2 size={14} className="animate-spin" /> : <Crown size={14} />}
+                              </button>
+                            )}
+                            {/* Edit player */}
                             {team.isCaptain && (
                               <button
                                 onClick={() => startEditPlayer(player)}
@@ -1224,6 +1345,7 @@ export default function MyTeamPage() {
                                 <Pencil size={14} />
                               </button>
                             )}
+                            {/* Remove player */}
                             {player.user?.id !== session?.user?.id && (
                               <button
                                 onClick={() => removePlayer(player.id)}
@@ -1288,6 +1410,35 @@ export default function MyTeamPage() {
                             <option value="GOLD">Gold Lane</option>
                             <option value="ROAM">Roam</option>
                           </select>
+
+                          {/* Starter/Sub Toggle */}
+                          <div className="flex items-center justify-between p-2 bg-[#0a0a10] border border-white/10">
+                            <span className="text-xs text-[#888]">Position</span>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setEditForm(prev => ({ ...prev, isSubstitute: false }))}
+                                className={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
+                                  !editForm.isSubstitute
+                                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
+                                    : 'border border-white/10 text-[#555] hover:text-white'
+                                }`}
+                              >
+                                Starter
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditForm(prev => ({ ...prev, isSubstitute: true }))}
+                                className={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
+                                  editForm.isSubstitute
+                                    ? 'bg-[#e8a000]/20 border border-[#e8a000]/40 text-[#e8a000]'
+                                    : 'border border-white/10 text-[#555] hover:text-white'
+                                }`}
+                              >
+                                Sub
+                              </button>
+                            </div>
+                          </div>
 
                           {editPlayerError && <p className="text-red-400 text-xs">{editPlayerError}</p>}
 
