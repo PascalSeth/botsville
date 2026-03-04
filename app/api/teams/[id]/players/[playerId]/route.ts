@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { PrismaClient } from "@/app/generated/prisma/client";
 import {
   requireActiveUser,
   apiError,
@@ -20,6 +19,7 @@ export async function PUT(
     const { id, playerId } = await params;
     const body = await request.json();
     const {
+      ign,
       role,
       secondaryRole,
       signatureHero,
@@ -55,6 +55,14 @@ export async function PUT(
     }
 
     const updateData: Record<string, unknown> = {};
+
+    if (ign !== undefined) {
+      const trimmed = String(ign).trim();
+      if (!trimmed || !isValidIGN(trimmed)) {
+        return apiError("Invalid IGN");
+      }
+      updateData.ign = trimmed;
+    }
 
     if (role !== undefined) {
       if (!Object.values(GameRole).includes(role)) {

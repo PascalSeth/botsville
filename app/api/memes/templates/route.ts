@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import { apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
 
@@ -8,7 +7,7 @@ const SEED_TEMPLATES = [
   { name: "Nana Panic", imageUrl: "/heroes/nana.png", heroSlug: "nana" },
 ];
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     for (const template of SEED_TEMPLATES) {
       const existing = await prisma.memeTemplate.findFirst({ where: { name: template.name } });

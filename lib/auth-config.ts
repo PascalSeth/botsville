@@ -1,7 +1,15 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/auth";
+
+// Helper: throw a CredentialsSignin with a specific code so the
+// client can map it to a human-readable message.
+function authError(code: string): never {
+  const err = new CredentialsSignin();
+  err.code = code;
+  throw err;
+}
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   providers: [
@@ -20,7 +28,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
 
         if (!credentials?.emailOrIgn || !credentials?.password) {
           console.log("[AUTH] Missing credentials - throwing error");
-          throw new Error("Email/IGN and password are required");
+          authError("missing_fields");
         }
 
         // Find user by email or IGN
@@ -39,7 +47,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
 
         if (!user) {
           console.log("[AUTH] User not found");
-          throw new Error("Invalid email/IGN or password");
+          authError("invalid_credentials");
         }
 
         console.log("[AUTH] User found:", {
@@ -53,13 +61,13 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         // Check if user is deleted
         if (user.deletedAt) {
           console.log("[AUTH] User account is deleted:", user.deletedAt);
-          throw new Error("Account not found");
+          authError("invalid_credentials"); // same message as not-found to avoid enumeration
         }
 
         // Check user status
         if (user.status === 'BANNED') {
           console.log("[AUTH] User account is banned");
-          throw new Error("Account has been banned. Please contact support.");
+          authError("account_banned");
         }
 
         if (user.status === 'SUSPENDED') {
@@ -69,13 +77,13 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
               (user.suspendedUntil.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
             );
             console.log("[AUTH] Suspension active, days remaining:", daysLeft);
-            throw new Error(
-              `Account is suspended until ${user.suspendedUntil.toLocaleDateString()}. Reason: ${user.suspendReason || "No reason provided"}. ${daysLeft} day(s) remaining.`
-            );
+            // Encode details as part of the code using URL-safe base64
+            const detail = Buffer.from(
+              JSON.stringify({ until: user.suspendedUntil, reason: user.suspendReason || null, days: daysLeft })
+            ).toString("base64url");
+            authError(`account_suspended:${detail}`);
           } else {
             console.log("[AUTH] Suspension expired, allowing login");
-            // Suspension expired, but status hasn't been updated
-            // In production, you might want to auto-update this
           }
         }
 
@@ -88,7 +96,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
 
         if (!isPasswordValid) {
           console.log("[AUTH] Invalid password");
-          throw new Error("Invalid email/IGN or password");
+          authError("invalid_credentials");
         }
 
         console.log("[AUTH] Password verified successfully");
@@ -103,6 +111,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           role: user.adminRole?.role || null,
           status: user.status,
           emailVerified: !!user.emailVerified,
+          mainRole: user.mainRole ?? null,
         };
 
         console.log("[AUTH] Authorization successful, returning user:", {
@@ -131,6 +140,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         token.role = user.role;
         token.status = user.status;
         token.emailVerified = !!user.emailVerified;
+        token.mainRole = user.mainRole ?? null;
       } else {
         console.log("[AUTH-JWT] Token refresh/verification, existing token:", {
           id: token.id,
@@ -158,6 +168,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         session.user.ign = token.ign;
         session.user.role = token.role;
         session.user.status = token.status;
+        session.user.mainRole = token.mainRole ?? null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (session.user as any).emailVerified = token.emailVerified;
         console.log("[AUTH-SESSION] Session user populated:", {

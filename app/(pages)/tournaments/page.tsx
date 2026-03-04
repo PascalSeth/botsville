@@ -75,11 +75,6 @@ type ApiResponse = {
   pagination: { total: number; limit: number; skip: number };
 };
 
-type HeroCatalogItem = {
-  key: string;
-  imageUrl: string;
-};
-
 const canRegisterTournament = (tournament: Tournament): boolean => {
   const filled = tournament.filled || 0;
   const isFull = filled >= tournament.slots;
@@ -533,9 +528,9 @@ const FeaturedCard = ({
 };
 
 // ── Small sidebar card ────────────────────────────────────────
-const SmallCard = ({ t, active, onSelect, onRegister, index }: {
+const SmallCard = ({ t, active, onSelect, onRegister }: {
   t: Tournament; active: boolean;
-  onSelect: () => void; onRegister: () => void; index: number;
+  onSelect: () => void; onRegister: () => void;
 }) => {
   const color = t.color || '#e8a000';
   const filled = t.filled ?? 0;
@@ -600,7 +595,7 @@ const SmallCard = ({ t, active, onSelect, onRegister, index }: {
 };
 
 // ── Past card ─────────────────────────────────────────────────
-const PastCard = ({ t, index }: { t: Tournament; index: number }) => (
+const PastCard = ({ t }: { t: Tournament }) => (
   <div
     className="group relative border border-white/[0.05] hover:border-white/[0.12] bg-[#09090f] overflow-hidden transition-all duration-300">
     <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{ background: (t.color || '#e8a000') }} />
@@ -836,8 +831,8 @@ export default function TournamentsPage() {
                   />
                 )}
                 <div className="flex flex-col gap-2">
-                  {tournaments.map((t, i) => (
-                    <SmallCard key={t.id} t={t} index={i}
+                  {tournaments.map((t) => (
+                    <SmallCard key={t.id} t={t}
                       active={featured?.id === t.id}
                       onSelect={() => setFeatured(t)}
                       onRegister={() => setRegistering(t)} />
@@ -847,7 +842,7 @@ export default function TournamentsPage() {
 
               {/* Mobile/tablet */}
               <div className="lg:hidden flex flex-col gap-4">
-                {tournaments.map((t, i) => (
+                {tournaments.map((t) => (
                   <FeaturedCard
                     key={t.id}
                     t={t}
@@ -880,7 +875,7 @@ export default function TournamentsPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pastTournaments.map((t, i) => <PastCard key={t.id} t={t} index={i} />)}
+              {pastTournaments.map((t) => <PastCard key={t.id} t={t} />)}
             </div>
 
             <div className="mt-8 flex items-center justify-between border border-white/[0.04] px-4 py-3">

@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useRef, useCallback } from 'react';
+/* eslint-disable @next/next/no-img-element */
+
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,7 +12,7 @@ import {
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────
-type Role = 'exp' | 'jungle' | 'mage' | 'marksman' | 'roam';
+type Role = 'exp' | 'jungle' | 'mid' | 'gold' | 'roam';
 
 interface Player {
   id: string;
@@ -62,8 +64,8 @@ async function uploadImageToSupabase(image: string, type: string, bucket: string
 const ROLES: { value: Role; label: string; icon: React.ReactNode; color: string; desc: string }[] = [
   { value: 'exp',       label: 'EXP Laner',  icon: <Sword size={12} />,      color: '#e8a000', desc: 'Fighter / Assassin' },
   { value: 'jungle',   label: 'Jungler',     icon: <Zap size={12} />,        color: '#22c55e', desc: 'Roam & Secure' },
-  { value: 'mage',     label: 'Mage',        icon: <Shield size={12} />,     color: '#a855f7', desc: 'Mid Lane Magic' },
-  { value: 'marksman', label: 'Marksman',    icon: <Crosshair size={12} />,  color: '#3b82f6', desc: 'Gold Lane Carry' },
+  { value: 'mid',      label: 'Mid',         icon: <Shield size={12} />,     color: '#a855f7', desc: 'Mid Lane Magic' },
+  { value: 'gold',     label: 'Gold',        icon: <Crosshair size={12} />,  color: '#3b82f6', desc: 'Gold Lane Carry' },
   { value: 'roam',     label: 'Roamer',      icon: <Anchor size={12} />,     color: '#f43f5e', desc: 'Support / Tank' },
 ];
 
@@ -183,9 +185,16 @@ const ImageDropZone = ({
 };
 
 // ── Role Selector ──────────────────────────────────────────
-const RoleSelector = ({ value, onChange }: { value: Role | ''; onChange: (r: Role) => void }) => {
+const RoleSelector = ({
+  value, onChange, takenRoles = [],
+}: {
+  value: Role | '';
+  onChange: (r: Role) => void;
+  takenRoles?: Role[];
+}) => {
   const [open, setOpen] = useState(false);
   const selected = getRoleConfig(value);
+  const availableRoles = ROLES.filter(r => r.value === value || !takenRoles.includes(r.value));
 
   return (
     <div className="relative">
@@ -222,7 +231,7 @@ const RoleSelector = ({ value, onChange }: { value: Role | ''; onChange: (r: Rol
             style={{ transformOrigin: 'top' }}
             className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#0d0d14] border border-white/[0.1] shadow-2xl shadow-black/60"
           >
-            {ROLES.map(r => (
+            {availableRoles.map(r => (
               <motion.button
                 key={r.value}
                 type="button"
@@ -265,14 +274,21 @@ const FieldInput = ({
   </div>
 );
 
+// ── Captain role map (MainRole → form Role) ──────────────
+const MAIN_TO_FORM_ROLE: Record<string, Role> = {
+  EXP: 'exp', JUNGLE: 'jungle', MID: 'mid', GOLD: 'gold', ROAM: 'roam',
+};
+
 // ── Player Card Editor ─────────────────────────────────────
 const PlayerEditor = ({
-  player, index, onChange, onRemove, canRemove,
+  player, index, onChange, onRemove, canRemove, locked, takenRoles = [],
 }: {
   player: Player; index: number;
   onChange: (p: Player) => void;
   onRemove: () => void;
   canRemove: boolean;
+  locked?: boolean;
+  takenRoles?: Role[];
 }) => {
   const role = getRoleConfig(player.role);
 
@@ -284,6 +300,7 @@ const PlayerEditor = ({
       exit={{ opacity: 0, y: -10, scale: 0.97 }}
       transition={{ duration: 0.3 }}
       className="relative border border-white/[0.07] bg-[#0c0c12]"
+      style={locked ? { borderColor: 'rgba(232,160,0,0.2)' } : undefined}
     >
       {/* Player index bar */}
       <div
@@ -297,7 +314,12 @@ const PlayerEditor = ({
             <span className="text-[#333] font-black text-[9px] tracking-[0.2em] uppercase font-mono">
               Player {String(index + 1).padStart(2, '0')}
             </span>
-            {role && (
+            {locked && (
+              <span className="flex items-center gap-1 text-[9px] font-black tracking-widest uppercase px-1.5 py-0.5 border" style={{ color: '#e8a000', borderColor: 'rgba(232,160,0,0.4)', background: 'rgba(232,160,0,0.08)' }}>
+                YOU · CAPTAIN
+              </span>
+            )}
+            {!locked && role && (
               <span
                 className="flex items-center gap-1 text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 border"
                 style={{ color: role.color, borderColor: `${role.color}40`, background: `${role.color}10` }}
@@ -307,7 +329,7 @@ const PlayerEditor = ({
               </span>
             )}
           </div>
-          {canRemove && (
+          {canRemove && !locked && (
             <motion.button
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
@@ -332,19 +354,33 @@ const PlayerEditor = ({
 
           {/* Fields */}
           <div className="flex flex-col gap-3">
-            <FieldInput
-              label="In-Game Name"
-              value={player.inGameName}
-              onChange={v => onChange({ ...player, inGameName: v })}
-              placeholder="YourIGN"
-              maxLength={20}
-            />
+            {locked ? (
+              <div>
+                <p className="text-[#555] text-[9px] tracking-[0.18em] uppercase mb-1.5">In-Game Name</p>
+                <div className="w-full bg-[#0d0d14] border border-[#e8a000]/20 text-[#e8a000] text-sm font-bold tracking-wide uppercase px-3 py-2.5 flex items-center gap-2">
+                  <span className="flex-1">{player.inGameName || '—'}</span>
+                  <span className="text-[8px] text-[#e8a000]/40 tracking-widest">LOCKED</span>
+                </div>
+              </div>
+            ) : (
+              <FieldInput
+                label="In-Game Name"
+                value={player.inGameName}
+                onChange={v => onChange({ ...player, inGameName: v })}
+                placeholder="YourIGN"
+                maxLength={20}
+              />
+            )}
             <RoleSelector
               value={player.role}
-              onChange={r => onChange({ ...player, role: r })}
+              onChange={locked ? () => {} : r => onChange({ ...player, role: r })}
+              takenRoles={locked ? [] : takenRoles}
             />
           </div>
         </div>
+        {locked && (
+          <p className="text-[#444] text-[9px] tracking-wide mt-3 pl-0.5">Your slot is auto-filled from your account. You cannot edit it here.</p>
+        )}
       </div>
     </motion.div>
   );
@@ -399,10 +435,10 @@ const LivePreview = ({ form }: { form: TeamForm }) => {
           </p>
         </div>
 
-        {/* Players list */}
+        {/* Players list — main roster */}
         <div className="divide-y divide-white/[0.04]">
           {ROLES.map(role => {
-            const player = form.players.find(p => p.role === role.value);
+            const player = form.players.slice(0, 5).find(p => p.role === role.value);
             const hasPLayer = player && (player.inGameName || player.image);
             return (
               <div key={role.value} className="flex items-center gap-3 px-4 py-2.5">
@@ -431,6 +467,35 @@ const LivePreview = ({ form }: { form: TeamForm }) => {
             );
           })}
         </div>
+
+        {/* Subs */}
+        {form.players.slice(5).some(p => p.inGameName) && (
+          <>
+            <div className="px-4 py-2 border-t border-white/[0.05]">
+              <p className="text-[#444] text-[8px] tracking-[0.2em] uppercase font-black">Substitutes</p>
+            </div>
+            <div className="divide-y divide-white/[0.04]">
+              {form.players.slice(5).filter(p => p.inGameName).map(p => {
+                const role = getRoleConfig(p.role);
+                return (
+                  <div key={p.id} className="flex items-center gap-3 px-4 py-2">
+                    <div className="w-7 h-7 shrink-0 border border-white/[0.06] overflow-hidden bg-[#0d0d14]">
+                      {p.image
+                        ? <img src={p.image} alt="" className="w-full h-full object-cover opacity-80" />
+                        : <div className="w-full h-full flex items-center justify-center"><User size={10} className="text-[#1e1e28]" /></div>
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[#aaa] font-bold text-[10px] tracking-wide uppercase truncate">{p.inGameName}</p>
+                      {role && <p className="text-[8px] tracking-widest uppercase" style={{ color: role.color + '99' }}>{role.label}</p>}
+                    </div>
+                    <span className="text-[7px] font-black tracking-widest uppercase px-1.5 py-0.5 border" style={{ color: '#888', borderColor: 'rgba(255,255,255,0.1)' }}>SUB</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -483,23 +548,27 @@ const ReviewScreen = ({
   onSubmit, 
   onBack, 
   isSubmitting, 
-  submitError 
+  submitError,
+  hasTeam = false,
 }: { 
   form: TeamForm; 
   onSubmit: () => void; 
   onBack: () => void;
   isSubmitting: boolean;
   submitError: string | null;
+  hasTeam?: boolean;
 }) => {
   const issues: string[] = [];
   if (!form.teamName) issues.push('Team name is required');
   if (!form.tag || form.tag.length < 3) issues.push('Team tag is required (3-5 characters)');
   if (!form.region) issues.push('Region is required');
   if (!form.logo) issues.push('Team logo is required');
-  const roles = form.players.map(p => p.role).filter(Boolean);
+  const mainPlayers = form.players.slice(0, 5);
+  const subPlayers = form.players.slice(5).filter(p => p.inGameName);
+  const roles = mainPlayers.map(p => p.role).filter(Boolean);
   const uniqueRoles = new Set(roles);
   if (uniqueRoles.size < 5) issues.push('All 5 role slots must be filled');
-  if (form.players.some(p => !p.inGameName)) issues.push('All players need an in-game name');
+  if (mainPlayers.some(p => !p.inGameName)) issues.push('All 5 main players need an in-game name');
   const valid = issues.length === 0;
 
   return (
@@ -542,15 +611,17 @@ const ReviewScreen = ({
             <p className="text-white font-black text-base tracking-wide uppercase">{form.teamName}</p>
             <p className="text-[#e8a000]/60 text-[9px] tracking-widest uppercase">[{form.tag}] · {form.region}</p>
             <p className="text-[#555] text-[9px] tracking-widest uppercase mt-0.5">
-              {form.players.filter(p => p.inGameName).length} / 5 Players Ready
+              {mainPlayers.filter(p => p.inGameName).length} / 5 Main
+              {subPlayers.length > 0 && ` · ${subPlayers.length} Sub${subPlayers.length > 1 ? 's' : ''}`}
             </p>
           </div>
         </div>
         <div className="divide-y divide-white/[0.04]">
           {form.players.map((p, i) => {
             const role = getRoleConfig(p.role);
+            const isSub = i >= 5;
             return (
-              <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
+              <div key={p.id} className="flex items-center gap-3 px-4 py-2.5" style={{ opacity: isSub ? 0.75 : 1 }}>
                 <div className="w-8 h-8 border border-white/[0.08] overflow-hidden bg-[#0d0d14] shrink-0">
                   {p.image
                     ? <img src={p.image} alt="" className="w-full h-full object-cover" />
@@ -558,15 +629,18 @@ const ReviewScreen = ({
                   }
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-bold text-xs tracking-wide uppercase truncate">
-                    {p.inGameName || <span className="text-red-400">Missing</span>}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-white font-bold text-xs tracking-wide uppercase truncate">
+                      {p.inGameName || <span className="text-red-400">Missing</span>}
+                    </p>
+                    {isSub && <span className="text-[7px] font-black tracking-widest uppercase px-1 py-px border shrink-0" style={{ color: '#666', borderColor: 'rgba(255,255,255,0.08)' }}>SUB</span>}
+                  </div>
                   {role && (
                     <p className="text-[9px] tracking-widest uppercase" style={{ color: role.color }}>{role.label}</p>
                   )}
                 </div>
-                {(!p.inGameName || !p.role) && <AlertCircle size={12} className="text-red-400 shrink-0" />}
-                {(p.inGameName && p.role) && <CheckCircle size={12} className="text-green-500 shrink-0" />}
+                {(!p.inGameName || (!isSub && !p.role)) && <AlertCircle size={12} className="text-red-400 shrink-0" />}
+                {(p.inGameName && (isSub || p.role)) && <CheckCircle size={12} className="text-green-500 shrink-0" />}
               </div>
             );
           })}
@@ -583,13 +657,15 @@ const ReviewScreen = ({
           ← Back
         </motion.button>
         <motion.button
-          whileHover={valid && !isSubmitting ? { scale: 1.02 } : {}}
-          whileTap={valid && !isSubmitting ? { scale: 0.97 } : {}}
-          onClick={valid && !isSubmitting ? onSubmit : undefined}
-          disabled={isSubmitting}
+          whileHover={valid && !isSubmitting && !hasTeam ? { scale: 1.02 } : {}}
+          whileTap={valid && !isSubmitting && !hasTeam ? { scale: 0.97 } : {}}
+          onClick={valid && !isSubmitting && !hasTeam ? onSubmit : undefined}
+          disabled={isSubmitting || hasTeam}
           className={`flex-[2] text-[10px] font-black tracking-[0.15em] uppercase py-3 transition-all flex items-center justify-center gap-2 ${
             isSubmitting
               ? 'bg-[#e8a000]/50 text-black cursor-wait'
+              : hasTeam
+              ? 'bg-[#888] text-black cursor-not-allowed'
               : valid
               ? 'bg-[#e8a000] hover:bg-[#ffb800] text-black'
               : 'bg-[#1a1a22] text-[#333] cursor-not-allowed'
@@ -600,6 +676,8 @@ const ReviewScreen = ({
               <Loader2 size={14} className="animate-spin" />
               Registering...
             </>
+          ) : hasTeam ? (
+            'Already In A Team'
           ) : (
             'Register Team →'
           )}
@@ -610,7 +688,7 @@ const ReviewScreen = ({
 };
 
 // ── Success Screen ─────────────────────────────────────────
-const SuccessScreen = ({ form, onReset }: { form: TeamForm; onReset: () => void }) => (
+const SuccessScreen = ({ form }: { form: TeamForm }) => (
   <motion.div
     initial={{ opacity: 0, scale: 0.95 }}
     animate={{ opacity: 1, scale: 1 }}
@@ -645,28 +723,29 @@ const SuccessScreen = ({ form, onReset }: { form: TeamForm; onReset: () => void 
         />
       ))}
 
-      <motion.button
-        whileHover={{ scale: 1.03 }}
-        whileTap={{ scale: 0.97 }}
-        onClick={onReset}
-        className="border border-[#e8a000]/40 text-[#e8a000] text-[10px] font-black tracking-[0.2em] uppercase px-8 py-3 hover:bg-[#e8a000]/[0.06] transition-all"
-      >
-        Register Another Team
-      </motion.button>
+      <Link href="/my-team">
+        <motion.div
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          className="inline-block bg-[#e8a000] text-black text-[10px] font-black tracking-[0.2em] uppercase px-8 py-3 cursor-pointer"
+        >
+          View My Team
+        </motion.div>
+      </Link>
     </motion.div>
   </motion.div>
 );
 
 // ── Main Page ──────────────────────────────────────────────
 export default function RegisterTeamPage() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [hasTeam, setHasTeam] = useState(false);
 
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [createdTeamId, setCreatedTeamId] = useState<string | null>(null);
   const [form, setForm] = useState<TeamForm>({
     teamName: '',
     tag: '',
@@ -678,10 +757,46 @@ export default function RegisterTeamPage() {
     players: ROLES.map(() => emptyPlayer()),
   });
 
-  React.useEffect(() => {
+  // Pre-fill slot 0 with captain's own account data
+  useEffect(() => {
+    if (!session?.user?.ign) return;
+    const mappedRole = MAIN_TO_FORM_ROLE[session.user.mainRole ?? ''] ?? '';
+    setForm(f => {
+      const players = [...f.players];
+      players[0] = { ...players[0], inGameName: session.user.ign, role: mappedRole as Role | '' };
+      return { ...f, players };
+    });
+  }, [session]);
+
+  useEffect(() => {
     if (status === 'unauthenticated') {
       setShowAuthModal(true);
     }
+  }, [status]);
+
+  useEffect(() => {
+    if (status !== 'authenticated') {
+      setHasTeam(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch('/api/my-team');
+        if (!resp.ok) {
+          if (!cancelled) setHasTeam(false);
+          return;
+        }
+        const data = await resp.json();
+        const present = Boolean(data && (data.id || data.team || data.teamId || (Array.isArray(data.players) && data.players.length > 0)));
+        if (!cancelled) setHasTeam(present);
+      } catch {
+        if (!cancelled) setHasTeam(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, [status]);
 
   const updatePlayer = (index: number, player: Player) => {
@@ -691,7 +806,7 @@ export default function RegisterTeamPage() {
   };
 
   const addPlayer = () => {
-    if (form.players.length >= 6) return;
+    if (form.players.length >= 9) return;
     setForm(f => ({ ...f, players: [...f.players, emptyPlayer()] }));
   };
 
@@ -699,28 +814,26 @@ export default function RegisterTeamPage() {
     setForm(f => ({ ...f, players: f.players.filter((_, i) => i !== index) }));
   };
 
-  const handleReset = () => {
-    setSubmitted(false);
-    setStep(0);
-    setSubmitError(null);
-    setCreatedTeamId(null);
-    setForm({ 
-      teamName: '', 
-      tag: '', 
-      region: '', 
-      logo: null, 
-      logoUrl: null, 
-      banner: null, 
-      bannerUrl: null, 
-      players: ROLES.map(() => emptyPlayer()) 
-    });
-  };
-
   // Submit team registration to API
   const handleSubmit = async () => {
     if (status !== 'authenticated') {
       setShowAuthModal(true);
       return;
+    }
+
+    // Server-side re-check to avoid race: if user already has a team, abort.
+    try {
+      const check = await fetch('/api/my-team');
+      if (check.ok) {
+        const d = await check.json();
+        const present = Boolean(d && (d.id || d.team || d.teamId || (Array.isArray(d.players) && d.players.length > 0)));
+        if (present) {
+          setSubmitError('You already belong to a team. Visit My Team to manage it.');
+          return;
+        }
+      }
+    } catch {
+      // ignore and continue — we'll surface any server errors later
     }
 
     setIsSubmitting(true);
@@ -785,10 +898,13 @@ export default function RegisterTeamPage() {
       }
 
       const teamId = teamData.team.id;
-      setCreatedTeamId(teamId);
 
-      // Step 3: Add players to the team
-      const validPlayers = playersWithUrls.filter(p => p.inGameName && p.role);
+      // Step 3: Add players to the team — skip index 0 (captain auto-added by POST /api/teams)
+      // Indices 1-4 = main players, 5-8 = substitutes
+      const validPlayers = playersWithUrls
+        .slice(1)
+        .map((p, idx) => ({ ...p, isSub: (idx + 1) >= 5 }))
+        .filter(p => p.inGameName && (p.isSub || p.role));
       
       for (const player of validPlayers) {
         const playerResponse = await fetch(`/api/teams/${teamId}/players`, {
@@ -796,9 +912,9 @@ export default function RegisterTeamPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ign: player.inGameName,
-            role: player.role.toUpperCase(),
+            role: player.role ? player.role.toUpperCase() : undefined,
             photo: player.imageUrl,
-            isSubstitute: false,
+            isSubstitute: player.isSub,
           }),
         });
 
@@ -912,11 +1028,24 @@ export default function RegisterTeamPage() {
       {/* ── Body ── */}
       {submitted ? (
         <div className="relative z-10 max-w-xl mx-auto px-4 sm:px-6 py-16">
-          <SuccessScreen form={form} onReset={handleReset} />
+          <SuccessScreen form={form} />
         </div>
       ) : (
         <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 py-8 lg:py-12">
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] xl:grid-cols-[1fr_360px] gap-6 xl:gap-10 items-start">
+            {hasTeam && (
+              <div className="col-span-full mb-4">
+                <div className="rounded border border-white/[0.06] bg-[#0c0c12] p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[#e8a000] text-xs font-black uppercase">Already Registered</p>
+                    <p className="text-[#bbb] text-sm">Our records show you already belong to a team. You cannot register another team while a membership exists.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Link href="/my-team" className="bg-[#e8a000] text-black font-black uppercase px-3 py-2 text-sm">View My Team</Link>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* ── Left: Form ── */}
             <div>
@@ -1027,7 +1156,7 @@ export default function RegisterTeamPage() {
                         Build Roster
                       </h3>
                       <span className="text-[#444] text-[9px] tracking-widest uppercase">
-                        {form.players.length} / 6 slots
+                        {form.players.length} / 9 slots
                       </span>
                     </div>
 
@@ -1046,20 +1175,33 @@ export default function RegisterTeamPage() {
 
                     <AnimatePresence>
                       <div className="flex flex-col gap-3 mb-4">
-                        {form.players.map((player, i) => (
+                      {form.players.map((player, i) => {
+                          // Roles taken by OTHER main-roster slots (indices 0-4)
+                          // Subs (index >= 5) have no restrictions
+                          const isMain = i < 5;
+                          const takenRoles: Role[] = isMain
+                            ? (form.players
+                                .slice(0, 5)
+                                .filter((p, pi) => pi !== i && p.role !== '')
+                                .map(p => p.role as Role))
+                            : [];
+                          return (
                           <PlayerEditor
                             key={player.id}
                             player={player}
                             index={i}
                             onChange={p => updatePlayer(i, p)}
                             onRemove={() => removePlayer(i)}
-                            canRemove={form.players.length > 5}
+                            canRemove={i > 4}
+                            locked={i === 0}
+                            takenRoles={takenRoles}
                           />
-                        ))}
+                        );
+                        })}
                       </div>
                     </AnimatePresence>
 
-                    {form.players.length < 6 && (
+                    {form.players.length < 9 && (
                       <motion.button
                         whileHover={{ borderColor: 'rgba(232,160,0,0.4)' }}
                         whileTap={{ scale: 0.98 }}
@@ -1098,6 +1240,7 @@ export default function RegisterTeamPage() {
                     onSubmit={handleSubmit}
                     isSubmitting={isSubmitting}
                     submitError={submitError}
+                    hasTeam={hasTeam}
                   />
                 )}
               </AnimatePresence>

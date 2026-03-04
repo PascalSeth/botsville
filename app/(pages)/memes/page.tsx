@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useEffect, useState } from 'react'
 
 type Template = { id: string; name: string; imageUrl: string }
@@ -21,7 +23,10 @@ export default function MemesPage() {
   }
 
   useEffect(() => {
-    load().catch(() => undefined)
+    const t = setTimeout(() => {
+      load().catch(() => undefined)
+    }, 0)
+    return () => clearTimeout(t)
   }, [])
 
   const submit = async () => {
@@ -34,6 +39,54 @@ export default function MemesPage() {
     setCaption('')
     setImageUrl('')
     load().catch(() => undefined)
+  }
+
+  const COMING_SOON = true
+
+  if (COMING_SOON) {
+    return (
+      <main className="min-h-screen bg-[#08080d] text-white p-4 sm:p-8">
+        <div className="max-w-5xl mx-auto">
+          <div className="rounded-2xl border border-[#e8a000]/30 bg-[#0d0d14] p-6 sm:p-8">
+            <p className="text-[10px] font-black tracking-[0.24em] uppercase text-[#e8a000]">Meme Forge</p>
+            <h1 className="mt-2 text-3xl sm:text-4xl font-black uppercase tracking-[0.08em]">Meme Generator: Coming Soon</h1>
+            <p className="mt-3 text-sm text-[#a1a1aa] max-w-2xl">
+              We are crafting a new meme battle station with templates, creator tools, and competitive community drops.
+            </p>
+
+            <div className="mt-6 grid sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-white/10 bg-[#10101a] p-4">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[#666] font-black">Forge Level</p>
+                <p className="text-xl font-black mt-1">Level 8</p>
+                <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
+                  <div className="h-full w-[84%] bg-[#e8a000]" />
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#10101a] p-4">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[#666] font-black">Challenges Ready</p>
+                <p className="text-xl font-black mt-1">12</p>
+                <p className="text-xs text-[#888] mt-1">Daily and weekly meme quests</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#10101a] p-4">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[#666] font-black">Reward Pool</p>
+                <p className="text-xl font-black mt-1">Community Badges</p>
+                <p className="text-xs text-[#888] mt-1">Earn rank + spotlight</p>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-white/10 bg-[#10101a] p-4">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-[#e8a000] font-black">Build Progress</p>
+              <ul className="mt-2 space-y-2 text-sm text-[#d4d4d8]">
+                <li>✅ Template selector ready</li>
+                <li>✅ Meme feed ready</li>
+                <li>⏳ Editor experience upgrade</li>
+                <li>⏳ Meme battle events integration</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </main>
+    )
   }
 
   return (

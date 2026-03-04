@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
-import { Users } from "lucide-react";
 
 type UserRow = {
   id: string;
@@ -52,7 +51,10 @@ export default function DashboardUsersPage() {
   }, [debouncedSearch, status]);
 
   useEffect(() => {
-    load();
+    const t = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
   return (

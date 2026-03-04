@@ -34,8 +34,8 @@ enum MainRole {
 enum GameRole {
   EXP
   JUNGLE
-  MAGE
-  MARKSMAN
+  MID
+  GOLD
   ROAM
 }
 
@@ -52,6 +52,12 @@ enum SeasonStatus {
   UPCOMING
   ACTIVE
   COMPLETED
+}
+
+// Phase within a season
+enum SeasonPhase {
+  LEAGUE    // Round-robin regular season
+  PLAYOFFS  // Elimination bracket (semis, 3rd place, grand final)
 }
 
 // Team status
@@ -144,6 +150,7 @@ enum NotificationType {
   TEAM_INVITE_DECLINED
   TEAM_INVITE_CANCELLED
   INVITE_LINK_USED
+  PLAYER_JOINED
   PLAYER_LEFT
   PLAYER_REMOVED
   CAPTAIN_TRANSFERRED
@@ -286,6 +293,8 @@ model User {
   challengesInitiated     MatchChallenge[]     @relation("ChallengeInitiator")
   challengesResponded     MatchChallenge[]     @relation("ChallengeResponder")
   triviaVotes             TriviaVote[]
+  roleVotes               RoleVote[]
+  streamerProfile         Streamer?
 
   @@index([email])
   @@index([ign])
@@ -347,19 +356,24 @@ model AdminAuditLog {
 // ═══════════════════════════════════════════════════════════
 
 model Season {
-  id        String       @id @default(uuid())
-  name      String       @unique // e.g. "Season 6"
-  status    SeasonStatus @default(UPCOMING)
-  startDate DateTime
-  endDate   DateTime
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id                String       @id @default(uuid())
+  name              String       @unique // e.g. "Season 6"
+  status            SeasonStatus @default(UPCOMING)
+  startDate         DateTime
+  endDate           DateTime
+  scrimTournamentId String?      // The designated tournament for weekly scrims
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
+  scrimTournament   Tournament?  @relation("SeasonScrimTournament", fields: [scrimTournamentId], references: [id])
   teamStandings     TeamStanding[]
   playerMvpRankings PlayerMvpRanking[]
   heroMeta          HeroMeta[]
   bestRoleAwards    BestRoleAward[]
+  roleVotes         RoleVote[]
   tournaments       Tournament[]
+  monthlyStandings  MonthlyStanding[]
+  headToHeads       HeadToHead[]
 
   @@index([status])
   @@map("seasons")
@@ -407,6 +421,9 @@ model Team {
   challengesSent    MatchChallenge[]           @relation("ChallengeChallengerTeam")
   challengesReceived MatchChallenge[]          @relation("ChallengeChallengedTeam")
   scrimAvailabilities WeeklyScrimAvailability[]
+  monthlyStandings    MonthlyStanding[]
+  headToHeadsAsA      HeadToHead[]             @relation("HeadToHeadA")
+  headToHeadsAsB      HeadToHead[]             @relation("HeadToHeadB")
 
   @@index([status])
   @@index([region])
@@ -457,6 +474,7 @@ model Player {
   team             Team                @relation(fields: [teamId], references: [id])
   mvpRankings      PlayerMvpRanking[]
   bestRoleAwards   BestRoleAward[]
+  roleVotes        RoleVote[]
   matchPerformances MatchPerformance[]
 
   @@index([teamId])
@@ -548,6 +566,7 @@ model Tournament {
   slots                Int
   filled               Int              @default(0)
   status               TournamentStatus @default(UPCOMING)
+  phase                SeasonPhase?     // LEAGUE = round-robin regular season; PLAYOFFS = elimination bracket; null = standalone cup
   color                String?          @db.VarChar(7)
   tags                 String[]         @default([])
   heroImage            String?
@@ -559,6 +578,7 @@ model Tournament {
   deletedAt            DateTime?
 
   season             Season                   @relation(fields: [seasonId], references: [id])
+  scrimSeasons       Season[]                 @relation("SeasonScrimTournament") // Seasons that use this as their scrim tournament
   pointsFormulas     PointsFormula[]
   registrations      TournamentRegistration[]
   waitlist           Waitlist[]
@@ -645,6 +665,7 @@ model Match {
   scoreB        Int         @default(0)
   stage         String?     // e.g. "Group A — Match 3", "Grand Finals — Game 2"
   bestOf        Int         @default(3)
+  round         Int?        // round number in round-robin (1 = Week 1, 2 = Week 2…); null for playoff knockout matches
   elapsed       String?     // for live display e.g. "23:45"
   winnerId      String?
   forfeitedById String?     // which team forfeited, if applicable
@@ -896,7 +917,8 @@ model TeamStanding {
   previousRank Int?
   wins         Int      @default(0)
   losses       Int      @default(0)
-  points       Int      @default(0)
+  forfeits     Int      @default(0) // matches this team forfeited this season (each costs -1 point)
+  points       Int      @default(0) // can go negative (forfeit = -1)
   streak       String?  // e.g. "W5", "L2" — consecutive matches this season
   tier         Tier     @default(C)
   updatedAt    DateTime @updatedAt
@@ -925,6 +947,54 @@ model PlayerMvpRanking {
   @@unique([playerId, seasonId])
   @@index([seasonId, rank])
   @@map("player_mvp_rankings")
+}
+
+// ═══════════════════════════════════════════════════════════
+// MONTHLY STANDINGS — calendar-month leaderboard within a season
+// Updated after every match result is finalised
+// ═══════════════════════════════════════════════════════════
+
+model MonthlyStanding {
+  id       String @id @default(uuid())
+  seasonId String
+  teamId   String
+  year     Int    // calendar year  e.g. 2026
+  month    Int    // calendar month 1–12
+  wins     Int    @default(0)
+  losses   Int    @default(0)
+  forfeits Int    @default(0) // forfeits in this calendar month
+  points   Int    @default(0) // can go negative
+  rank     Int?   // recomputed after every update for this (seasonId, year, month)
+
+  season Season @relation(fields: [seasonId], references: [id])
+  team   Team   @relation(fields: [teamId], references: [id])
+
+  @@unique([seasonId, teamId, year, month])
+  @@index([seasonId, year, month, rank])
+  @@map("monthly_standings")
+}
+
+// ═══════════════════════════════════════════════════════════
+// HEAD-TO-HEAD — used to break ties in season standings
+// teamAId is always the lexicographically smaller id for uniqueness
+// ═══════════════════════════════════════════════════════════
+
+model HeadToHead {
+  id        String   @id @default(uuid())
+  seasonId  String
+  teamAId   String   // lexicographically smaller of the two teamIds
+  teamBId   String
+  teamAWins Int      @default(0)
+  teamBWins Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  season Season @relation(fields: [seasonId], references: [id])
+  teamA  Team   @relation("HeadToHeadA", fields: [teamAId], references: [id])
+  teamB  Team   @relation("HeadToHeadB", fields: [teamBId], references: [id])
+
+  @@unique([seasonId, teamAId, teamBId])
+  @@index([seasonId])
+  @@map("head_to_head")
 }
 
 // Computed from MatchDraft per season — never manually entered
@@ -981,6 +1051,25 @@ model BestRoleAward {
   @@unique([role, seasonId]) // one award per role per season
   @@index([seasonId])
   @@map("best_role_awards")
+}
+
+// Community voting — one vote per user per role per season
+model RoleVote {
+  id        String   @id @default(uuid())
+  userId    String
+  playerId  String
+  role      GameRole
+  seasonId  String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role, seasonId]) // one vote per role per season per user
+  @@index([role, seasonId])
+  @@index([playerId, seasonId])
+  @@map("role_votes")
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1480,8 +1569,65 @@ model MemePost {
   @@map("meme_posts")
 }
 
+enum StreamPlatform {
+  YOUTUBE
+  TWITCH
+  TIKTOK
+  FACEBOOK
+}
+
+model Streamer {
+  id         String   @id @default(uuid())
+  userId     String?  @unique
+  name       String
+  bio        String?  @db.Text
+  photo      String?
+  coverImage String?
+  youtube    String?
+  twitch     String?
+  tiktok     String?
+  facebook   String?
+  instagram  String?
+  twitter    String?
+  discord    String?
+  featured   Boolean  @default(false)
+  verified   Boolean  @default(false)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User?              @relation(fields: [userId], references: [id])
+  videos     StreamerVideo[]
+  spotlights StreamerSpotlight[]
+
+  @@index([featured, active])
+  @@index([name])
+  @@map("streamers")
+}
+
+model StreamerVideo {
+  id          String         @id @default(uuid())
+  streamerId  String
+  platform    StreamPlatform
+  title       String
+  description String?        @db.Text
+  videoId     String
+  videoUrl    String
+  thumbnail   String?
+  pinned      Boolean        @default(false)
+  active      Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+
+  streamer Streamer @relation(fields: [streamerId], references: [id], onDelete: Cascade)
+
+  @@index([streamerId, pinned, active])
+  @@index([createdAt])
+  @@map("streamer_videos")
+}
+
 model StreamerSpotlight {
   id         String   @id @default(uuid())
+  streamerId String?
   name       String
   platform   String
   handle     String
@@ -1492,6 +1638,9 @@ model StreamerSpotlight {
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())
 
+  streamer Streamer? @relation(fields: [streamerId], references: [id], onDelete: SetNull)
+
   @@index([active, weekStart])
+  @@index([streamerId])
   @@map("streamer_spotlights")
 }

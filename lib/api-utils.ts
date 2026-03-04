@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth-config";
 import { prisma } from "@/lib/prisma";
-import { AdminRoleType } from "@/app/generated/prisma/enums";
+import { AdminRoleType, NotificationType } from "@/app/generated/prisma/enums";
 import { NextResponse } from "next/server";
 
 /**
@@ -102,6 +102,67 @@ export async function createAuditLog(
       details,
     },
   });
+}
+
+/**
+ * Notify all team members (captain + existing players) that someone joined.
+ * Pass the joining player's userId to exclude them from receiving their own notification.
+ */
+export async function notifyTeamMemberJoined({
+  teamId,
+  joinerIgn,
+  joinerUserId,
+  role,
+}: {
+  teamId: string;
+  joinerIgn: string;
+  joinerUserId?: string | null;
+  role: string;
+}) {
+  try {
+    const team = await prisma.team.findUnique({
+      where: { id: teamId },
+      select: {
+        name: true,
+        captainId: true,
+        players: {
+          where: { deletedAt: null, userId: { not: null } },
+          select: { userId: true },
+        },
+      },
+    });
+    if (!team) return;
+
+    // Collect all userIds to notify: captain + players with accounts
+    const recipientIds = new Set<string>();
+    if (team.captainId) recipientIds.add(team.captainId);
+    for (const p of team.players) {
+      if (p.userId) recipientIds.add(p.userId);
+    }
+    // Don't notify the joiner themselves
+    if (joinerUserId) recipientIds.delete(joinerUserId);
+
+    if (recipientIds.size === 0) return;
+
+    const roleLabel = role.charAt(0) + role.slice(1).toLowerCase();
+    // Use individual creates so the Prisma extension fires a socket event per user
+    await Promise.all(
+      Array.from(recipientIds).map((userId) =>
+        prisma.notification.create({
+          data: {
+            userId,
+            type: NotificationType.PLAYER_JOINED,
+            title: "New Teammate Joined!",
+            message: `${joinerIgn} joined ${team.name} as ${roleLabel} Lane`,
+            linkUrl: "/my-team",
+          },
+        })
+      )
+    );
+  } catch (err) {
+    // Notifications are non-critical — log but don't throw
+    console.error("notifyTeamMemberJoined error:", err);
+  }
 }
 
 /**

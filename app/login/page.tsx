@@ -167,27 +167,31 @@ const Field = ({
 
 // ── Role Card ──────────────────────────────────────────────
 const RoleCard = ({
-  role, selected, onSelect,
-}: { role: PlayerRole; selected: boolean; onSelect: () => void }) => {
+  role, selected, onSelect, locked,
+}: { role: PlayerRole; selected: boolean; onSelect: () => void; locked?: boolean }) => {
   const cfg = ROLE_CONFIG[role];
   const [hovered, setHovered] = useState(false);
-  const active = selected || hovered;
+  const isLocked = locked && !selected;
+  const active = selected || (!locked && hovered);
 
   return (
     <button
       type="button"
-      onClick={onSelect}
-      onMouseEnter={() => setHovered(true)}
+      onClick={isLocked ? undefined : onSelect}
+      onMouseEnter={() => !isLocked && setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      disabled={isLocked}
       className="relative flex flex-col items-center gap-1.5 p-2 transition-all duration-300 overflow-hidden group"
       style={{
         border: `1px solid ${active ? cfg.color + '80' : 'rgba(255,255,255,0.05)'}`,
         background: selected
           ? `linear-gradient(135deg, ${cfg.color}18, ${cfg.color}08)`
-          : hovered
+          : hovered && !locked
           ? `${cfg.color}0a`
           : 'transparent',
         boxShadow: selected ? `0 0 20px ${cfg.color}30, inset 0 0 20px ${cfg.color}08` : 'none',
+        opacity: isLocked ? 0.28 : 1,
+        cursor: isLocked ? 'not-allowed' : 'pointer',
       }}
     >
       {/* Corner accents */}
@@ -259,8 +263,8 @@ const RoleCard = ({
 
 // ── Role Selector ──────────────────────────────────────────
 const RoleSelector = ({
-  selected, onSelect,
-}: { selected: PlayerRole | null; onSelect: (r: PlayerRole) => void }) => (
+  selected, onSelect, locked,
+}: { selected: PlayerRole | null; onSelect: (r: PlayerRole) => void; locked?: boolean }) => (
   <div className="flex flex-col gap-2">
     <div className="flex items-center gap-2">
       <label className="text-[10px] font-bold tracking-[0.25em] uppercase" style={{ color: 'rgba(255,255,255,0.78)' }}>Main Role</label>
@@ -273,10 +277,16 @@ const RoleSelector = ({
           {ROLE_CONFIG[selected].desc}
         </span>
       )}
+      {locked && (
+        <span className="text-[9px] tracking-wider px-1.5 py-0.5 flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}>
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1C8.676 1 6 3.676 6 7v2H4v14h16V9h-2V7c0-3.324-2.676-6-6-6zm0 2c2.276 0 4 1.724 4 4v2H8V7c0-2.276 1.724-4 4-4zm0 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+          locked by roster
+        </span>
+      )}
     </div>
     <div className="grid grid-cols-5 gap-1.5">
       {ROLES.map((r) => (
-        <RoleCard key={r} role={r} selected={selected === r} onSelect={() => onSelect(r)} />
+        <RoleCard key={r} role={r} selected={selected === r} onSelect={() => onSelect(r)} locked={locked} />
       ))}
     </div>
   </div>
@@ -320,12 +330,26 @@ const SuccessMessage = ({ message }: { message: string }) => (
 );
 
 // ── Login Form ─────────────────────────────────────────────
-const AUTH_ERRORS: Record<string, string> = {
-  Configuration: 'Server configuration error. Please try again later.',
-  AccessDenied: 'Access denied. Please check your credentials.',
-  Verification: 'Verification failed. Please try again.',
-  Default: 'An error occurred. Please try again.',
-};
+function decodeAuthError(code: string | null): string | null {
+  if (!code) return null;
+  if (code === 'missing_fields') return 'Please enter your email / IGN and password.';
+  if (code === 'invalid_credentials') return 'Invalid email / IGN or password.';
+  if (code === 'account_banned') return 'Your account has been banned. Contact support for help.';
+  if (code.startsWith('account_suspended:')) {
+    try {
+      const payload = JSON.parse(atob(code.split(':')[1]));
+      const until = new Date(payload.until).toLocaleDateString();
+      const reason = payload.reason ? ` Reason: ${payload.reason}.` : '';
+      const days = payload.days;
+      return `Account suspended until ${until}.${reason} ${days} day(s) remaining.`;
+    } catch { return 'Your account is currently suspended.'; }
+  }
+  if (code === 'Configuration') return 'Server configuration error. Please try again later.';
+  if (code === 'AccessDenied') return 'Access denied. Please check your credentials.';
+  if (code === 'Verification') return 'Verification failed. Please try again.';
+  if (code === 'CredentialsSignin') return 'Invalid email / IGN or password.';
+  return `Authentication error. Please try again.`;
+}
 
 const LoginForm = () => {
   const router = useRouter();
@@ -336,7 +360,7 @@ const LoginForm = () => {
   const [loading, setLoading] = useState(false);
   const urlError = searchParams.get('error');
   const [error, setError] = useState<string | null>(
-    urlError ? (AUTH_ERRORS[urlError] || `Authentication error: ${urlError}`) : null
+    decodeAuthError(urlError)
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -346,7 +370,7 @@ const LoginForm = () => {
     setLoading(true);
     try {
       const result = await signIn('credentials', { emailOrIgn, password, redirect: false });
-      if (result?.error) { setError(result.error); setLoading(false); return; }
+      if (result?.error) { setError(decodeAuthError(result.error)); setLoading(false); return; }
       if (result?.ok) { router.push('/'); router.refresh(); }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
@@ -417,6 +441,41 @@ const RegisterForm = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [rosterMatch, setRosterMatch] = useState<{ team: { name: string; tag: string; color?: string | null }; role: string } | null>(null);
+  const [checkingIgn, setCheckingIgn] = useState(false);
+
+  // Map GameRole (from API) back to the PlayerRole used by the form
+  const GAME_ROLE_TO_PLAYER_ROLE: Record<string, PlayerRole> = {
+    EXP: 'EXP', JUNGLE: 'JUNGLE', MID: 'MID', GOLD: 'GOLD', ROAM: 'ROAM',
+  };
+
+  // Auto-set role from roster match; unlock when match clears
+  useEffect(() => {
+    if (rosterMatch) {
+      const mapped = GAME_ROLE_TO_PLAYER_ROLE[rosterMatch.role];
+      if (mapped) setRole(mapped);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rosterMatch]);
+
+  // Debounced roster check — requires both a valid IGN and a full 6-char team code
+  useEffect(() => {
+    setRosterMatch(null);
+    if (ign.trim().length < 3 || teamCode.trim().length !== 6) return;
+    const t = setTimeout(async () => {
+      setCheckingIgn(true);
+      try {
+        const res = await fetch(
+          `/api/users/check-ign?ign=${encodeURIComponent(ign.trim())}&teamCode=${encodeURIComponent(teamCode.trim().toUpperCase())}`
+        );
+        const data = await res.json();
+        if (data.found) setRosterMatch({ team: data.team, role: data.role });
+        else setRosterMatch(null);
+      } catch { setRosterMatch(null); }
+      finally { setCheckingIgn(false); }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [ign, teamCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -431,7 +490,7 @@ const RegisterForm = () => {
       const res = await fetch('/api/users/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, ign, mainRole: ROLE_MAP[role], teamCode: teamCode.trim() ? teamCode.trim().toUpperCase() : undefined }),
+        body: JSON.stringify({ email, password, ign, mainRole: role ? ROLE_MAP[role] : undefined, teamCode: teamCode.trim() ? teamCode.trim().toUpperCase() : undefined }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Registration failed'); setLoading(false); return; }
@@ -453,6 +512,29 @@ const RegisterForm = () => {
         <Field label="In-Game Name" placeholder="YourMLBBName" value={ign} onChange={setIgn} />
         <Field label="Email" type="email" placeholder="your@email.com" value={email} onChange={setEmail} />
       </div>
+
+      {/* Roster match banner */}
+      {(rosterMatch || checkingIgn) && (
+        <div
+          className="flex items-start gap-2.5 px-3 py-2.5 border text-[11px] leading-relaxed"
+          style={rosterMatch
+            ? { borderColor: `${rosterMatch.team.color ?? '#22c55e'}55`, background: `${rosterMatch.team.color ?? '#22c55e'}10`, color: rosterMatch.team.color ?? '#22c55e' }
+            : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)', color: 'rgba(255,255,255,0.4)' }
+          }
+        >
+          {checkingIgn ? (
+            <span className="tracking-wide">Checking roster…</span>
+          ) : rosterMatch ? (
+            <>
+              <svg className="shrink-0 mt-px" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
+              <span>
+                <strong>{ign}</strong> is on the <strong>{rosterMatch.team.name}</strong> ({rosterMatch.team.tag}) roster as <strong>{rosterMatch.role}</strong>.
+                {' '}Your account will be automatically linked when you register.
+              </span>
+            </>
+          ) : null}
+        </div>
+      )}
       <Field
         label="Team Code (Optional)" placeholder="A1B2C3"
         value={teamCode}
@@ -470,7 +552,7 @@ const RegisterForm = () => {
         />
         <Field label="Confirm" type="password" placeholder="repeat password" value={confirm} onChange={setConfirm} />
       </div>
-      <RoleSelector selected={role} onSelect={setRole} />
+      <RoleSelector selected={role} onSelect={setRole} locked={!!rosterMatch} />
       <p className="text-[9px] tracking-wide leading-relaxed" style={{ color: 'rgba(255,255,255,0.68)' }}>
         By registering you agree to the Botsville tournament rules and MLBB community guidelines.
       </p>
@@ -638,7 +720,7 @@ export default function AuthPage() {
         const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
         const cb = params.get('callbackUrl') || '/';
         router.push(cb);
-      } catch (e) {
+      } catch {
         router.push('/');
       }
     }

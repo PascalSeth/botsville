@@ -7,9 +7,17 @@ import {
   isValidHexColor,
   isValidRegion,
 } from "@/lib/api-utils";
-import { TeamStatus } from "@/app/generated/prisma/enums";
+import { TeamStatus, MainRole, GameRole } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
+
+const ROLE_TO_GAME_ROLE: Record<MainRole, GameRole> = {
+  EXP: GameRole.EXP,
+  JUNGLE: GameRole.JUNGLE,
+  MID: GameRole.MID,
+  GOLD: GameRole.GOLD,
+  ROAM: GameRole.ROAM,
+};
 
 const TEAM_CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -223,29 +231,54 @@ export async function POST(request: NextRequest) {
 
     const teamCode = await generateUniqueTeamCode();
 
-    // Create team
-    const team = await prisma.team.create({
-      data: {
-        name,
-        tag: tagUpper,
-        teamCode,
-        region,
-        color: color || null,
-        logo: logo || null,
-        banner: banner || null,
-        captainId: user.id,
-        status: TeamStatus.ACTIVE,
-        isRecruiting: isRecruiting === undefined ? true : Boolean(isRecruiting),
-      },
-      include: {
-        captain: {
-          select: {
-            id: true,
-            ign: true,
-            photo: true,
+    // Fetch captain's mainRole to create their player record
+    const captainRecord = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { mainRole: true, ign: true, photo: true },
+    });
+
+    // Create team + captain player record atomically
+    const team = await prisma.$transaction(async (tx) => {
+      const created = await tx.team.create({
+        data: {
+          name,
+          tag: tagUpper,
+          teamCode,
+          region,
+          color: color || null,
+          logo: logo || null,
+          banner: banner || null,
+          captainId: user.id,
+          status: TeamStatus.ACTIVE,
+          isRecruiting: isRecruiting === undefined ? true : Boolean(isRecruiting),
+        },
+        include: {
+          captain: {
+            select: {
+              id: true,
+              ign: true,
+              photo: true,
+            },
           },
         },
-      },
+      });
+
+      // Auto-create a player record for the captain using their mainRole
+      if (captainRecord?.mainRole) {
+        const gameRole = ROLE_TO_GAME_ROLE[captainRecord.mainRole];
+        await tx.player.create({
+          data: {
+            teamId: created.id,
+            userId: user.id,
+            ign: captainRecord.ign,
+            role: gameRole,
+            photo: captainRecord.photo || null,
+            isSubstitute: false,
+          },
+        });
+      }
+
+      return created;
     });
 
     return apiSuccess(

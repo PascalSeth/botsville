@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { hashPassword, findUserByEmailOrIgn } from "@/lib/auth";
-import { apiError, apiSuccess, isValidEmail, isValidIGN, isValidTeamCode } from "@/lib/api-utils";
+import { apiError, apiSuccess, isValidEmail, isValidIGN, isValidTeamCode, notifyTeamMemberJoined } from "@/lib/api-utils";
 import { MainRole, GameRole } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
@@ -8,8 +8,8 @@ import { prisma } from "@/lib/prisma";
 const ROLE_TO_GAME_ROLE: Record<MainRole, GameRole> = {
   EXP: GameRole.EXP,
   JUNGLE: GameRole.JUNGLE,
-  MID: GameRole.MAGE,
-  GOLD: GameRole.MARKSMAN,
+  MID: GameRole.MID,
+  GOLD: GameRole.GOLD,
   ROAM: GameRole.ROAM,
 };
 
@@ -117,19 +117,38 @@ export async function POST(request: NextRequest) {
       });
 
       if (teamToJoin) {
-        await transaction.player.create({
-          data: {
-            userId: createdUser.id,
-            teamId: teamToJoin.id,
-            ign: createdUser.ign,
-            role: ROLE_TO_GAME_ROLE[normalizedMainRole],
-            isSubstitute: false,
-          },
+        // If the captain already added this player's IGN as a placeholder slot,
+        // link the new account to that slot instead of creating a duplicate.
+        const linked = await transaction.player.updateMany({
+          where: { ign: createdUser.ign, userId: null, deletedAt: null, teamId: teamToJoin.id },
+          data: { userId: createdUser.id },
         });
+        if (linked.count === 0) {
+          // No matching placeholder — create a fresh player record
+          await transaction.player.create({
+            data: {
+              userId: createdUser.id,
+              teamId: teamToJoin.id,
+              ign: createdUser.ign,
+              role: ROLE_TO_GAME_ROLE[normalizedMainRole],
+              isSubstitute: false,
+            },
+          });
+        }
       }
 
       return createdUser;
     });
+
+    // Fire-and-forget: notify captain + existing members when joining a team
+    if (teamToJoin) {
+      void notifyTeamMemberJoined({
+        teamId: teamToJoin.id,
+        joinerIgn: user.ign,
+        joinerUserId: user.id,
+        role: ROLE_TO_GAME_ROLE[normalizedMainRole],
+      });
+    }
 
     return apiSuccess(
       {

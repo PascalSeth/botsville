@@ -50,7 +50,10 @@ export default function DashboardAuditLogPage() {
   }, [actorId, targetType, targetId]);
 
   useEffect(() => {
-    load(1);
+    const t = setTimeout(() => {
+      void load(1);
+    }, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
   return (

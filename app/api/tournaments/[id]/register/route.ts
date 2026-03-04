@@ -125,14 +125,14 @@ export async function POST(
     const requiredRoles: GameRole[] = [
       GameRole.EXP,
       GameRole.JUNGLE,
-      GameRole.MAGE,
-      GameRole.MARKSMAN,
+      GameRole.MID,
+      GameRole.GOLD,
       GameRole.ROAM,
     ];
     const hasAllRoles = requiredRoles.every((role) => roles.includes(role));
 
     if (!hasAllRoles) {
-      return apiError("Team must have players covering all 5 roles (EXP, Jungle, Mage, Marksman, Roam)");
+      return apiError("Team must have players covering all 5 roles (EXP, Jungle, Mid, Gold, Roam)");
     }
 
     if (!team.logo || !team.banner) {

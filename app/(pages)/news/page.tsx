@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { ChevronRight, Calendar, Tag } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 
 type Article = {
   id: string;

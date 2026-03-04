@@ -1,8 +1,7 @@
-import { NextRequest } from "next/server";
 import { apiError, apiSuccess, getCurrentUser } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     const user = await getCurrentUser();
     const now = new Date();

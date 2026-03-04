@@ -9,8 +9,8 @@ import { Shield, Zap, Swords, Star, Target, Wind, Trophy, Search, X, MapPin, Use
 const ROLE_META: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
   EXP:      { color: '#e8a000', icon: <Swords size={9} />,  label: 'EXP'     },
   JUNGLE:   { color: '#e84040', icon: <Zap    size={9} />,  label: 'Jungle'  },
-  MAGE:     { color: '#9b59b6', icon: <Star   size={9} />,  label: 'Mage'    },
-  MARKSMAN: { color: '#27ae60', icon: <Target size={9} />,  label: 'Marksman' },
+  MID:      { color: '#9b59b6', icon: <Star   size={9} />,  label: 'Mid'     },
+  GOLD:     { color: '#27ae60', icon: <Target size={9} />,  label: 'Gold'    },
   ROAM:     { color: '#4a90d9', icon: <Shield size={9} />,  label: 'Roam'    },
   // Legacy role mapping for display
   Tank:      { color: '#4a90d9', icon: <Shield size={9} />,  label: 'Tank'     },
@@ -47,6 +47,7 @@ interface ApiTeam {
   color: string | null;
   region: string;
   status: string;
+  isRecruiting?: boolean;
   trophies: string[];
   totalPrizeMoney: number;
   registeredAt: string;
@@ -208,7 +209,7 @@ const PageHeader = ({ teamsCount, topTeam }: { teamsCount: number; topTeam?: Api
 // ══════════════════════════════════════════════════════════
 // SPOTLIGHT PANEL (desktop left zone)
 // ══════════════════════════════════════════════════════════
-const SpotlightPanel = ({ team }: { team: ApiTeam }) => {
+const SpotlightPanel = ({ team, userTeamId }: { team: ApiTeam; userTeamId?: string | null }) => {
   const winRate = team.wins + team.losses > 0 
     ? Math.round((team.wins / (team.wins + team.losses)) * 100) 
     : 0;
@@ -331,6 +332,27 @@ const SpotlightPanel = ({ team }: { team: ApiTeam }) => {
                 ))}
               </div>
             )}
+
+          {/* Apply button for users without a team */}
+          {team.isRecruiting && (
+            <div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (userTeamId) return; // prevent action if already in a team
+                  const ev = new CustomEvent('team-apply', { detail: { teamId: team.id } });
+                  window.dispatchEvent(ev);
+                }}
+                disabled={Boolean(userTeamId)}
+                className={
+                  `text-[10px] font-black uppercase tracking-widest px-3 py-2 border border-white/10 ` +
+                  (userTeamId ? 'opacity-40 cursor-not-allowed text-[#bbb]' : 'text-white hover:bg-white/5')
+                }
+              >
+                {userTeamId ? 'Already In A Team' : 'Apply To Join'}
+              </button>
+            </div>
+          )}
           </div>
 
           {/* ── Starting Five ── */}
@@ -371,7 +393,7 @@ const SpotlightPanel = ({ team }: { team: ApiTeam }) => {
 // ══════════════════════════════════════════════════════════
 // SIDEBAR ENTRY
 // ══════════════════════════════════════════════════════════
-const SidebarEntry = ({ team, active, onClick, index, canChallenge, challengeLoading, onChallenge }: {
+const SidebarEntry = ({ team, active, onClick, index, canChallenge, challengeLoading, onChallenge, captainTeamId }: {
   team: ApiTeam;
   active: boolean;
   onClick: () => void;
@@ -379,6 +401,7 @@ const SidebarEntry = ({ team, active, onClick, index, canChallenge, challengeLoa
   canChallenge?: boolean;
   challengeLoading?: boolean;
   onChallenge?: () => void;
+  captainTeamId?: string | null;
 }) => {
   const teamColor = team.color || '#e8a000';
   const logoUrl = team.logo || '/heroes/stun.png';
@@ -423,7 +446,7 @@ const SidebarEntry = ({ team, active, onClick, index, canChallenge, challengeLoa
         {/* Name + tier */}
         <div className="flex-1 min-w-0 py-3">
           <p className="font-black text-xs uppercase tracking-wide leading-none truncate"
-            style={{ color: active ? 'white' : '#777', fontFamily: "'Barlow Condensed', sans-serif" }}>
+            style={{ color: active ? 'white' : (canChallenge ? '#777' : (captainTeamId ? teamColor : '#777')), fontFamily: "'Barlow Condensed', sans-serif" }}>
             {team.name}
           </p>
           <div className="flex items-center gap-1.5 mt-1">
@@ -445,7 +468,8 @@ const SidebarEntry = ({ team, active, onClick, index, canChallenge, challengeLoa
                 onChallenge();
               }}
               disabled={challengeLoading}
-              className="text-[8px] font-black uppercase tracking-wider px-2 py-1 border border-[#e8a000]/35 text-[#e8a000] hover:bg-[#e8a000]/15 disabled:opacity-50"
+              className="text-[8px]  uppercase tracking-wider px-2 py-1 border hover:bg-[#e8a000]/15 disabled:opacity-50"
+              style={{ color: teamColor, borderColor: `${teamColor}35` }}
             >
               {challengeLoading ? '...' : 'Challenge'}
             </button>
@@ -465,13 +489,14 @@ const SidebarEntry = ({ team, active, onClick, index, canChallenge, challengeLoa
 // ══════════════════════════════════════════════════════════
 // MOBILE TEAM ROW — accordion with photo cards
 // ══════════════════════════════════════════════════════════
-const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, onChallenge }: {
+const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, onChallenge, userTeamId }: {
   team: ApiTeam;
   active: boolean;
   onClick: () => void;
   canChallenge?: boolean;
   challengeLoading?: boolean;
   onChallenge?: () => void;
+  userTeamId?: string | null;
 }) => {
   const winRate = team.wins + team.losses > 0 
     ? Math.round((team.wins / (team.wins + team.losses)) * 100) 
@@ -599,9 +624,29 @@ const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, 
                     type="button"
                     disabled={challengeLoading}
                     onClick={onChallenge}
-                    className="text-[10px] font-black uppercase tracking-widest px-3 py-2 border border-[#e8a000]/35 text-[#e8a000] hover:bg-[#e8a000]/15 disabled:opacity-50"
+                    className="text-[10px] font-black uppercase tracking-widest px-3 py-2 border hover:bg-[#e8a000]/15 disabled:opacity-50"
+                    style={{ color: teamColor, borderColor: `${teamColor}35` }}
                   >
                     {challengeLoading ? 'Sending...' : 'Challenge This Team'}
+                  </button>
+                </div>
+              )}
+              {/* Apply button for users without a team */}
+              {!canChallenge && team.isRecruiting && (
+                <div className="mb-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (userTeamId) return;
+                      window.dispatchEvent(new CustomEvent('team-apply', { detail: { teamId: team.id } }));
+                    }}
+                    disabled={Boolean(userTeamId)}
+                    className={
+                      `text-[10px] font-black uppercase tracking-widest px-3 py-2 border border-white/10 ` +
+                      (userTeamId ? 'opacity-40 cursor-not-allowed text-[#bbb]' : 'text-white hover:bg-white/5')
+                    }
+                  >
+                    {userTeamId ? 'Already In A Team' : 'Apply To Join'}
                   </button>
                 </div>
               )}
@@ -650,8 +695,10 @@ export default function TeamsPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All'|'S'|'A'|'B'|'C'>('All');
   const [captainTeamId, setCaptainTeamId] = useState<string | null>(null);
+  const [userTeamId, setUserTeamId] = useState<string | null>(null);
   const [challengeSubmittingId, setChallengeSubmittingId] = useState<string | null>(null);
   const [challengeFeedback, setChallengeFeedback] = useState<string | null>(null);
+  const [applyFeedback, setApplyFeedback] = useState<string | null>(null);
   const [availableTeamIds, setAvailableTeamIds] = useState<string[]>([]);
   const [showAvailableOnly, setShowAvailableOnly] = useState(false);
   const [weeklyScrimDateLabel, setWeeklyScrimDateLabel] = useState<string | null>(null);
@@ -683,17 +730,25 @@ export default function TeamsPage() {
       const response = await fetch('/api/my-team');
       if (!response.ok) {
         setCaptainTeamId(null);
+        setUserTeamId(null);
         return;
       }
       const data = await response.json();
+      // Track whether the user is a captain and also whether they belong to a team at all
       if (data?.isCaptain && data?.id) {
         setCaptainTeamId(data.id);
+        setUserTeamId(data.id);
         fetchWeeklyAvailability();
+      } else if (data?.id) {
+        setUserTeamId(data.id);
+        setCaptainTeamId(null);
       } else {
         setCaptainTeamId(null);
+        setUserTeamId(null);
       }
     } catch {
       setCaptainTeamId(null);
+      setUserTeamId(null);
     }
   }, [fetchWeeklyAvailability]);
 
@@ -701,6 +756,13 @@ export default function TeamsPage() {
     fetchTeams();
     fetchCaptainTeam();
   }, [fetchCaptainTeam]);
+
+  // Auto-dismiss applyFeedback after a short time to avoid sticky messages
+  useEffect(() => {
+    if (!applyFeedback) return;
+    const t = setTimeout(() => setApplyFeedback(null), 4000);
+    return () => clearTimeout(t);
+  }, [applyFeedback]);
 
   const challengeTeam = async (teamId: string) => {
     if (!captainTeamId) {
@@ -733,6 +795,40 @@ export default function TeamsPage() {
       setChallengeSubmittingId(null);
     }
   };
+
+  const applyToTeam = useCallback(async (teamId: string) => {
+    if (userTeamId) {
+      setApplyFeedback('You already belong to a team and cannot apply.');
+      return;
+    }
+
+    setApplyFeedback(null);
+    try {
+      const response = await fetch(`/api/teams/${teamId}/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setApplyFeedback(data?.error || 'Failed to apply to team');
+        return;
+      }
+      setApplyFeedback('Application submitted. The team captain will review your request.');
+    } catch {
+      setApplyFeedback('Failed to apply to team');
+    }
+  }, [userTeamId]);
+
+  // Listen for in-panel apply button events
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ teamId: string }>;
+      if (ce?.detail?.teamId) void applyToTeam(ce.detail.teamId);
+    };
+    window.addEventListener('team-apply', handler as EventListener);
+    return () => window.removeEventListener('team-apply', handler as EventListener);
+  }, [applyToTeam]);
 
   const fetchTeams = async () => {
     try {
@@ -805,16 +901,23 @@ export default function TeamsPage() {
         {/* ── DESKTOP: spotlight + sidebar ── */}
         <div className="hidden lg:flex" style={{ height: 'calc(100vh - 196px)', minHeight: 560 }}>
 
-          {/* Spotlight */}
-          <div className="flex-1 relative overflow-hidden">
-            {activeTeam && <SpotlightPanel team={activeTeam} />}
-          </div>
+              {applyFeedback && applyFeedback.length > 0 && (
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3">
+                  <div className="border border-white/10 bg-white/3 px-3 py-2 text-xs text-white">
+                    {applyFeedback}
+                  </div>
+                </div>
+              )}
 
-          {/* Sidebar */}
-          <div className="w-72 xl:w-80 shrink-0 border-l flex flex-col bg-[#08080e]"
-            style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+            {/* Spotlight column */}
+            <div className="flex-1 relative overflow-hidden">
+              {activeTeam && <SpotlightPanel team={activeTeam} userTeamId={userTeamId} />}
+            </div>
 
-            <div className="p-3 border-b space-y-2" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+            <div className="w-72 xl:w-80 shrink-0 border-l flex flex-col bg-[#08080e]"
+              style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+
+              <div className="p-3 border-b space-y-2" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
               <div className="flex items-center gap-2 bg-[#0d0d14] border border-white/[0.06] px-2.5 py-2
                               focus-within:border-[#e8a000]/30 transition-colors">
                 <Search size={11} className="text-[#333] shrink-0" />
@@ -859,7 +962,8 @@ export default function TeamsPage() {
                       onClick={() => setActiveId(team.id)}
                         canChallenge={Boolean(captainTeamId && captainTeamId !== team.id && availableTeamIds.includes(team.id))}
                       challengeLoading={challengeSubmittingId === team.id}
-                      onChallenge={() => challengeTeam(team.id)} />
+                      onChallenge={() => challengeTeam(team.id)}
+                      captainTeamId={captainTeamId} />
                   ))
               }
             </div>
@@ -918,7 +1022,8 @@ export default function TeamsPage() {
                 onClick={() => setActiveId(prev => prev === team.id ? null : team.id)}
                 canChallenge={Boolean(captainTeamId && captainTeamId !== team.id && availableTeamIds.includes(team.id))}
                 challengeLoading={challengeSubmittingId === team.id}
-                onChallenge={() => challengeTeam(team.id)} />
+                onChallenge={() => challengeTeam(team.id)}
+                userTeamId={userTeamId} />
             ))}
           </div>
         </div>

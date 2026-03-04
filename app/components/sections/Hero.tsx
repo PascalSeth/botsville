@@ -213,10 +213,12 @@ const HeroSidePanel = ({
   mobile = false,
   stats,
   onRegisterClick,
+  hasTeam = false,
 }: {
   mobile?: boolean;
   stats: HeroPanelStats;
   onRegisterClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+  hasTeam?: boolean;
 }) => (
   <motion.div
     className={`absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-[10] ${mobile ? 'w-[120px]' : 'w-[150px]'}`}
@@ -247,16 +249,28 @@ const HeroSidePanel = ({
         </div>
       ))}
 
-      <Link
-        href="/register-team"
-        onClick={onRegisterClick}
-        className={`${mobile ? 'px-2 py-2.5 text-[8px]' : 'px-3 py-3 text-[9px]'} font-black uppercase text-center`}
-        style={{ background: '#e8a000', color: '#000', letterSpacing: '0.16em' }}>
-        <span className="inline-flex items-center gap-1.5">
-          Register Team
-          <ChevronRight size={mobile ? 10 : 11} />
-        </span>
-      </Link>
+      {hasTeam ? (
+        <Link
+          href="/my-team"
+          className={`${mobile ? 'px-2 py-2.5 text-[8px]' : 'px-3 py-3 text-[9px]'} font-black uppercase text-center`}
+          style={{ background: '#a8a8a8', color: '#000', letterSpacing: '0.16em' }}>
+          <span className="inline-flex items-center gap-1.5">
+            My Team
+            <ChevronRight size={mobile ? 10 : 11} />
+          </span>
+        </Link>
+      ) : (
+        <Link
+          href="/register-team"
+          onClick={onRegisterClick}
+          className={`${mobile ? 'px-2 py-2.5 text-[8px]' : 'px-3 py-3 text-[9px]'} font-black uppercase text-center`}
+          style={{ background: '#e8a000', color: '#000', letterSpacing: '0.16em' }}>
+          <span className="inline-flex items-center gap-1.5">
+            Register Team
+            <ChevronRight size={mobile ? 10 : 11} />
+          </span>
+        </Link>
+      )}
     </div>
   </motion.div>
 );
@@ -539,11 +553,13 @@ const DesktopHero = ({
   onHeroClick,
   stats,
   onRegisterClick,
+  hasTeam = false,
 }: {
   heroImage: string;
   onHeroClick: () => void;
   stats: HeroPanelStats;
   onRegisterClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+  hasTeam?: boolean;
 }) => (
   <section className="hidden md:flex flex-col w-full overflow-hidden" style={{ background: '#050812' }}>
     {/* Stage */}
@@ -563,7 +579,7 @@ const DesktopHero = ({
       <GhostTitle />
       <HeroCharacter heroImage={heroImage} onClick={onHeroClick} />
       <TopBar />
-      <HeroSidePanel stats={stats} onRegisterClick={onRegisterClick} />
+      <HeroSidePanel stats={stats} onRegisterClick={onRegisterClick} hasTeam={hasTeam} />
     </div>
 
     <TickerBar delay={1.1} />
@@ -579,11 +595,13 @@ const MobileHero = ({
   onHeroClick,
   stats,
   onRegisterClick,
+  hasTeam = false,
 }: {
   heroImage: string;
   onHeroClick: () => void;
   stats: HeroPanelStats;
   onRegisterClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+  hasTeam?: boolean;
 }) => (
   <section className="md:hidden flex flex-col w-full overflow-hidden" style={{ background: '#050812' }}>
 
@@ -658,7 +676,7 @@ const MobileHero = ({
         </Link>
       </div>
 
-      <HeroSidePanel mobile stats={stats} onRegisterClick={onRegisterClick} />
+      <HeroSidePanel mobile stats={stats} onRegisterClick={onRegisterClick} hasTeam={hasTeam} />
     </div>
 
     <TickerBar delay={0.9} />
@@ -674,6 +692,7 @@ export const Hero = () => {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const { status } = useSession();
   const isAuthenticated = status === 'authenticated';
+  const [hasTeam, setHasTeam] = useState(false);
   const [heroSearch, setHeroSearch] = useState('');
   const [isSavingHero, setIsSavingHero] = useState(false);
   const [heroSelectionError, setHeroSelectionError] = useState<string | null>(null);
@@ -729,6 +748,31 @@ export const Hero = () => {
 
     loadPanelStats().catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setHasTeam(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch('/api/my-team');
+        if (!resp.ok) {
+          if (!cancelled) setHasTeam(false);
+          return;
+        }
+        const data = await resp.json();
+        const present = Boolean(data && (data.id || data.team || data.teamId || (Array.isArray(data.players) && data.players.length > 0)));
+        if (!cancelled) setHasTeam(present);
+      } catch {
+        if (!cancelled) setHasTeam(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
 
   const handleSelectHero = async (hero: HeroCatalogItem) => {
     setHeroSelectionError(null);
@@ -805,12 +849,14 @@ export const Hero = () => {
             onHeroClick={() => setIsHeroModalOpen(true)}
             stats={panelStats}
             onRegisterClick={handleRegisterClick}
+            hasTeam={hasTeam}
           />
           <DesktopHero
             heroImage={heroImage || '/stunchou.png'}
             onHeroClick={() => setIsHeroModalOpen(true)}
             stats={panelStats}
             onRegisterClick={handleRegisterClick}
+            hasTeam={hasTeam}
           />
           <HeroSelectionModal
             open={isHeroModalOpen}

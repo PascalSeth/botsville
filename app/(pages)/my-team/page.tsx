@@ -1,8 +1,10 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2 } from 'lucide-react';
+import { Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2, Pencil, Check, Camera } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 
@@ -144,6 +146,18 @@ export default function MyTeamPage() {
   const [availabilityNote, setAvailabilityNote] = useState('');
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
+  const [addPlayerIGN, setAddPlayerIGN] = useState('');
+  const [addPlayerRole, setAddPlayerRole] = useState('EXP');
+  const [addingPlayer, setAddingPlayer] = useState(false);
+  const [addPlayerError, setAddPlayerError] = useState<string | null>(null);
+  const [addPlayerSuccess, setAddPlayerSuccess] = useState<string | null>(null);
+
+  // ── Player edit state ─────────────────────────────────────
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{ ign: string; role: string; photo: string | null }>({ ign: '', role: 'EXP', photo: null });
+  const [savingEditPlayer, setSavingEditPlayer] = useState(false);
+  const [editPlayerError, setEditPlayerError] = useState<string | null>(null);
+  const [editPhotoUploading, setEditPhotoUploading] = useState(false);
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -300,6 +314,88 @@ export default function MyTeamPage() {
       console.error('Error removing player:', err);
     } finally {
       setRemovingPlayerId(null);
+    }
+  };
+
+  const addPlayer = async () => {
+    if (!team || !addPlayerIGN.trim()) return;
+    setAddingPlayer(true);
+    setAddPlayerError(null);
+    setAddPlayerSuccess(null);
+    try {
+      const res = await fetch(`/api/teams/${team.id}/players`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ign: addPlayerIGN.trim(), role: addPlayerRole, isSubstitute: false }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setAddPlayerError(data?.error ?? 'Failed to add player'); return; }
+      setAddPlayerSuccess(`${addPlayerIGN.trim()} added!`);
+      setAddPlayerIGN('');
+      setAddPlayerRole('EXP');
+      fetchMyTeam();
+    } catch {
+      setAddPlayerError('Failed to add player');
+    } finally {
+      setAddingPlayer(false);
+    }
+  };
+
+  const startEditPlayer = (player: Player) => {
+    setEditingPlayerId(player.id);
+    setEditForm({ ign: player.ign, role: player.role, photo: player.photo });
+    setEditPlayerError(null);
+  };
+
+  const cancelEditPlayer = () => {
+    setEditingPlayerId(null);
+    setEditPlayerError(null);
+  };
+
+  const handleEditPhotoChange = async (file: File) => {
+    setEditPhotoUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64 = e.target?.result as string;
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64, type: 'player', bucket: 'teams' }),
+        });
+        const data = await res.json();
+        if (res.ok && data.url) {
+          setEditForm(prev => ({ ...prev, photo: data.url }));
+        } else {
+          setEditPlayerError('Photo upload failed');
+        }
+        setEditPhotoUploading(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setEditPlayerError('Photo upload failed');
+      setEditPhotoUploading(false);
+    }
+  };
+
+  const savePlayerEdit = async () => {
+    if (!team || !editingPlayerId) return;
+    setSavingEditPlayer(true);
+    setEditPlayerError(null);
+    try {
+      const res = await fetch(`/api/teams/${team.id}/players/${editingPlayerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ign: editForm.ign.trim(), role: editForm.role, photo: editForm.photo }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setEditPlayerError(data?.error ?? 'Failed to save'); return; }
+      setEditingPlayerId(null);
+      fetchMyTeam();
+    } catch {
+      setEditPlayerError('Failed to save');
+    } finally {
+      setSavingEditPlayer(false);
     }
   };
 
@@ -577,9 +673,9 @@ export default function MyTeamPage() {
         {team.banner ? (
           <img src={team.banner} alt="" className="w-full h-full object-cover opacity-50" />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-[#e8a000]/10 to-[#4a90d9]/10" />
+          <div className="w-full h-full bg-linear-to-br from-[#e8a000]/10 to-[#4a90d9]/10" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0f] via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0f] via-transparent to-transparent" />
         
         {/* Logo overlapping banner */}
         <div className="absolute bottom-0 left-8 translate-y-1/2">
@@ -604,7 +700,7 @@ export default function MyTeamPage() {
         )}
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-black tracking-[0.1em] uppercase">{team.name}</h1>
+            <h1 className="text-3xl font-black tracking-widest uppercase">{team.name}</h1>
             <div className="flex items-center gap-3 mt-1">
               <span className="text-[#e8a000]/70 text-sm tracking-widest">[{team.tag}]</span>
               {team.teamCode && (
@@ -1097,41 +1193,166 @@ export default function MyTeamPage() {
               </div>
               
               <div className="space-y-2">
-                {team.players.map((player) => (
-                  <div
-                    key={player.id}
-                    className="flex items-center justify-between p-3 bg-[#0d0d14] border border-white/5"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 border border-white/10 overflow-hidden bg-[#0d0d14]">
-                        {player.photo ? (
-                          <img src={player.photo} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <User size={12} className="text-[#333]" />
+                {team.players.map((player) => {
+                  const isEditing = editingPlayerId === player.id;
+                  return (
+                    <div key={player.id} className="border border-white/5 bg-[#0d0d14]">
+                      {/* View row */}
+                      {!isEditing && (
+                        <div className="flex items-center justify-between p-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
+                              {player.photo
+                                ? <img src={player.photo} alt="" className="w-full h-full object-cover" />
+                                : <div className="w-full h-full flex items-center justify-center"><User size={12} className="text-[#333]" /></div>}
+                            </div>
+                            <div>
+                              <p className="text-white font-bold text-sm">{player.ign}</p>
+                              <p className="text-[10px] text-[#666] uppercase">
+                                {player.role}
+                                {player.isSubstitute && <span className="ml-1 text-[#444]">(sub)</span>}
+                              </p>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-white font-bold text-sm">{player.ign}</p>
-                        <p className="text-[10px] text-[#666] uppercase">{player.role}</p>
-                      </div>
+                          <div className="flex items-center gap-1">
+                            {team.isCaptain && (
+                              <button
+                                onClick={() => startEditPlayer(player)}
+                                className="text-[#555] hover:text-[#e8a000] transition-colors p-1"
+                                title="Edit player"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                            )}
+                            {player.user?.id !== session?.user?.id && (
+                              <button
+                                onClick={() => removePlayer(player.id)}
+                                disabled={removingPlayerId === player.id}
+                                className="text-[#555] hover:text-red-400 transition-colors p-1 disabled:opacity-50"
+                              >
+                                {removingPlayerId === player.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Edit row */}
+                      {isEditing && (
+                        <div className="p-3 space-y-3">
+                          {/* Photo */}
+                          <div className="flex items-center gap-3">
+                            <label className="relative cursor-pointer group shrink-0">
+                              <div className="w-12 h-12 border border-white/10 overflow-hidden bg-[#0a0a10]">
+                                {editPhotoUploading
+                                  ? <div className="w-full h-full flex items-center justify-center"><Loader2 size={14} className="animate-spin text-[#e8a000]" /></div>
+                                  : editForm.photo
+                                    ? <img src={editForm.photo} alt="" className="w-full h-full object-cover" />
+                                    : <div className="w-full h-full flex items-center justify-center"><User size={14} className="text-[#333]" /></div>
+                                }
+                              </div>
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                <Camera size={12} className="text-[#e8a000]" />
+                              </div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) handleEditPhotoChange(f);
+                                }}
+                              />
+                            </label>
+                            <p className="text-[10px] text-[#555] tracking-wide">Click avatar to change photo</p>
+                          </div>
+
+                          {/* IGN */}
+                          <input
+                            type="text"
+                            placeholder="In-game name"
+                            value={editForm.ign}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, ign: e.target.value }))}
+                            className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50 placeholder:text-[#444]"
+                          />
+
+                          {/* Role */}
+                          <select
+                            value={editForm.role}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, role: e.target.value }))}
+                            className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50"
+                          >
+                            <option value="EXP">EXP Lane</option>
+                            <option value="JUNGLE">Jungle</option>
+                            <option value="MID">Mid Lane</option>
+                            <option value="GOLD">Gold Lane</option>
+                            <option value="ROAM">Roam</option>
+                          </select>
+
+                          {editPlayerError && <p className="text-red-400 text-xs">{editPlayerError}</p>}
+
+                          {/* Actions */}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={savePlayerEdit}
+                              disabled={savingEditPlayer || !editForm.ign.trim() || editPhotoUploading}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-xs font-black tracking-widest uppercase hover:bg-[#e8a000]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {savingEditPlayer ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                              Save
+                            </button>
+                            <button
+                              onClick={cancelEditPlayer}
+                              disabled={savingEditPlayer}
+                              className="px-4 py-2 border border-white/10 text-[#666] text-xs font-black tracking-widest uppercase hover:text-white transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    {player.user?.id !== session?.user?.id && (
-                      <button
-                        onClick={() => removePlayer(player.id)}
-                        disabled={removingPlayerId === player.id}
-                        className="text-[#666] hover:text-red-400 transition-colors disabled:opacity-50"
-                      >
-                        {removingPlayerId === player.id ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          <Trash2 size={16} />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
+              </div>
+
+              {/* Add Player Form */}
+              <div className="mt-5 pt-5 border-t border-white/10">
+                <p className="text-[10px] font-black tracking-widest uppercase text-[#888] mb-3">Add Player Directly</p>
+                {addPlayerError && (
+                  <p className="text-red-400 text-xs mb-2">{addPlayerError}</p>
+                )}
+                {addPlayerSuccess && (
+                  <p className="text-emerald-400 text-xs mb-2">{addPlayerSuccess}</p>
+                )}
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    placeholder="In-game name (IGN)"
+                    value={addPlayerIGN}
+                    onChange={(e) => setAddPlayerIGN(e.target.value)}
+                    className="bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50 placeholder:text-[#444]"
+                  />
+                  <select
+                    value={addPlayerRole}
+                    onChange={(e) => setAddPlayerRole(e.target.value)}
+                    className="bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50"
+                  >
+                    <option value="EXP">EXP Lane</option>
+                    <option value="JUNGLE">Jungle</option>
+                    <option value="MID">Mid Lane</option>
+                    <option value="GOLD">Gold Lane</option>
+                    <option value="ROAM">Roam</option>
+                  </select>
+                  <button
+                    onClick={addPlayer}
+                    disabled={!addPlayerIGN.trim() || addingPlayer}
+                    className="flex items-center justify-center gap-2 px-4 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-xs font-black tracking-widest uppercase hover:bg-[#e8a000]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {addingPlayer ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                    Add Player
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
-import { Palette, Check, X, Loader2 } from "lucide-react";
+import { Check, X, Loader2 } from "lucide-react";
 
 type Artwork = {
   id: string;
@@ -48,7 +48,10 @@ export default function DashboardFanArtPage() {
   }, [filter]);
 
   useEffect(() => {
-    load();
+    const t = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
   const handleApproveReject = async (artworkId: string, action: "approve" | "reject", rejectionReason?: string) => {

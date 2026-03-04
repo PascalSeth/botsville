@@ -24,7 +24,6 @@ type UserRow = {
 
 export default function DashboardRolesPage() {
   const [roles, setRoles] = useState<AdminRoleRow[]>([]);
-  const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
@@ -77,7 +76,7 @@ export default function DashboardRolesPage() {
     if (!assignUserId || !assignRole) return;
     setAssigning(true);
     setError(null);
-    const { data, error: err } = await dashboardFetch<{ message: string }>("/api/admin/roles", {
+    const { error: err } = await dashboardFetch<{ message: string }>("/api/admin/roles", {
       method: "POST",
       body: JSON.stringify({ userId: assignUserId, role: assignRole }),
     });

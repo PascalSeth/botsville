@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { dashboardFetch } from "../lib/api";
 import { Calendar, Plus, Loader2 } from "lucide-react";
 
@@ -38,7 +39,10 @@ export default function DashboardSeasonsPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    const t = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -175,6 +179,7 @@ export default function DashboardSeasonsPage() {
                   <th className="p-3">Start</th>
                   <th className="p-3">End</th>
                   <th className="p-3">Tournaments</th>
+                  <th className="p-3"></th>
                 </tr>
               </thead>
               <tbody>
@@ -197,6 +202,14 @@ export default function DashboardSeasonsPage() {
                     <td className="p-3 text-[#aaa] text-sm">{new Date(s.startDate).toLocaleDateString()}</td>
                     <td className="p-3 text-[#aaa] text-sm">{new Date(s.endDate).toLocaleDateString()}</td>
                     <td className="p-3 text-[#666] text-sm">{s._count?.tournaments ?? 0}</td>
+                    <td className="p-3">
+                      <Link
+                        href={`/dashboard/seasons/${s.id}`}
+                        className="text-[10px] font-bold uppercase text-[#e8a000] hover:underline tracking-wider"
+                      >
+                        Manage →
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>

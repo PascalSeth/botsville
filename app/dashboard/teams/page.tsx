@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
-import { UsersRound } from "lucide-react";
 
 type Team = {
   id: string;
@@ -43,7 +42,10 @@ export default function DashboardTeamsPage() {
   }, [status]);
 
   useEffect(() => {
-    load();
+    const t = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
   return (

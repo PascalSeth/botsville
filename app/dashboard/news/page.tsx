@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { dashboardFetch } from "../lib/api";
-import { Newspaper } from "lucide-react";
 
 type Article = {
   id: string;
@@ -46,7 +45,10 @@ export default function DashboardNewsPage() {
   }, [status]);
 
   useEffect(() => {
-    load();
+    const t = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
   return (

@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import { apiError, apiSuccess } from "@/lib/api-utils";
 import { MainRole } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
@@ -8,7 +7,7 @@ function isGhanaRegion(value: string | null | undefined) {
   return ["accra", "kumasi", "takoradi", "tema", "cape coast", "tamale"].includes(value.toLowerCase());
 }
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     const users = await prisma.user.findMany({
       where: { deletedAt: null, status: "ACTIVE" },

@@ -9,54 +9,74 @@ function parseDateTime(value: string): Date | null {
   return date;
 }
 
-async function getOrCreateWeeklyScrimTournament(weekStart: Date) {
+async function getSeasonScrimTournament() {
   const activeSeason = await prisma.season.findFirst({
     where: { status: "ACTIVE" },
-    select: { id: true },
+    select: {
+      id: true,
+      name: true,
+      endDate: true,
+      scrimTournamentId: true,
+      scrimTournament: { select: { id: true, name: true } },
+    },
   });
 
   if (!activeSeason) {
-    throw new Error("No active season found for weekly scrim scheduling");
+    throw new Error("No active season found for scrim scheduling");
   }
 
-  const weekKey = weekStart.toISOString().slice(0, 10);
-  const tournamentName = `Weekly Scrim ${weekKey}`;
+  // If season has a designated scrim tournament, use it
+  if (activeSeason.scrimTournamentId && activeSeason.scrimTournament) {
+    return activeSeason.scrimTournament;
+  }
 
+  // Otherwise, create or find a default scrim tournament for the season
+  const defaultName = `${activeSeason.name} Scrims`;
   const existing = await prisma.tournament.findFirst({
     where: {
       seasonId: activeSeason.id,
-      name: tournamentName,
+      name: defaultName,
       deletedAt: null,
     },
   });
 
   if (existing) {
+    // Set it as the season's scrim tournament for future use
+    await prisma.season.update({
+      where: { id: activeSeason.id },
+      data: { scrimTournamentId: existing.id },
+    });
     return existing;
   }
 
-  const endOfWeek = new Date(weekStart);
-  endOfWeek.setDate(weekStart.getDate() + 6);
-  endOfWeek.setHours(20, 0, 0, 0);
+  const registrationDeadline = new Date();
+  registrationDeadline.setDate(registrationDeadline.getDate() + 7);
 
-  const registrationDeadline = new Date(weekStart);
-  registrationDeadline.setHours(12, 0, 0, 0);
-
-  return prisma.tournament.create({
+  const tournament = await prisma.tournament.create({
     data: {
       seasonId: activeSeason.id,
-      name: tournamentName,
-      subtitle: "Weekly community scrim",
+      name: defaultName,
+      subtitle: "Weekly community scrims",
       format: TournamentFormat.ROUND_ROBIN,
       location: "Online",
       isOnline: true,
-      date: endOfWeek,
+      date: activeSeason.endDate,
       registrationDeadline,
       slots: 128,
       status: TournamentStatus.OPEN,
       prizePool: null,
     },
   });
+
+  // Set it as the season's scrim tournament
+  await prisma.season.update({
+    where: { id: activeSeason.id },
+    data: { scrimTournamentId: tournament.id },
+  });
+
+  return tournament;
 }
+
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -210,7 +230,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
               deletedAt: null,
             },
           })
-        : await getOrCreateWeeklyScrimTournament(challenge.weekStart);
+        : await getSeasonScrimTournament();
 
       if (!tournament) {
         return apiError("Tournament not found", 404);

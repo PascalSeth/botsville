@@ -3,6 +3,7 @@ import type { Prisma } from "@/app/generated/prisma/client";
 import { getCurrentUser, requireActiveUser, apiError, apiSuccess } from "@/lib/api-utils";
 import { CommunityPostType } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { getIO } from "@/lib/socket-server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -77,8 +78,14 @@ export async function POST(request: NextRequest) {
       },
       include: {
         author: { select: { id: true, ign: true, photo: true } },
+        _count: { select: { comments: true, reactions: true } },
       },
     });
+
+    // Broadcast to all connected clients so feeds update in real time
+    try {
+      getIO()?.emit('new-post', post);
+    } catch { /* ignore — socket not available in serverless */ }
 
     return apiSuccess({ message: "Post created", post }, 201);
   } catch (error: unknown) {

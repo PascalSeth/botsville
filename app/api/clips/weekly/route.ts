@@ -17,7 +17,7 @@ function getWeekBounds(date = new Date()) {
   return { weekStart, weekEnd };
 }
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     const { weekStart, weekEnd } = getWeekBounds();
     const featured = await prisma.clipOfWeek.findFirst({

@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { FormEvent, useEffect, useState } from "react";
 import { AlertCircle, Loader2, Plus, Trash2 } from "lucide-react";
 

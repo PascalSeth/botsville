@@ -11,7 +11,7 @@ const DEFAULT_BADGES = [
   { key: "campus-king", name: "Campus King", description: "Top player in campus scrims." },
 ];
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     const user = await requireActiveUser();
 

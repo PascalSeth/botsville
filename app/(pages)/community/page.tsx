@@ -2,14 +2,16 @@
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Image from 'next/image';
+import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadImage, STORAGE_BUCKETS, supabase } from '@/lib/supabase';
+import { getSocket } from '@/lib/socket-client';
 import {
   Flame, ThumbsUp, ThumbsDown, Laugh, Eye, Zap, Heart,
   MessageSquare, ChevronRight, ChevronDown, Send, X,
   Gamepad2, Clapperboard, Swords, MessageCircle,
   Trophy, Plus, TrendingUp, Clock, Sparkles,
-  Film, Camera, Brain,
+  Film, Camera, Brain, Type,
 } from 'lucide-react';
 
 /* ================================================================
@@ -555,48 +557,68 @@ const CommentItem = ({ comment, depth = 0 }: { comment: Comment; depth?: number 
 );
 
 /* ================================================================
-   Compose Modal
+   Compose Modal  — redesigned
    ================================================================ */
+
+const TYPE_ACCENT: Record<string, string> = {
+  CLIP: '#a78bfa',
+  MEME: '#facc15',
+  HOT_TAKE: '#f97316',
+  BUILD_SCREENSHOT: '#34d399',
+  ROAST: '#f87171',
+};
 
 const ComposeModal = ({ open, onClose, onPosted }: { open: boolean; onClose: () => void; onPosted: () => void }) => {
   const [type, setType] = useState<PostType>('HOT_TAKE');
   const [content, setContent] = useState('');
   const [title, setTitle] = useState('');
+  const [showTitle, setShowTitle] = useState(true);
   const [heroSlug, setHeroSlug] = useState('');
+  const [showHero, setShowHero] = useState(false);
   const [mediaError, setMediaError] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const MAX = 500;
+
+  // Revoke object URL on unmount only
+  useEffect(() => () => { if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current); }, []);
+
+  const pickFile = (f: File | null) => {
+    if (previewUrlRef.current) { URL.revokeObjectURL(previewUrlRef.current); previewUrlRef.current = null; }
+    setFile(f);
+    setMediaError('');
+    if (!f) { setPreview(null); return; }
+    if (f.type.startsWith('image')) {
+      previewUrlRef.current = URL.createObjectURL(f);
+      setPreview(previewUrlRef.current);
+    } else {
+      setPreview('video');
+    }
+  };
 
   useEffect(() => {
-    if (open && textareaRef.current) textareaRef.current.focus();
+    if (open) setTimeout(() => textareaRef.current?.focus(), 80);
   }, [open]);
 
   const submit = async () => {
-    if (!content.trim() || submitting) return;
+    if (!content.trim() || submitting || content.length > MAX) return;
     let uploadedUrl = '';
     if (file) {
       const isVideo = file.type.startsWith('video') || isVideoUrl(file.name);
       const isImage = file.type.startsWith('image') || isImageUrl(file.name);
-
-      if (!isVideo && !isImage) {
-        setMediaError('File must be an image or video.');
-        return;
-      }
-
+      if (!isVideo && !isImage) { setMediaError('File must be an image or video.'); return; }
       setSubmitting(true);
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const path = 'community/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '-' + safeName;
       const bucket = isVideo ? STORAGE_BUCKETS.VIDEOS : STORAGE_BUCKETS.IMAGES;
       const { url, error } = await uploadImage(bucket, path, file);
-      if (error || !url) {
-        setMediaError('Upload failed. Please try again.');
-        setSubmitting(false);
-        return;
-      }
+      if (error || !url) { setMediaError('Upload failed. Please try again.'); setSubmitting(false); return; }
       uploadedUrl = url;
     }
-
     setSubmitting(true);
     try {
       const res = await fetch('/api/community/posts', {
@@ -611,134 +633,219 @@ const ComposeModal = ({ open, onClose, onPosted }: { open: boolean; onClose: () 
         }),
       });
       if (res.ok) {
-        setContent('');
-        setTitle('');
-        setFile(null);
-        setMediaError('');
-        setHeroSlug('');
-        onPosted();
-        onClose();
+        setContent(''); setTitle(''); setFile(null); setPreview(null); setMediaError('');
+        if (previewUrlRef.current) { URL.revokeObjectURL(previewUrlRef.current); previewUrlRef.current = null; }
+        setHeroSlug(''); setShowTitle(false); setShowHero(false);
+        onPosted(); onClose();
       }
     } catch { /* ignore */ }
     setSubmitting(false);
   };
 
   const typeConfig = POST_TYPES.find(t => t.value === type) ?? POST_TYPES[1];
+  const accent = TYPE_ACCENT[type] ?? '#e8a000';
+  const charsLeft = MAX - content.length;
+  const overLimit = charsLeft < 0;
+
+  // SVG ring for character counter
+  const ring = 20;
+  const r = 8;
+  const circ = 2 * Math.PI * r;
+  const progress = Math.min(content.length / MAX, 1);
+  const dash = circ * progress;
 
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md"
-          onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-        >
+        <>
+          {/* Backdrop — desktop only */}
           <motion.div
-            initial={{ opacity: 0, y: 40, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.97 }}
-            className="w-full max-w-2xl bg-[#0d0d14] border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="hidden sm:block fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+            onClick={onClose}
+          />
+
+          {/* Panel */}
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 32, stiffness: 320 }}
+            className="fixed bottom-0 left-0 right-0 z-50 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-105 flex flex-col bg-[#0a0a0f] rounded-t-3xl sm:rounded-2xl overflow-hidden shadow-2xl"
+            style={{ borderTop: `2px solid ${accent}33` }}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/6">
-              <h3 className="text-white font-bold text-sm uppercase tracking-widest flex items-center gap-2">
-                <Sparkles size={14} className="text-[#e8a000]" /> New Post
-              </h3>
-              <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors">
-                <X size={18} />
-              </button>
+            {/* Drag handle (mobile) */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden">
+              <div className="w-10 h-1 rounded-full bg-white/10" />
             </div>
 
-            <div className="p-5 space-y-4">
-              {/* Type selector pills */}
-              <div className="flex flex-wrap gap-1.5">
-                {POST_TYPES.filter(t => t.value !== 'ALL').map(t => (
+            {/* Type selector — horizontal scroll strip */}
+            <div className="flex items-center gap-1.5 px-4 pt-2 pb-4 overflow-x-auto">
+              {POST_TYPES.filter(t => t.value !== 'ALL').map(t => {
+                const ac = TYPE_ACCENT[t.value] ?? '#e8a000';
+                const active = type === t.value;
+                return (
                   <button
                     key={t.value}
                     onClick={() => setType(t.value as PostType)}
-                    className={'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ' +
-                      (type === t.value
-                        ? 'bg-white/10 border-white/15 text-white'
-                        : 'border-white/5 text-zinc-500 hover:text-white hover:border-white/10')}
+                    className={'flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all border ' +
+                      (active ? 'border-transparent text-black' : 'border-white/6 text-zinc-500 hover:text-zinc-300 bg-transparent')}
+                    style={active ? { background: ac, boxShadow: `0 0 12px ${ac}55` } : {}}
                   >
-                    {t.icon} {t.label}
+                    {t.icon}<span className="ml-1">{t.label}</span>
                   </button>
-                ))}
-              </div>
+                );
+              })}
+            </div>
 
-              {/* Title (optional) */}
-              <input
-                type="text"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                placeholder="Title (optional)"
-                className="w-full bg-white/3 border border-white/6 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-[#e8a000]/40 transition-colors"
-              />
+            {/* Divider */}
+            <div className="h-px bg-white/5 mx-4" />
 
-              {/* Content */}
+            {/* Expandable title */}
+            <AnimatePresence initial={false}>
+              {showTitle && (
+                <motion.div
+                  key="title"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="overflow-hidden"
+                >
+                  <input
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    placeholder="Add a title..."
+                    className="w-full bg-transparent text-white font-semibold text-base placeholder-zinc-600 outline-none px-4 pt-3 pb-1"
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Main textarea — open, no box */}
+            <div className="px-4 pt-3 pb-1">
               <textarea
                 ref={textareaRef}
                 value={content}
                 onChange={e => setContent(e.target.value)}
-                placeholder={'Share your ' + (typeConfig?.label?.toLowerCase() ?? 'thoughts') + '...'}
+                placeholder={`What's your ${typeConfig?.label?.toLowerCase() ?? 'take'}?`}
                 rows={4}
-                className="w-full bg-white/3 border border-white/6 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-[#e8a000]/40 transition-colors resize-none"
+                className="w-full bg-transparent text-white text-[15px] leading-relaxed placeholder-zinc-600 outline-none resize-none"
               />
-
-              {/* Media URL */}
-              <div className="space-y-2">
-                <label className="relative flex flex-col gap-2 items-center justify-center border-2 border-dashed border-white/10 bg-white/3 hover:border-[#e8a000]/40 hover:bg-white/5 transition-colors rounded-xl px-4 py-6 text-center cursor-pointer">
-                  <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-                    <Camera size={18} className="text-zinc-400" />
-                  </div>
-                  <div className="text-sm text-white font-medium">Upload image or video</div>
-                  <div className="text-[11px] text-zinc-500">Videos are stored in the videos bucket automatically.</div>
-                  <input
-                    type="file"
-                    accept="image/*,video/*"
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                    onChange={e => {
-                      const f = e.target.files?.[0] ?? null;
-                      setFile(f);
-                      setMediaError('');
-                    }}
-                  />
-                </label>
-                {file && (
-                  <p className="text-[11px] text-emerald-400 text-center">Attached: {file.name}</p>
-                )}
-                {mediaError && (
-                  <span className="text-[11px] text-red-400 text-center">{mediaError}</span>
-                )}
-              </div>
-
-              {/* Hero slug */}
-              <div className="flex items-center gap-2 bg-white/3 border border-white/6 rounded-xl px-3 py-2">
-                <Gamepad2 size={14} className="text-zinc-600 shrink-0" />
-                <input
-                  type="text"
-                  value={heroSlug}
-                  onChange={e => setHeroSlug(e.target.value)}
-                  placeholder="Hero tag, eg: fanny (optional)"
-                  className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 outline-none"
-                />
-              </div>
             </div>
 
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-white/6">
+            {/* Expandable hero tag */}
+            <AnimatePresence initial={false}>
+              {showHero && (
+                <motion.div
+                  key="hero"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="overflow-hidden px-4 pb-2"
+                >
+                  <div className="flex items-center gap-2 rounded-xl bg-white/4 border border-white/6 px-3 py-2">
+                    <Gamepad2 size={13} className="text-zinc-500 shrink-0" />
+                    <input
+                      value={heroSlug}
+                      onChange={e => setHeroSlug(e.target.value)}
+                      placeholder="Hero, e.g. fanny"
+                      className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 outline-none"
+                    />
+                    {heroSlug && (
+                      <button onClick={() => setHeroSlug('')} className="text-zinc-600 hover:text-red-400 transition-colors">
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Media preview */}
+            <AnimatePresence>
+              {file && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden px-4 pb-3"
+                >
+                  <div className="relative inline-flex items-center gap-3 bg-white/4 border border-white/8 rounded-xl px-3 py-2">
+                    {preview && preview !== 'video' ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={preview} alt="" className="h-12 w-12 rounded-lg object-cover" />
+                    ) : (
+                      <div className="h-12 w-12 rounded-lg bg-white/5 flex items-center justify-center">
+                        <Film size={16} className="text-zinc-400" />
+                      </div>
+                    )}
+                    <span className="text-[11px] text-zinc-400 max-w-40 truncate">{file.name}</span>
+                    <button
+                      onClick={() => pickFile(null)}
+                      className="ml-auto text-zinc-600 hover:text-red-400 transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  {mediaError && <p className="text-[11px] text-red-400 mt-1">{mediaError}</p>}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Bottom toolbar */}
+            <div className="flex items-center gap-0.5 px-2 py-2.5 border-t border-white/5">
+              {/* Media */}
+              <label className="w-9 h-9 rounded-xl hover:bg-white/5 flex items-center justify-center cursor-pointer transition-colors group">
+                <Camera size={17} className={`transition-colors ${file ? 'text-[#e8a000]' : 'text-zinc-500 group-hover:text-zinc-300'}`} />
+                <input ref={fileInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={e => pickFile(e.target.files?.[0] ?? null)} />
+              </label>
+
+              {/* Title toggle */}
               <button
-                onClick={onClose}
-                className="px-4 py-2 text-xs font-medium text-zinc-400 hover:text-white transition-colors"
+                onClick={() => setShowTitle(v => !v)}
+                className={`w-9 h-9 rounded-xl hover:bg-white/5 flex items-center justify-center transition-colors ${showTitle ? 'text-[#e8a000]' : 'text-zinc-500 hover:text-zinc-300'}`}
               >
-                Cancel
+                <Type size={15} />
               </button>
+
+              {/* Hero toggle */}
+              <button
+                onClick={() => setShowHero(v => !v)}
+                className={`w-9 h-9 rounded-xl hover:bg-white/5 flex items-center justify-center transition-colors ${showHero ? 'text-[#e8a000]' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                <Gamepad2 size={15} />
+              </button>
+
+              <div className="flex-1" />
+
+              {/* Char counter ring */}
+              <div className="relative flex items-center justify-center w-9 h-9 mr-1">
+                <svg width={ring} height={ring} className="-rotate-90">
+                  <circle cx={ring / 2} cy={ring / 2} r={r} fill="none" stroke="#ffffff12" strokeWidth="2" />
+                  <circle
+                    cx={ring / 2} cy={ring / 2} r={r} fill="none"
+                    stroke={overLimit ? '#f87171' : charsLeft < 50 ? '#facc15' : accent}
+                    strokeWidth="2"
+                    strokeDasharray={`${dash} ${circ}`}
+                    strokeLinecap="round"
+                    className="transition-all"
+                  />
+                </svg>
+                {charsLeft <= 50 && (
+                  <span className={`absolute text-[9px] font-bold ${overLimit ? 'text-red-400' : 'text-zinc-400'}`}>
+                    {overLimit ? `-${Math.abs(charsLeft)}` : charsLeft}
+                  </span>
+                )}
+              </div>
+
+              {/* Post button */}
               <button
                 onClick={submit}
-                disabled={!content.trim() || submitting}
-                className="px-5 py-2 rounded-xl bg-[#e8a000] text-black text-xs font-bold uppercase tracking-wider hover:bg-[#d4900a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                disabled={!content.trim() || submitting || overLimit}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-black text-xs font-black uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                style={{ background: accent, boxShadow: content.trim() && !overLimit ? `0 0 16px ${accent}44` : 'none' }}
               >
                 {submitting ? (
                   <motion.div
@@ -746,14 +853,15 @@ const ComposeModal = ({ open, onClose, onPosted }: { open: boolean; onClose: () 
                     transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                     className="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full"
                   />
-                ) : (
-                  <Send size={12} />
-                )}
+                ) : <Send size={12} />}
                 Post
               </button>
             </div>
+
+            {/* Bottom safe-area spacer on mobile */}
+            <div className="pb-[env(safe-area-inset-bottom)] sm:hidden" />
           </motion.div>
-        </motion.div>
+        </>
       )}
     </AnimatePresence>
   );
@@ -838,7 +946,7 @@ const TriviaSidebarCard = ({
       ) : (
         <div className="w-full h-full bg-[radial-gradient(circle_at_20%_20%,rgba(232,160,0,0.08),transparent_45%),radial-gradient(circle_at_80%_40%,rgba(59,130,246,0.08),transparent_40%),#0d0d14]" />
       )}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#0d0d14]/92 via-[#0d0d14]/85 to-[#0d0d14]/96" />
+      <div className="absolute inset-0 bg-linear-to-br from-[#0d0d14]/92 via-[#0d0d14]/85 to-[#0d0d14]/96" />
     </div>
 
     <div className="relative z-10 p-4 space-y-3">
@@ -981,6 +1089,8 @@ const PostSkeleton = () => (
    ================================================================ */
 
 export default function CommunityPage() {
+  const { data: session } = useSession();
+  const currentUserId = session?.user?.id ?? null;
   const [posts, setPosts] = useState<Post[]>([]);
   const [totalPosts, setTotalPosts] = useState(0);
   const [memes, setMemes] = useState<MemeData[]>([]);
@@ -998,7 +1108,7 @@ export default function CommunityPage() {
   const [reactionLoadingId, setReactionLoadingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<PostType | 'ALL'>('ALL');
-  const [sortBy, setSortBy] = useState<'score' | 'new'>('score');
+  const [sortBy, setSortBy] = useState<'score' | 'new'>('new');
   const [composeOpen, setComposeOpen] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -1100,6 +1210,44 @@ export default function CommunityPage() {
       setTriviaLoading(false);
     })();
   }, []);
+
+  // Socket.io Realtime — prepend new posts without a manual refresh
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handleNewPost = (post: Post) => {
+      if (!post?.id) return;
+
+      setPosts(prev => prev.some(p => p.id === post.id) ? prev : [post, ...prev]);
+      setTotalPosts(prev => prev + 1);
+
+      // Browser notification — only for other users' posts
+      if (
+        post.author?.id !== currentUserId &&
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        Notification.permission === 'granted'
+      ) {
+        const authorName = post.author?.ign ?? 'Someone';
+        const body = post.title
+          ? post.title
+          : post.content.length > 80
+            ? post.content.slice(0, 80) + '…'
+            : post.content;
+
+        const notif = new Notification(`${authorName} posted in Community`, {
+          body,
+          icon: '/mlbb_logo.png',
+          badge: '/mlbb_logo.png',
+          tag: 'community-post-' + post.id,
+        });
+        notif.onclick = () => { window.focus(); notif.close(); };
+      }
+    };
+
+    socket.on('new-post', handleNewPost);
+    return () => { socket.off('new-post', handleNewPost); };
+  }, [currentUserId]);
 
   const handleReact = async (postId: string, type: ReactionType) => {
     if (reactionLoadingId === postId) return;

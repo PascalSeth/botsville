@@ -25,6 +25,7 @@ import {
   LogOut,
   ExternalLink,
   Bell,
+  Megaphone,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 
@@ -36,6 +37,7 @@ const SIDEBAR_NAV: { label: string; href: string; icon: React.ReactNode; roles?:
   { label: "Teams", href: "/dashboard/teams", icon: <UsersRound size={18} /> },
   { label: "Tournaments", href: "/dashboard/tournaments", icon: <Trophy size={18} /> },
   { label: "Matches", href: "/dashboard/matches", icon: <Swords size={18} /> },
+  { label: "Weekly Scrims", href: "/dashboard/scrims", icon: <Megaphone size={18} />, roles: ["SUPER_ADMIN", "TOURNAMENT_ADMIN"] },
   { label: "News", href: "/dashboard/news", icon: <Newspaper size={18} /> },
   { label: "Trivia", href: "/dashboard/trivia", icon: <Brain size={18} />, roles: ["SUPER_ADMIN", "CONTENT_ADMIN"] },
   { label: "Heroes", href: "/dashboard/heroes", icon: <ImagePlus size={18} /> },

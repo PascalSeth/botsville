@@ -7,9 +7,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, X, ArrowRight, Radio, User, LogOut,
   Settings, ChevronDown, Users, Shield, Bell, Zap, Trophy,
-  Swords, Globe, Newspaper, BarChart3, ChevronRight, Star
+  Swords, Globe, Newspaper, BarChart3, ChevronRight, Star, Medal
 } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
+import { getSocket } from '@/lib/socket-client';
 
 // ── Constants ──────────────────────────────────────────────
 const TICKER_MESSAGES = [
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
     items: [
       { label: 'Tournaments', href: '/tournaments', desc: 'Active & upcoming events', icon: Trophy },
       { label: 'Leaderboard', href: '/leaderboard', desc: 'Top ranked players & teams', icon: BarChart3 },
+      { label: 'Awards', href: '/awards', desc: 'Vote for best role players', icon: Medal },
       { label: 'Polls', href: '/polls', desc: 'Community votes & predictions', icon: Star },
     ],
   },
@@ -685,7 +687,7 @@ const formatTime = (createdAt: string) => {
   return `${Math.floor(diff / 1440)}d ago`;
 };
 
-const NotificationBell = ({ isLoggedIn }: { isLoggedIn: boolean }) => {
+const NotificationBell = ({ isLoggedIn, userId }: { isLoggedIn: boolean; userId?: string | null }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -707,6 +709,7 @@ const NotificationBell = ({ isLoggedIn }: { isLoggedIn: boolean }) => {
     }
   }, [isLoggedIn]);
 
+  // Poll every 30s as fallback
   useEffect(() => {
     if (!isLoggedIn) { setNotifications([]); setUnreadCount(0); return; }
     void fetchNotifications();
@@ -715,6 +718,55 @@ const NotificationBell = ({ isLoggedIn }: { isLoggedIn: boolean }) => {
   }, [fetchNotifications, isLoggedIn]);
 
   useEffect(() => { if (isOpen) void fetchNotifications(); }, [fetchNotifications, isOpen]);
+
+  // Socket.io real-time notifications
+  useEffect(() => {
+    if (!isLoggedIn || !userId) return;
+
+    // Request browser notification permission
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    const socket = getSocket();
+    socket.emit('join-user-room', userId);
+
+    const fireDesktopNotif = (item: NotificationItem) => {
+      if (
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        Notification.permission === 'granted' &&
+        document.visibilityState !== 'visible'
+      ) {
+        const notif = new Notification(item.title, {
+          body: item.message,
+          icon: '/mlbb_logo.png',
+          badge: '/mlbb_logo.png',
+          tag: 'notif-' + item.id,
+        });
+        notif.onclick = () => {
+          window.focus();
+          if (item.linkUrl) window.location.href = item.linkUrl;
+          notif.close();
+        };
+      }
+    };
+
+    const handleNew = (item: NotificationItem) => {
+      setNotifications(prev => prev.some(n => n.id === item.id) ? prev : [item, ...prev.slice(0, 7)]);
+      setUnreadCount(prev => prev + 1);
+      fireDesktopNotif(item);
+    };
+
+    const handleReload = () => void fetchNotifications();
+
+    socket.on('new-notification', handleNew);
+    socket.on('notifications-reload', handleReload);
+    return () => {
+      socket.off('new-notification', handleNew);
+      socket.off('notifications-reload', handleReload);
+    };
+  }, [isLoggedIn, userId, fetchNotifications]);
 
   const markRead = async (id: string) => {
     setNotifications((p) => p.map((n) => n.id === id ? { ...n, read: true } : n));
@@ -964,7 +1016,7 @@ export const Navbar = () => {
 
           {/* Right controls */}
           <div className="relative z-10 flex items-center gap-1.5 sm:gap-2 ml-auto">
-            {!isLoading && <NotificationBell isLoggedIn={isLoggedIn} />}
+            {!isLoading && <NotificationBell isLoggedIn={isLoggedIn} userId={user?.id} />}
 
             {/* Search pill — desktop */}
             <button

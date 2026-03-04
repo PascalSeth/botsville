@@ -4,6 +4,7 @@ import {
   apiError,
   apiSuccess,
   isValidIGN,
+  notifyTeamMemberJoined,
 } from "@/lib/api-utils";
 import { GameRole } from "@/app/generated/prisma/enums";
 
@@ -184,6 +185,14 @@ export async function POST(
           },
         },
       },
+    });
+
+    // Fire-and-forget: notify captain + existing members
+    void notifyTeamMemberJoined({
+      teamId: id,
+      joinerIgn: player.ign,
+      joinerUserId: player.userId,
+      role: player.role,
     });
 
     return apiSuccess(
