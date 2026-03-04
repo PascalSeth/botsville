@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import { dashboardFetch } from "../lib/api";
 import {
@@ -57,7 +57,7 @@ type ScrimTournament = {
   name: string;
   status: string;
   format: string;
-  heroImage?: string | null;
+  banner?: string | null;
   _count?: { matches: number };
 };
 
@@ -128,7 +128,9 @@ export default function DashboardScrimsPage() {
   const [availableTournaments, setAvailableTournaments] = useState<ScrimTournament[]>([]);
   const [loadingSeason, setLoadingSeason] = useState(true);
   const [newTournamentName, setNewTournamentName] = useState("");
-  const [newTournamentImage, setNewTournamentImage] = useState("");
+  // stores base64 data-URL of the picked file; uploaded to Supabase on submit
+  const [newTournamentImage, setNewTournamentImage] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [creatingTournament, setCreatingTournament] = useState(false);
   const [settingTournament, setSettingTournament] = useState(false);
   const [selectedExistingTournament, setSelectedExistingTournament] = useState("");
@@ -245,13 +247,33 @@ export default function DashboardScrimsPage() {
     if (!newTournamentName.trim()) { setError("Enter a tournament name"); return; }
     setCreatingTournament(true);
     setError(null);
+
+    // Upload image to Supabase first (if one was picked)
+    let bannerUrl: string | null = null;
+    if (newTournamentImage) {
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: newTournamentImage, type: "scrim-banner", bucket: "scrim-vault" }),
+      });
+      const uploadData = await uploadRes.json();
+      if (!uploadRes.ok) {
+        setCreatingTournament(false);
+        setError(uploadData?.error ?? "Image upload failed");
+        return;
+      }
+      bannerUrl = uploadData?.url ?? null;
+    }
+
     const { data, error: err } = await dashboardFetch<{ tournament: ScrimTournament }>(
       "/api/seasons/scrim-tournament",
-      { method: "POST", body: JSON.stringify({ name: newTournamentName.trim(), heroImage: newTournamentImage.trim() || null, setAsDefault: true }) }
+      { method: "POST", body: JSON.stringify({ name: newTournamentName.trim(), banner: bannerUrl, setAsDefault: true }) }
     );
     setCreatingTournament(false);
     if (err) { setError(err); return; }
     setSuccess(`Tournament "${data?.tournament?.name}" created and set as default.`);
+    setNewTournamentImage(null);
+    if (imageInputRef.current) imageInputRef.current.value = "";
     await loadSeasonInfo();
   };
 
@@ -403,10 +425,10 @@ export default function DashboardScrimsPage() {
             {scrimTournament ? (
               <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-4">
                 <div className="flex items-center justify-between gap-4">
-                  {scrimTournament.heroImage && (
+                  {scrimTournament.banner && (
                     <div className="shrink-0 w-16 h-16 rounded-md overflow-hidden border border-white/10">
                       <Image
-                        src={scrimTournament.heroImage}
+                        src={scrimTournament.banner}
                         alt={scrimTournament.name}
                         width={64}
                         height={64}
@@ -449,13 +471,59 @@ export default function DashboardScrimsPage() {
                   placeholder={`${seasonInfo.name} Scrims`}
                   className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
                 />
-                <input
-                  type="url"
-                  value={newTournamentImage}
-                  onChange={(e) => setNewTournamentImage(e.target.value)}
-                  placeholder="Image URL (optional)"
-                  className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-                />
+                {/* File picker — uploads to Supabase on submit */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="scrim-banner-img"
+                    className="block text-[10px] font-black uppercase tracking-[0.18em] text-[#555] cursor-pointer"
+                  >
+                    Banner (optional)
+                  </label>
+                  <div
+                    onClick={() => imageInputRef.current?.click()}
+                    className="flex items-center gap-3 px-3 py-2 border border-white/10 bg-[#0d0d14] cursor-pointer hover:border-[#e8a000]/40 transition-colors"
+                  >
+                    {newTournamentImage ? (
+                      <>
+                        <img
+                          src={newTournamentImage}
+                          alt="preview"
+                          className="w-10 h-10 object-cover rounded shrink-0 border border-white/10"
+                        />
+                        <span className="text-xs text-[#aaa] truncate flex-1">Image selected</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNewTournamentImage(null);
+                            if (imageInputRef.current) imageInputRef.current.value = "";
+                          }}
+                          className="text-[#555] hover:text-red-400 transition-colors text-[10px] font-black uppercase tracking-wider shrink-0"
+                        >
+                          Remove
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-[#444] text-xs tracking-wide">
+                        Click to choose file…
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    ref={imageInputRef}
+                    id="scrim-banner-img"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => setNewTournamentImage(reader.result as string);
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={createScrimTournament}

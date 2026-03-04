@@ -23,7 +23,7 @@ export async function GET() {
             name: true,
             status: true,
             format: true,
-            heroImage: true,
+            banner: true,
             _count: { select: { matches: true } },
           },
         },
@@ -35,7 +35,7 @@ export async function GET() {
             status: true,
             format: true,
             phase: true,
-            heroImage: true,
+            banner: true,
             _count: { select: { matches: true } },
           },
           orderBy: { createdAt: "desc" },
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
   try {
     const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const body = await request.json();
-    const { name, heroImage, setAsDefault } = body as { name?: string; heroImage?: string; setAsDefault?: boolean };
+    const { name, banner, setAsDefault } = body as { name?: string; banner?: string; setAsDefault?: boolean };
 
     const activeSeason = await prisma.season.findFirst({
       where: { status: "ACTIVE" },
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
         slots: 128,
         status: TournamentStatus.OPEN,
         prizePool: null,
-        heroImage: heroImage?.trim() || null,
+        banner: banner?.trim() || null,
       },
     });
 
