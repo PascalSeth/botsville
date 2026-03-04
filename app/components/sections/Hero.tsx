@@ -609,7 +609,7 @@ const MobileHero = ({
     <div className="relative" style={{ height: '55vw', minHeight: 200, maxHeight: 300 }}>
       <div className="absolute inset-0 z-0">
         <video autoPlay loop muted playsInline preload="metadata" className="w-full h-full object-cover">
-          <source src="/gif/heros2.mp4" type="video/mp4" />
+          <source src="/gif/heros.mp4" type="video/mp4" />
         </video>
         <div className="absolute inset-0" style={{ background: 'rgba(5,8,18,0.55)', mixBlendMode: 'multiply' }} />
       </div>
