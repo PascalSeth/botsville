@@ -1160,17 +1160,49 @@ export default function RegisterTeamPage() {
                       </span>
                     </div>
 
-                    {/* Role legend */}
-                    <div className="flex flex-wrap gap-1.5 mb-4">
-                      {ROLES.map(r => (
-                        <span
-                          key={r.value}
-                          className="flex items-center gap-1 text-[8px] font-bold tracking-widest uppercase px-2 py-1 border"
-                          style={{ color: r.color, borderColor: `${r.color}30`, background: `${r.color}08` }}
+                    {/* Role legend + distribute button */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex flex-wrap gap-1.5">
+                        {ROLES.map(r => (
+                          <span
+                            key={r.value}
+                            className="flex items-center gap-1 text-[8px] font-bold tracking-widest uppercase px-2 py-1 border"
+                            style={{ color: r.color, borderColor: `${r.color}30`, background: `${r.color}08` }}
+                          >
+                            {r.icon}{r.label}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="ml-3">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => {
+                            // Distribute roles evenly across main roster (indices 0-4),
+                            // preserve captain slot (index 0) if already set.
+                            setForm(f => {
+                              const players = [...f.players];
+                              const main = players.slice(0, 5);
+                              const assigned = main.map(p => p.role).filter(Boolean) as Role[];
+                              const remaining = ROLES.map(r => r.value).filter(r => !assigned.includes(r));
+
+                              for (let i = 0; i < 5; i++) {
+                                // keep captain's existing role
+                                if (i === 0 && players[i].role) continue;
+                                if (!players[i].role) {
+                                  const next = remaining.shift() ?? ROLES[(i) % ROLES.length].value;
+                                  players[i] = { ...players[i], role: next };
+                                }
+                              }
+
+                              return { ...f, players };
+                            });
+                          }}
+                          className="text-[10px] font-black tracking-[0.12em] uppercase px-3 py-2 border border-white/[0.06] bg-[#0d0d14] hover:border-white/20"
                         >
-                          {r.icon}{r.label}
-                        </span>
-                      ))}
+                          Distribute roles
+                        </motion.button>
+                      </div>
                     </div>
 
                     <AnimatePresence>
