@@ -148,6 +148,7 @@ export default function MyTeamPage() {
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [addPlayerIGN, setAddPlayerIGN] = useState('');
   const [addPlayerRole, setAddPlayerRole] = useState('EXP');
+  const [addPlayerIsSubstitute, setAddPlayerIsSubstitute] = useState(false);
   const [addingPlayer, setAddingPlayer] = useState(false);
   const [addPlayerError, setAddPlayerError] = useState<string | null>(null);
   const [addPlayerSuccess, setAddPlayerSuccess] = useState<string | null>(null);
@@ -332,13 +333,17 @@ export default function MyTeamPage() {
       const res = await fetch(`/api/teams/${team.id}/players`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ign: addPlayerIGN.trim(), role: addPlayerRole, isSubstitute: false }),
+        body: JSON.stringify({ ign: addPlayerIGN.trim(), role: addPlayerRole, isSubstitute: addPlayerIsSubstitute }),
       });
       const data = await res.json();
       if (!res.ok) { setAddPlayerError(data?.error ?? 'Failed to add player'); return; }
-      setAddPlayerSuccess(`${addPlayerIGN.trim()} added!`);
+      setAddPlayerSuccess(`${addPlayerIGN.trim()} added as ${addPlayerIsSubstitute ? 'substitute' : 'starter'}!`);
       setAddPlayerIGN('');
       setAddPlayerRole('EXP');
+      // Auto-set the next add type based on updated roster
+      const currentStarters = team.players.filter(p => !p.isSubstitute).length;
+      const newStarterCount = addPlayerIsSubstitute ? currentStarters : currentStarters + 1;
+      setAddPlayerIsSubstitute(newStarterCount >= 5);
       fetchMyTeam();
     } catch {
       setAddPlayerError('Failed to add player');
@@ -1116,7 +1121,11 @@ export default function MyTeamPage() {
           {team.isCaptain && (
             <div className="flex gap-2">
               <button
-                onClick={() => { setShowManageModal(true); }}
+                onClick={() => {
+                  const starterCount = team.players.filter(p => !p.isSubstitute).length;
+                  setAddPlayerIsSubstitute(starterCount >= 5);
+                  setShowManageModal(true);
+                }}
                 className="text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 border border-white/10 text-[#888] hover:text-white hover:border-[#e8a000]/40 transition-colors"
               >
                 Manage
@@ -1476,34 +1485,88 @@ export default function MyTeamPage() {
                 {addPlayerSuccess && (
                   <p className="text-emerald-400 text-xs mb-2">{addPlayerSuccess}</p>
                 )}
-                <div className="flex flex-col gap-2">
-                  <input
-                    type="text"
-                    placeholder="In-game name (IGN)"
-                    value={addPlayerIGN}
-                    onChange={(e) => setAddPlayerIGN(e.target.value)}
-                    className="bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50 placeholder:text-[#444]"
-                  />
-                  <select
-                    value={addPlayerRole}
-                    onChange={(e) => setAddPlayerRole(e.target.value)}
-                    className="bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50"
-                  >
-                    <option value="EXP">EXP Lane</option>
-                    <option value="JUNGLE">Jungle</option>
-                    <option value="MID">Mid Lane</option>
-                    <option value="GOLD">Gold Lane</option>
-                    <option value="ROAM">Roam</option>
-                  </select>
-                  <button
-                    onClick={addPlayer}
-                    disabled={!addPlayerIGN.trim() || addingPlayer}
-                    className="flex items-center justify-center gap-2 px-4 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-xs font-black tracking-widest uppercase hover:bg-[#e8a000]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {addingPlayer ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-                    Add Player
-                  </button>
-                </div>
+                {(() => {
+                  const starterCount = team.players.filter(p => !p.isSubstitute).length;
+                  const hasFullStarters = starterCount >= 5;
+                  const needsMoreStarters = starterCount < 5;
+                  
+                  return (
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="text"
+                        placeholder="In-game name (IGN)"
+                        value={addPlayerIGN}
+                        onChange={(e) => setAddPlayerIGN(e.target.value)}
+                        className="bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50 placeholder:text-[#444]"
+                      />
+                      <select
+                        value={addPlayerRole}
+                        onChange={(e) => setAddPlayerRole(e.target.value)}
+                        className="bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50"
+                      >
+                        <option value="EXP">EXP Lane</option>
+                        <option value="JUNGLE">Jungle</option>
+                        <option value="MID">Mid Lane</option>
+                        <option value="GOLD">Gold Lane</option>
+                        <option value="ROAM">Roam</option>
+                      </select>
+                      
+                      {/* Starter/Sub Toggle */}
+                      <div className="flex items-center justify-between p-2 bg-[#0a0a10] border border-white/10">
+                        <span className="text-xs text-[#888]">Add as</span>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => !hasFullStarters && setAddPlayerIsSubstitute(false)}
+                            disabled={hasFullStarters}
+                            className={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
+                              hasFullStarters
+                                ? 'border border-white/5 text-[#333] cursor-not-allowed'
+                                : !addPlayerIsSubstitute
+                                  ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
+                                  : 'border border-white/10 text-[#555] hover:text-white'
+                            }`}
+                            title={hasFullStarters ? 'Team already has 5 starters' : undefined}
+                          >
+                            Starter
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => !needsMoreStarters && setAddPlayerIsSubstitute(true)}
+                            disabled={needsMoreStarters}
+                            className={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
+                              needsMoreStarters
+                                ? 'border border-white/5 text-[#333] cursor-not-allowed'
+                                : addPlayerIsSubstitute
+                                  ? 'bg-[#e8a000]/20 border border-[#e8a000]/40 text-[#e8a000]'
+                                  : 'border border-white/10 text-[#555] hover:text-white'
+                            }`}
+                            title={needsMoreStarters ? `Need ${5 - starterCount} more starter(s) first` : undefined}
+                          >
+                            Sub
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Helper text */}
+                      {needsMoreStarters && (
+                        <p className="text-[10px] text-[#555]">Need {5 - starterCount} more starter(s) to complete roster</p>
+                      )}
+                      {hasFullStarters && (
+                        <p className="text-[10px] text-[#555]">Roster complete — can only add substitutes</p>
+                      )}
+                      
+                      <button
+                        onClick={addPlayer}
+                        disabled={!addPlayerIGN.trim() || addingPlayer}
+                        className="flex items-center justify-center gap-2 px-4 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-xs font-black tracking-widest uppercase hover:bg-[#e8a000]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {addingPlayer ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                        {addPlayerIsSubstitute ? 'Add Sub Player' : 'Add Starter'}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             </motion.div>
           </motion.div>
