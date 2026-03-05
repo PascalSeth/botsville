@@ -814,17 +814,26 @@ const NotificationBell = ({ isLoggedIn, userId }: { isLoggedIn: boolean; userId?
 
       <AnimatePresence>
         {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -6, scaleY: 0.93 }}
-            animate={{ opacity: 1, y: 0, scaleY: 1 }}
-            exit={{ opacity: 0, y: -6, scaleY: 0.93 }}
-            transition={{ duration: 0.15 }}
-            style={{
-              transformOrigin: 'top',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.85), 0 0 0 1px rgba(232,160,0,0.12)',
-            }}
-            className="absolute right-0 top-full mt-1.5 w-72 bg-[#07070d] border border-white/6 z-80 overflow-hidden"
-          >
+          <>
+            {/* Mobile backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 z-79 md:hidden"
+              onClick={() => setIsOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: -6, scaleY: 0.93 }}
+              animate={{ opacity: 1, y: 0, scaleY: 1 }}
+              exit={{ opacity: 0, y: -6, scaleY: 0.93 }}
+              transition={{ duration: 0.15 }}
+              style={{
+                transformOrigin: 'top',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.85), 0 0 0 1px rgba(232,160,0,0.12)',
+              }}
+              className="fixed md:absolute left-4 right-4 md:left-auto md:right-0 top-16 md:top-full md:mt-1.5 md:w-72 bg-[#07070d] border border-white/6 z-80 overflow-hidden"
+            >
             <div className="h-px w-full bg-linear-to-r from-transparent via-[#e8a000] to-transparent" />
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5">
               <div className="flex items-center gap-2">
@@ -896,6 +905,7 @@ const NotificationBell = ({ isLoggedIn, userId }: { isLoggedIn: boolean; userId?
             </div>
             <div className="h-px w-full bg-linear-to-r from-transparent via-[#e8a000]/20 to-transparent" />
           </motion.div>
+          </>
         )}
       </AnimatePresence>
     </div>
