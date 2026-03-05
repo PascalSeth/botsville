@@ -160,6 +160,13 @@ export default function MyTeamPage() {
   const [editPlayerError, setEditPlayerError] = useState<string | null>(null);
   const [editPhotoUploading, setEditPhotoUploading] = useState(false);
 
+  // ── Team name/tag edit state ──────────────────────────────
+  const [showEditTeamModal, setShowEditTeamModal] = useState(false);
+  const [editTeamName, setEditTeamName] = useState('');
+  const [editTeamTag, setEditTeamTag] = useState('');
+  const [savingTeamEdit, setSavingTeamEdit] = useState(false);
+  const [editTeamError, setEditTeamError] = useState<string | null>(null);
+
   // ── Roster management state ───────────────────────────────
   const [togglingSubPlayerId, setTogglingSubPlayerId] = useState<string | null>(null);
   const [transferringCaptain, setTransferringCaptain] = useState(false);
@@ -490,6 +497,59 @@ export default function MyTeamPage() {
     }
   };
 
+  const openEditTeamModal = () => {
+    if (!team) return;
+    setEditTeamName(team.name);
+    setEditTeamTag(team.tag);
+    setEditTeamError(null);
+    setShowEditTeamModal(true);
+  };
+
+  const saveTeamNameTag = async () => {
+    if (!team || !team.isCaptain) return;
+
+    const trimmedName = editTeamName.trim();
+    const trimmedTag = editTeamTag.trim().toUpperCase();
+
+    if (!trimmedName || trimmedName.length < 3 || trimmedName.length > 30) {
+      setEditTeamError('Team name must be 3-30 characters');
+      return;
+    }
+    if (!trimmedTag || trimmedTag.length < 3 || trimmedTag.length > 5) {
+      setEditTeamError('Team tag must be 3-5 characters');
+      return;
+    }
+    if (!/^[A-Z0-9]+$/.test(trimmedTag)) {
+      setEditTeamError('Team tag must be alphanumeric only');
+      return;
+    }
+
+    setSavingTeamEdit(true);
+    setEditTeamError(null);
+
+    try {
+      const response = await fetch(`/api/teams/${team.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmedName, tag: trimmedTag }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setEditTeamError(data?.error || 'Failed to update team');
+        return;
+      }
+
+      setTeam((prev) => prev ? { ...prev, name: data.team?.name ?? trimmedName, tag: data.team?.tag ?? trimmedTag } : prev);
+      setShowEditTeamModal(false);
+    } catch (err) {
+      console.error('Error updating team name/tag:', err);
+      setEditTeamError('Failed to update team');
+    } finally {
+      setSavingTeamEdit(false);
+    }
+  };
+
   const fetchChallenges = useCallback(async () => {
     try {
       setLoadingChallenges(true);
@@ -761,7 +821,18 @@ export default function MyTeamPage() {
         )}
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-black tracking-widest uppercase">{team.name}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-black tracking-widest uppercase">{team.name}</h1>
+              {team.isCaptain && (
+                <button
+                  onClick={openEditTeamModal}
+                  className="text-[#666] hover:text-[#e8a000] transition-colors p-1"
+                  title="Edit team name & tag"
+                >
+                  <Pencil size={16} />
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-3 mt-1">
               <span className="text-[#e8a000]/70 text-sm tracking-widest">[{team.tag}]</span>
               {team.teamCode && (
@@ -1186,6 +1257,93 @@ export default function MyTeamPage() {
           </div>
         )}
       </div>
+
+      {/* Edit Team Name/Tag Modal */}
+      <AnimatePresence>
+        {showEditTeamModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            onClick={() => setShowEditTeamModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[#0c0c12] border border-white/10 p-6 max-w-md w-full"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-black tracking-wider uppercase">Edit Team</h3>
+                <button onClick={() => setShowEditTeamModal(false)} className="text-[#666] hover:text-white">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[#888] text-xs uppercase tracking-widest mb-2">Team Name</label>
+                  <input
+                    type="text"
+                    value={editTeamName}
+                    onChange={(e) => setEditTeamName(e.target.value)}
+                    maxLength={30}
+                    className="w-full bg-[#0b0b12] border border-white/10 px-3 py-2.5 text-white text-sm focus:border-[#e8a000]/50 focus:outline-none"
+                    placeholder="Team name (3-30 characters)"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[#888] text-xs uppercase tracking-widest mb-2">Team Tag</label>
+                  <input
+                    type="text"
+                    value={editTeamTag}
+                    onChange={(e) => setEditTeamTag(e.target.value.toUpperCase())}
+                    maxLength={5}
+                    className="w-full bg-[#0b0b12] border border-white/10 px-3 py-2.5 text-white text-sm uppercase tracking-widest focus:border-[#e8a000]/50 focus:outline-none"
+                    placeholder="TAG (3-5 characters)"
+                  />
+                  <p className="text-[#555] text-[10px] mt-1">Alphanumeric only, displayed as [{editTeamTag || 'TAG'}]</p>
+                </div>
+
+                {editTeamError && (
+                  <div className="border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                    {editTeamError}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setShowEditTeamModal(false)}
+                    className="flex-1 px-4 py-2.5 border border-white/10 text-[#888] text-sm font-bold tracking-wide hover:bg-white/5 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveTeamNameTag}
+                    disabled={savingTeamEdit}
+                    className="flex-1 px-4 py-2.5 bg-[#e8a000] text-black text-sm font-bold tracking-wide hover:bg-[#ffb800] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {savingTeamEdit ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check size={14} />
+                        Save Changes
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Invite Modal */}
       <AnimatePresence>

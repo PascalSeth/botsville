@@ -92,6 +92,40 @@ export async function POST(request: NextRequest) {
       return apiError("IGN already taken");
     }
 
+    // Check if IGN is already on a team's roster (as a placeholder or linked player)
+    // If no team code provided, block registration - they need the team code to claim this IGN
+    if (!normalizedTeamCode) {
+      const rosterEntry = await prisma.player.findFirst({
+        where: {
+          ign: { equals: ign, mode: "insensitive" },
+          deletedAt: null,
+        },
+        select: { id: true, team: { select: { name: true } } },
+      });
+
+      if (rosterEntry) {
+        return apiError(
+          `This IGN is already on a team roster (${rosterEntry.team.name}). Use your team code to register.`
+        );
+      }
+    } else if (teamToJoin) {
+      // Team code provided - check if IGN is on a DIFFERENT team's roster
+      const rosterEntry = await prisma.player.findFirst({
+        where: {
+          ign: { equals: ign, mode: "insensitive" },
+          deletedAt: null,
+          teamId: { not: teamToJoin.id },
+        },
+        select: { id: true, team: { select: { name: true } } },
+      });
+
+      if (rosterEntry) {
+        return apiError(
+          `This IGN is already registered to another team (${rosterEntry.team.name})`
+        );
+      }
+    }
+
     // Create user
     const hashedPassword = await hashPassword(password);
     const user = await prisma.$transaction(async (transaction) => {
