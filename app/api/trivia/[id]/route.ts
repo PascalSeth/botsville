@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server";
 import type { Prisma } from "@/app/generated/prisma/client";
-import { AdminRoleType } from "@/app/generated/prisma/enums";
+import { AdminRoleType, TriviaCategory } from "@/app/generated/prisma/enums";
 import { apiError, apiSuccess, createAuditLog, requireAdmin } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
+
+const TRIVIA_CATEGORIES = Object.values(TriviaCategory);
 
 function parseOptionalDate(value: unknown, label: string): Date | null {
   if (value === undefined || value === null || value === "") return null;
@@ -49,8 +51,25 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
 
     const updateData: Prisma.TriviaFactUpdateInput = {};
 
+    if (body.category !== undefined && TRIVIA_CATEGORIES.includes(body.category)) {
+      updateData.category = body.category as TriviaCategory;
+    }
     if (body.title !== undefined) updateData.title = String(body.title).trim();
     if (body.teaser !== undefined) updateData.teaser = String(body.teaser).trim();
+    if (body.choices !== undefined) {
+      const parsedChoices = Array.isArray(body.choices)
+        ? body.choices.map((c: unknown) => String(c).trim()).filter(Boolean)
+        : [];
+      if (parsedChoices.length >= 2) {
+        updateData.choices = parsedChoices;
+      }
+    }
+    if (body.correctAnswerIndex !== undefined) {
+      const idx = parseInt(body.correctAnswerIndex);
+      if (!isNaN(idx) && idx >= 0) {
+        updateData.correctAnswerIndex = idx;
+      }
+    }
     if (body.reveal !== undefined) updateData.reveal = String(body.reveal).trim();
     if (body.heroSlug !== undefined) updateData.heroSlug = body.heroSlug?.trim() || null;
     if (body.isActive !== undefined) updateData.isActive = Boolean(body.isActive);

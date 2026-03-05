@@ -225,10 +225,23 @@ enum ReportStatus {
 }
 
 enum XpEventType {
-  TRIVIA_REVEAL
+  TRIVIA_CORRECT    // +10 XP for correct quiz answer
+  TRIVIA_REVEAL     // Legacy - kept for backward compat
   CLIP_OF_WEEK_WIN
   BADGE_EARNED
   DAILY_ENGAGEMENT
+}
+
+enum TriviaCategory {
+  GUESS_THE_HERO    // 🧠 Skill clue guessing
+  HARDEST_HEROES    // ⚔️ Hardest heroes to master
+  FUNNY_FACTS       // 😂 Funny/weird hero facts
+  OG_HEROES         // 👑 Oldest heroes in MLBB
+  POWER_ULTIMATE    // 🔥 Power ultimate trivia
+  LORE              // 🐉 Lore trivia
+  SKIN              // 🎯 Skin trivia
+  EMOJI_GUESS       // 🧩 Emoji guess the hero
+  GENERAL           // General trivia
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1358,30 +1371,36 @@ model PollVote {
 }
 
 model TriviaFact {
-  id         String   @id @default(uuid())
-  title      String
-  teaser     String
-  reveal     String
-  heroSlug   String?
-  images     String[] @default([])
-  isActive   Boolean  @default(true)
-  periodFrom DateTime?
-  periodTo   DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                 String          @id @default(uuid())
+  category           TriviaCategory  @default(GENERAL)
+  title              String          // Category display title or custom label
+  teaser             String          // The question/clue (or emoji sequence)
+  choices            String[]        @default([])  // Multiple choice options
+  correctAnswerIndex Int             @default(0)   // Index of correct answer in choices array
+  reveal             String          // Explanation shown after answering
+  heroSlug           String?
+  images             String[]        @default([])
+  isActive           Boolean         @default(true)
+  periodFrom         DateTime?
+  periodTo           DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   votes TriviaVote[]
 
   @@index([isActive, createdAt])
+  @@index([category])
   @@map("trivia_facts")
 }
 
 model TriviaVote {
-  id        String   @id @default(uuid())
-  triviaId  String
-  userId    String
-  choice    Boolean
-  createdAt DateTime @default(now())
+  id             String   @id @default(uuid())
+  triviaId       String
+  userId         String
+  selectedAnswer String   // The answer option they picked
+  isCorrect      Boolean  @default(false)  // Did they get it right?
+  xpAwarded      Int      @default(0)      // XP earned (10 if correct, 0 if wrong)
+  createdAt      DateTime @default(now())
 
   trivia TriviaFact @relation(fields: [triviaId], references: [id])
   user   User       @relation(fields: [userId], references: [id])

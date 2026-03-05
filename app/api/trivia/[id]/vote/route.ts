@@ -2,15 +2,20 @@ import { NextRequest } from "next/server";
 import { apiError, apiSuccess, requireActiveUser } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
 
+const XP_REWARD = 10; // XP awarded for correct answer
+
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireActiveUser();
     const { id } = await context.params;
     const body = await request.json().catch(() => ({}));
 
-    if (typeof body.choice !== "boolean") {
-      return apiError("choice must be boolean (true or false)", 400);
+    // Validate answer is provided
+    if (typeof body.answer !== "string" || !body.answer.trim()) {
+      return apiError("answer is required", 400);
     }
+
+    const selectedAnswer = body.answer.trim();
 
     const now = new Date();
     const trivia = await prisma.triviaFact.findFirst({
@@ -31,45 +36,88 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
     if (!trivia) return apiError("Trivia not found", 404);
 
+    // Check if answer is a valid choice
+    if (!trivia.choices.includes(selectedAnswer)) {
+      return apiError("Invalid answer choice", 400);
+    }
+
+    // Check if user already answered
     const existing = await prisma.triviaVote.findUnique({
       where: { triviaId_userId: { triviaId: id, userId: user.id } },
-      select: { choice: true },
+      select: { selectedAnswer: true, isCorrect: true, xpAwarded: true },
     });
 
     if (existing) {
-      const [trueCountExisting, falseCountExisting] = await Promise.all([
-        prisma.triviaVote.count({ where: { triviaId: id, choice: true } }),
-        prisma.triviaVote.count({ where: { triviaId: id, choice: false } }),
+      const correctAnswer = trivia.choices[trivia.correctAnswerIndex] ?? null;
+      const [totalAttempts, correctCount] = await Promise.all([
+        prisma.triviaVote.count({ where: { triviaId: id } }),
+        prisma.triviaVote.count({ where: { triviaId: id, isCorrect: true } }),
       ]);
 
       return apiError(
         JSON.stringify({
-          message: "You already voted on this trivia",
-          userChoice: existing.choice,
-          trueCount: trueCountExisting,
-          falseCount: falseCountExisting,
-          totalVotes: trueCountExisting + falseCountExisting,
+          message: "You already answered this trivia",
+          userAnswer: existing.selectedAnswer,
+          isCorrect: existing.isCorrect,
+          correctAnswer,
+          xpAwarded: existing.xpAwarded,
+          reveal: trivia.reveal,
+          totalAttempts,
+          correctCount,
         }),
         409
       );
     }
 
-    await prisma.triviaVote.create({ data: { triviaId: id, userId: user.id, choice: body.choice } });
+    // Check if answer is correct
+    const correctAnswer = trivia.choices[trivia.correctAnswerIndex] ?? "";
+    const isCorrect = selectedAnswer === correctAnswer;
+    const xpAwarded = isCorrect ? XP_REWARD : 0;
 
-    const [trueCount, falseCount] = await Promise.all([
-      prisma.triviaVote.count({ where: { triviaId: id, choice: true } }),
-      prisma.triviaVote.count({ where: { triviaId: id, choice: false } }),
+    // Create vote and award XP in a transaction
+    await prisma.$transaction(async (tx) => {
+      // Record the vote
+      await tx.triviaVote.create({
+        data: {
+          triviaId: id,
+          userId: user.id,
+          selectedAnswer,
+          isCorrect,
+          xpAwarded,
+        },
+      });
+
+      // Log the XP event if correct (XP is tracked via UserXpEvent records)
+      if (isCorrect) {
+        await tx.userXpEvent.create({
+          data: {
+            userId: user.id,
+            type: "TRIVIA_CORRECT",
+            xp: XP_REWARD,
+            metadata: JSON.stringify({ triviaId: id, answer: selectedAnswer }),
+          },
+        });
+      }
+    });
+
+    // Get updated stats
+    const [totalAttempts, correctCount] = await Promise.all([
+      prisma.triviaVote.count({ where: { triviaId: id } }),
+      prisma.triviaVote.count({ where: { triviaId: id, isCorrect: true } }),
     ]);
 
     return apiSuccess({
       triviaId: id,
-      userChoice: body.choice,
-      trueCount,
-      falseCount,
-      totalVotes: trueCount + falseCount,
+      userAnswer: selectedAnswer,
+      isCorrect,
+      correctAnswer,
+      xpAwarded,
+      reveal: trivia.reveal,
+      totalAttempts,
+      correctCount,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to submit trivia vote";
+    const message = error instanceof Error ? error.message : "Failed to submit trivia answer";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
     if (message === "Account has been banned" || message === "Account is suspended") return apiError(message, 403);
     console.error("Trivia vote POST error:", error);

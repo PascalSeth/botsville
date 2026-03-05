@@ -8,7 +8,7 @@ import { uploadImage, STORAGE_BUCKETS, supabase } from '@/lib/supabase';
 import { getSocket } from '@/lib/socket-client';
 import {
   Flame, ThumbsUp, ThumbsDown, Laugh, Eye, Zap, Heart,
-  MessageSquare, ChevronRight, ChevronDown, Send, X,
+  MessageSquare, ChevronRight, ChevronDown, Send, X, Check,
   Gamepad2, Clapperboard, Swords, MessageCircle,
   Trophy, Plus, TrendingUp, Clock, Sparkles,
   Film, Camera, Brain, Type,
@@ -72,12 +72,29 @@ interface TriviaFact {
   id: string;
   title: string;
   teaser: string;
+  choices: string[];
   heroSlug?: string | null;
   images?: string[];
-  trueCount?: number;
-  falseCount?: number;
-  totalVotes?: number;
-  userChoice?: boolean | null;
+  category?: string;
+  // Stats
+  totalAttempts?: number;
+  correctCount?: number;
+  // User's answer state (set after answering)
+  hasAnswered?: boolean;
+  userAnswer?: string | null;
+  isCorrect?: boolean | null;
+  xpAwarded?: number | null;
+  correctAnswer?: string | null;
+  reveal?: string | null;
+}
+
+interface TriviaState {
+  trivias: TriviaFact[];
+  currentIndex: number;
+  userTotalXp: number;
+  dailyAnswered: number;
+  dailyLimit: number;
+  countdown: number | null; // seconds remaining before next trivia
 }
 
 /* ================================================================
@@ -108,6 +125,85 @@ const TYPE_BADGE: Record<PostType, { label: string; icon: React.ReactNode; bg: s
   MEME:             { label: 'Meme',       icon: <Laugh size={10} />,        bg: 'bg-yellow-500/80' },
   BUILD_SCREENSHOT: { label: 'Build',      icon: <Gamepad2 size={10} />,     bg: 'bg-emerald-500/80' },
   ROAST:            { label: 'Roast',      icon: <Swords size={10} />,       bg: 'bg-red-500/80' },
+};
+
+/* ================================================================
+   Trivia Category Config — for Quiz-Style Display
+   ================================================================ */
+
+const TRIVIA_CATEGORY_CONFIG: Record<string, { emoji: string; label: string; color: string; bg: string; questionLabel: string; answerLabel: string }> = {
+  GUESS_THE_HERO: {
+    emoji: '🧠',
+    label: 'Guess the Hero',
+    color: 'text-purple-400',
+    bg: 'bg-purple-500/15 border-purple-500/30',
+    questionLabel: 'Clue',
+    answerLabel: 'Hero',
+  },
+  HARDEST_HEROES: {
+    emoji: '⚔️',
+    label: 'Hardest Heroes',
+    color: 'text-red-400',
+    bg: 'bg-red-500/15 border-red-500/30',
+    questionLabel: 'Question',
+    answerLabel: 'Answer',
+  },
+  FUNNY_FACTS: {
+    emoji: '😂',
+    label: 'Funny Facts',
+    color: 'text-yellow-400',
+    bg: 'bg-yellow-500/15 border-yellow-500/30',
+    questionLabel: 'Did You Know?',
+    answerLabel: 'Reveal',
+  },
+  OG_HEROES: {
+    emoji: '👑',
+    label: 'OG Heroes',
+    color: 'text-amber-400',
+    bg: 'bg-amber-500/15 border-amber-500/30',
+    questionLabel: 'Question',
+    answerLabel: 'Answer',
+  },
+  POWER_ULTIMATE: {
+    emoji: '🔥',
+    label: 'Power Ultimate',
+    color: 'text-orange-400',
+    bg: 'bg-orange-500/15 border-orange-500/30',
+    questionLabel: 'Question',
+    answerLabel: 'Answer',
+  },
+  LORE: {
+    emoji: '🐉',
+    label: 'Lore & Story',
+    color: 'text-cyan-400',
+    bg: 'bg-cyan-500/15 border-cyan-500/30',
+    questionLabel: 'Lore Trivia',
+    answerLabel: 'Truth',
+  },
+  SKIN: {
+    emoji: '🎯',
+    label: 'Skin Trivia',
+    color: 'text-pink-400',
+    bg: 'bg-pink-500/15 border-pink-500/30',
+    questionLabel: 'Question',
+    answerLabel: 'Answer',
+  },
+  EMOJI_GUESS: {
+    emoji: '🧩',
+    label: 'Emoji Guess',
+    color: 'text-green-400',
+    bg: 'bg-green-500/15 border-green-500/30',
+    questionLabel: 'Emoji Clue',
+    answerLabel: 'Hero',
+  },
+  GENERAL: {
+    emoji: '📖',
+    label: 'General',
+    color: 'text-blue-400',
+    bg: 'bg-blue-500/15 border-blue-500/30',
+    questionLabel: 'Question',
+    answerLabel: 'Answer',
+  },
 };
 
 function timeAgo(dateStr: string) {
@@ -905,141 +1001,319 @@ const TrendingSidebar = ({ memes }: { memes: MemeData[] }) => {
 };
 
 /* ================================================================
-   Trivia Sidebar Card
+   Trivia Sidebar Card — Multiple Choice Quiz
    ================================================================ */
 
 const TriviaSidebarCard = ({
   trivia,
   imageUrl,
   loading,
-  reveal,
-  revealLoading,
-  onReveal,
-  onVote,
+  onAnswer,
+  onSkip,
   error,
-  xpAwarded,
-  voteChoice,
-  voteCounts,
-  voteLoading,
+  answerLoading,
+  countdown,
+  userTotalXp,
+  dailyAnswered,
+  dailyLimit,
+  currentIndex,
+  totalTrivias,
 }: {
   trivia: TriviaFact | null;
   imageUrl: string | null;
   loading: boolean;
-  reveal: string | null;
-  revealLoading: boolean;
-  onReveal: () => void;
-  onVote: (choice: boolean) => void;
+  onAnswer: (answer: string) => void;
+  onSkip: () => void;
   error: string | null;
-  xpAwarded: number | null;
-  voteChoice: boolean | null;
-  voteCounts: { trueCount: number; falseCount: number };
-  voteLoading: boolean;
-}) => (
-  <motion.div
-    initial={{ opacity: 0, x: 20 }}
-    animate={{ opacity: 1, x: 0 }}
-    className="relative overflow-hidden rounded-xl bg-white/2 border border-white/6"
-  >
-    <div className="absolute inset-0">
-      {imageUrl ? (
-        <Image src={imageUrl} alt="Trivia" fill className="object-cover " />
-      ) : (
-        <div className="w-full h-full bg-[radial-gradient(circle_at_20%_20%,rgba(232,160,0,0.08),transparent_45%),radial-gradient(circle_at_80%_40%,rgba(59,130,246,0.08),transparent_40%),#0d0d14]" />
-      )}
-      <div className="absolute inset-0 bg-linear-to-br from-[#0d0d14]/92 via-[#0d0d14]/85 to-[#0d0d14]/96" />
-    </div>
+  answerLoading: boolean;
+  countdown: number | null;
+  userTotalXp: number;
+  dailyAnswered: number;
+  dailyLimit: number;
+  currentIndex: number;
+  totalTrivias: number;
+}) => {
+  const categoryKey = trivia?.category ?? 'GENERAL';
+  const categoryConfig = TRIVIA_CATEGORY_CONFIG[categoryKey] ?? TRIVIA_CATEGORY_CONFIG.GENERAL;
+  const isEmojiGuess = categoryKey === 'EMOJI_GUESS';
+  const isGuessTheHero = categoryKey === 'GUESS_THE_HERO';
 
-    <div className="relative z-10 p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <div className="w-9 h-9 rounded-lg bg-[#e8a000]/15 border border-[#e8a000]/30 flex items-center justify-center">
-          <Brain size={16} className="text-[#e8a000]" />
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e8a000]">Daily trivia</p>
-          <p className="text-[11px] text-zinc-500">Reveal to earn XP.</p>
-        </div>
+  const hasAnswered = trivia?.hasAnswered ?? false;
+  const userAnswer = trivia?.userAnswer ?? null;
+  const isCorrect = trivia?.isCorrect ?? null;
+  const correctAnswer = trivia?.correctAnswer ?? null;
+  const xpAwarded = trivia?.xpAwarded ?? null;
+  const reveal = trivia?.reveal ?? null;
+  const choices = trivia?.choices ?? [];
+
+  // Stats from current trivia
+  const stats = {
+    totalAttempts: trivia?.totalAttempts ?? 0,
+    correctCount: trivia?.correctCount ?? 0,
+  };
+
+  // Calculate success rate
+  const successRate = stats.totalAttempts > 0
+    ? Math.round((stats.correctCount / stats.totalAttempts) * 100)
+    : 0;
+
+  // Check if all trivias completed for today
+  const allCompleted = totalTrivias === 0 || (currentIndex >= totalTrivias && !countdown);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      className="relative overflow-hidden rounded-xl bg-white/2 border border-white/6"
+    >
+      <div className="absolute inset-0">
+        {imageUrl ? (
+          <Image src={imageUrl} alt="Trivia" fill className="object-cover" />
+        ) : (
+          <div className="w-full h-full bg-[radial-gradient(circle_at_20%_20%,rgba(232,160,0,0.08),transparent_45%),radial-gradient(circle_at_80%_40%,rgba(59,130,246,0.08),transparent_40%),#0d0d14]" />
+        )}
+        <div className="absolute inset-0 bg-linear-to-br from-[#0d0d14]/92 via-[#0d0d14]/85 to-[#0d0d14]/96" />
       </div>
 
-      {loading ? (
-        <div className="space-y-2">
-          <div className="h-4 w-2/3 bg-white/5 animate-pulse rounded" />
-          <div className="h-3 w-full bg-white/5 animate-pulse rounded" />
+      <div className="relative z-10 p-4 space-y-3">
+        {/* Header with XP display */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-lg bg-[#e8a000]/15 border border-[#e8a000]/30 flex items-center justify-center">
+              <Brain size={16} className="text-[#e8a000]" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e8a000]">Daily Quiz</p>
+              <p className="text-[11px] text-zinc-500">{currentIndex + 1}/{dailyLimit} • {userTotalXp} XP earned</p>
+            </div>
+          </div>
+          {trivia && !allCompleted && (
+            <span className={`text-[9px] font-bold tracking-wider uppercase px-2 py-1 rounded-full border ${categoryConfig.bg} ${categoryConfig.color}`}>
+              {categoryConfig.emoji} {categoryConfig.label}
+            </span>
+          )}
         </div>
-      ) : trivia ? (
-        <>
-          <p className="text-white font-semibold text-sm leading-tight">{trivia.title}</p>
-          <p className="text-zinc-400 text-[13px] leading-relaxed">{trivia.teaser}</p>
-          <div className="flex items-center gap-2 flex-wrap">
-            {trivia.heroSlug && (
-              <span className="text-[10px] font-semibold tracking-wide text-[#e8a000] bg-[#e8a000]/15 border border-[#e8a000]/30 rounded-full px-2 py-0.5">
+
+        {/* Progress bar */}
+        <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+          <motion.div
+            className="h-full bg-[#e8a000]"
+            initial={{ width: 0 }}
+            animate={{ width: `${Math.min((dailyAnswered / dailyLimit) * 100, 100)}%` }}
+            transition={{ duration: 0.5 }}
+          />
+        </div>
+
+        {loading ? (
+          <div className="space-y-2">
+            <div className="h-4 w-2/3 bg-white/5 animate-pulse rounded" />
+            <div className="h-3 w-full bg-white/5 animate-pulse rounded" />
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="h-10 bg-white/5 animate-pulse rounded-lg" />
+              ))}
+            </div>
+          </div>
+        ) : allCompleted ? (
+          /* All trivias completed for today */
+          <div className="text-center py-6 space-y-3">
+            <div className="w-14 h-14 mx-auto rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+              <Check size={24} className="text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-white font-bold text-sm">All Done for Today!</p>
+              <p className="text-zinc-500 text-[11px] mt-1">You&apos;ve completed {dailyAnswered} quiz{dailyAnswered !== 1 ? 'zes' : ''}</p>
+            </div>
+            <div className="bg-[#e8a000]/10 border border-[#e8a000]/30 rounded-lg px-3 py-2">
+              <p className="text-[11px] text-zinc-400">Total XP Earned</p>
+              <p className="text-[#e8a000] font-black text-lg">{userTotalXp} XP</p>
+            </div>
+            <p className="text-zinc-600 text-[10px]">Come back tomorrow for more!</p>
+          </div>
+        ) : trivia ? (
+          <>
+            {/* Question label */}
+            <p className={`text-[10px] font-bold uppercase tracking-[0.15em] ${categoryConfig.color}`}>
+              {categoryConfig.questionLabel}
+            </p>
+
+            {/* Question/Clue display */}
+            {isEmojiGuess ? (
+              <div className="text-center py-2">
+                <p className="text-3xl leading-relaxed tracking-wider">{trivia.teaser}</p>
+                <p className="text-zinc-500 text-[11px] mt-1">Guess the hero!</p>
+              </div>
+            ) : (
+              <>
+                {trivia.title && (
+                  <p className="text-white font-semibold text-sm leading-tight">{trivia.title}</p>
+                )}
+                <p className="text-zinc-400 text-[13px] leading-relaxed">{trivia.teaser}</p>
+              </>
+            )}
+
+            {/* Hero tag (hidden for guessing categories) */}
+            {trivia.heroSlug && !isGuessTheHero && !isEmojiGuess && (
+              <span className="inline-block text-[10px] font-semibold tracking-wide text-[#e8a000] bg-[#e8a000]/15 border border-[#e8a000]/30 rounded-full px-2 py-0.5">
                 #{trivia.heroSlug}
               </span>
             )}
-            {xpAwarded !== null && (
-              <span className="text-[10px] font-semibold tracking-wide text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-full px-2 py-0.5">
-                +{xpAwarded} XP
-              </span>
+
+            {error && <p className="text-[11px] text-red-300">{error}</p>}
+
+            {/* Multiple Choice Buttons */}
+            {!hasAnswered ? (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  {choices.map((choice, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => onAnswer(choice)}
+                      disabled={answerLoading}
+                      className="flex items-center justify-center rounded-lg border border-white/10 bg-white/3 px-3 py-2.5 text-[12px] font-semibold text-zinc-200 transition-all hover:border-[#e8a000]/40 hover:bg-[#e8a000]/10 hover:text-white disabled:opacity-50 active:scale-95"
+                    >
+                      {answerLoading ? (
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                          className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-white rounded-full"
+                        />
+                      ) : (
+                        choice
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-zinc-600 text-center">
+                  {stats.totalAttempts > 0 ? `${stats.totalAttempts} attempts • ${successRate}% success rate` : 'Be the first to try!'}
+                </p>
+              </>
+            ) : (
+              <>
+                {/* Result feedback */}
+                <div className={`rounded-lg border p-3 ${isCorrect ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-red-500/30 bg-red-500/10'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {isCorrect ? (
+                      <>
+                        <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                          <Check size={14} className="text-emerald-400" />
+                        </div>
+                        <span className="text-emerald-400 font-bold text-sm">Correct! +{xpAwarded} XP</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center">
+                          <X size={14} className="text-red-400" />
+                        </div>
+                        <span className="text-red-400 font-bold text-sm">Wrong!</span>
+                      </>
+                    )}
+                  </div>
+                  <p className="text-zinc-400 text-[11px]">
+                    Your answer: <span className={isCorrect ? 'text-emerald-300' : 'text-red-300'}>{userAnswer}</span>
+                  </p>
+                  {!isCorrect && correctAnswer && (
+                    <p className="text-zinc-400 text-[11px]">
+                      Correct answer: <span className="text-emerald-300">{correctAnswer}</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* Show answer choices with indicators */}
+                <div className="grid grid-cols-2 gap-2">
+                  {choices.map((choice, idx) => {
+                    const isUserChoice = choice === userAnswer;
+                    const isRightAnswer = choice === correctAnswer;
+                    let buttonClass = 'border-white/5 bg-white/2 text-zinc-500';
+                    if (isRightAnswer) buttonClass = 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300';
+                    else if (isUserChoice && !isCorrect) buttonClass = 'border-red-500/40 bg-red-500/15 text-red-300';
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-center rounded-lg border px-3 py-2 text-[11px] font-semibold ${buttonClass}`}
+                      >
+                        {choice}
+                        {isRightAnswer && <Check size={12} className="ml-1.5 text-emerald-400" />}
+                        {isUserChoice && !isCorrect && <X size={12} className="ml-1.5 text-red-400" />}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Reveal/Explanation */}
+                {reveal && (
+                  <div className={`rounded-lg border p-3 ${categoryConfig.bg}`}>
+                    <p className={`text-[10px] uppercase tracking-[0.15em] font-black mb-1 ${categoryConfig.color}`}>
+                      {categoryConfig.answerLabel}
+                    </p>
+                    <p className="text-white text-[12px] leading-relaxed whitespace-pre-wrap">{reveal}</p>
+                  </div>
+                )}
+
+                {/* Stats */}
+                <p className="text-[11px] text-zinc-600 text-center">
+                  {stats.totalAttempts} attempts • {successRate}% got it right
+                </p>
+
+                {/* Countdown Timer + Next Button */}
+                {countdown !== null && currentIndex < totalTrivias - 1 && (
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-8 h-8">
+                        <svg className="w-8 h-8 -rotate-90">
+                          <circle
+                            cx="16"
+                            cy="16"
+                            r="14"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            fill="none"
+                            className="text-white/10"
+                          />
+                          <circle
+                            cx="16"
+                            cy="16"
+                            r="14"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            fill="none"
+                            strokeDasharray={88}
+                            strokeDashoffset={88 - (countdown / 10) * 88}
+                            className="text-[#e8a000] transition-all duration-1000"
+                          />
+                        </svg>
+                        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                          {countdown}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-zinc-500">Next question in {countdown}s</span>
+                    </div>
+                    <button
+                      onClick={onSkip}
+                      className="text-[10px] font-bold uppercase tracking-wider text-[#e8a000] hover:text-white transition-colors flex items-center gap-1"
+                    >
+                      Skip <ChevronRight size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Final message when on last trivia */}
+                {countdown !== null && currentIndex >= totalTrivias - 1 && (
+                  <div className="text-center pt-2 border-t border-white/10">
+                    <p className="text-[11px] text-zinc-500">That was the last one! Come back tomorrow.</p>
+                  </div>
+                )}
+              </>
             )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => onVote(true)}
-              disabled={voteLoading || !!reveal || voteChoice !== null}
-              className={'flex items-center justify-between rounded-lg border px-3 py-2 text-[13px] font-semibold transition-colors ' +
-                (voteChoice === true
-                  ? 'border-emerald-400 bg-emerald-500/15 text-white'
-                  : 'border-white/10 bg-white/3 text-zinc-200 hover:border-white/20')}
-            >
-              <span>True</span>
-              <span className="text-emerald-300 text-xs">{voteCounts.trueCount.toLocaleString()}</span>
-            </button>
-            <button
-              onClick={() => onVote(false)}
-              disabled={voteLoading || !!reveal || voteChoice !== null}
-              className={'flex items-center justify-between rounded-lg border px-3 py-2 text-[13px] font-semibold transition-colors ' +
-                (voteChoice === false
-                  ? 'border-red-400 bg-red-500/15 text-white'
-                  : 'border-white/10 bg-white/3 text-zinc-200 hover:border-white/20')}
-            >
-              <span>False</span>
-              <span className="text-red-300 text-xs">{voteCounts.falseCount.toLocaleString()}</span>
-            </button>
-          </div>
-          <p className="text-[11px] text-zinc-500">{(voteCounts.trueCount + voteCounts.falseCount).toLocaleString()} votes so far.</p>
-
-          {error && <p className="text-[11px] text-red-300">{error}</p>}
-
-          {reveal ? (
-            <div className="rounded-lg border border-white/10 bg-white/3 p-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[#e8a000] font-black mb-1">Reveal</p>
-              <p className="text-white text-sm leading-relaxed whitespace-pre-wrap">{reveal}</p>
-            </div>
-          ) : (
-            <button
-              onClick={onReveal}
-              disabled={revealLoading}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[#e8a000] text-black text-[11px] font-black uppercase tracking-wider hover:bg-[#ffb800] transition-colors disabled:opacity-50"
-            >
-              {revealLoading ? (
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                  className="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full"
-                />
-              ) : (
-                <Sparkles size={12} />
-              )}
-              Reveal
-            </button>
-          )}
-        </>
-      ) : (
-        <p className="text-zinc-500 text-sm">No active trivia today. Check back soon.</p>
-      )}
-    </div>
-  </motion.div>
-);
+          </>
+        ) : (
+          <p className="text-zinc-500 text-sm">No active trivia today. Check back soon.</p>
+        )}
+      </div>
+    </motion.div>
+  );
+};
 
 /* ================================================================
    Stats Bar
@@ -1095,16 +1369,20 @@ export default function CommunityPage() {
   const [totalPosts, setTotalPosts] = useState(0);
   const [memes, setMemes] = useState<MemeData[]>([]);
   const [clipOfWeek, setClipOfWeek] = useState<ClipOfWeekData | null>(null);
-  const [trivia, setTrivia] = useState<TriviaFact | null>(null);
+  // Trivia state
+  const [triviaState, setTriviaState] = useState<TriviaState>({
+    trivias: [],
+    currentIndex: 0,
+    userTotalXp: 0,
+    dailyAnswered: 0,
+    dailyLimit: 5,
+    countdown: null,
+  });
   const [triviaImage, setTriviaImage] = useState<string | null>(null);
-  const [triviaReveal, setTriviaReveal] = useState<string | null>(null);
-  const [triviaChoice, setTriviaChoice] = useState<boolean | null>(null);
-  const [triviaCounts, setTriviaCounts] = useState<{ trueCount: number; falseCount: number }>({ trueCount: 0, falseCount: 0 });
-  const [triviaXp, setTriviaXp] = useState<number | null>(null);
   const [triviaError, setTriviaError] = useState<string | null>(null);
   const [triviaLoading, setTriviaLoading] = useState(false);
-  const [triviaRevealLoading, setTriviaRevealLoading] = useState(false);
-  const [triviaVoteLoading, setTriviaVoteLoading] = useState(false);
+  const [triviaAnswerLoading, setTriviaAnswerLoading] = useState(false);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const [reactionLoadingId, setReactionLoadingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<PostType | 'ALL'>('ALL');
@@ -1174,17 +1452,22 @@ export default function CommunityPage() {
       try {
         const res = await fetch('/api/trivia/current', { cache: 'no-store' });
         const data = await res.json();
-        const triviaFact = data?.trivia as TriviaFact | null;
-        setTrivia(triviaFact ?? null);
-        setTriviaChoice(triviaFact?.userChoice ?? null);
-        setTriviaCounts({
-          trueCount: triviaFact?.trueCount ?? 0,
-          falseCount: triviaFact?.falseCount ?? 0,
-        });
+        const trivias = (data?.trivias ?? []) as TriviaFact[];
+        
+        setTriviaState(prev => ({
+          ...prev,
+          trivias,
+          currentIndex: 0,
+          userTotalXp: data?.userTotalXp ?? 0,
+          dailyAnswered: data?.dailyAnswered ?? 0,
+          dailyLimit: data?.dailyLimit ?? 5,
+        }));
 
-        if (triviaFact) {
-          if (triviaFact.images?.length) {
-            const firstImage = triviaFact.images[0];
+        // Set image for first trivia
+        const firstTrivia = trivias[0];
+        if (firstTrivia) {
+          if (firstTrivia.images?.length) {
+            const firstImage = firstTrivia.images[0];
             if (firstImage.startsWith('http')) {
               setTriviaImage(firstImage);
             } else {
@@ -1204,11 +1487,16 @@ export default function CommunityPage() {
           }
         }
       } catch {
-        setTrivia(null);
+        setTriviaState(prev => ({ ...prev, trivias: [] }));
       }
 
       setTriviaLoading(false);
     })();
+
+    // Cleanup countdown on unmount
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
   }, []);
 
   // Socket.io Realtime — prepend new posts without a manual refresh
@@ -1289,66 +1577,119 @@ export default function CommunityPage() {
     setReactionLoadingId(null);
   };
 
-  const handleTriviaReveal = async () => {
-    if (!trivia?.id || triviaRevealLoading) return;
-    setTriviaRevealLoading(true);
+  // Handle trivia answer selection
+  const handleTriviaAnswer = async (answer: string) => {
+    const currentTrivia = triviaState.trivias[triviaState.currentIndex];
+    if (!currentTrivia?.id || triviaAnswerLoading || currentTrivia.hasAnswered) return;
+    setTriviaAnswerLoading(true);
     setTriviaError(null);
 
     try {
-      const res = await fetch('/api/trivia/' + trivia.id + '/reveal', { method: 'POST' });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setTriviaError(data?.error ?? 'Unable to reveal trivia right now.');
-      } else {
-        setTriviaReveal(data?.reveal ?? '');
-        setTriviaXp(typeof data?.xpAwarded === 'number' ? data.xpAwarded : 0);
-      }
-    } catch {
-      setTriviaError('Unable to reveal trivia right now.');
-    }
-
-    setTriviaRevealLoading(false);
-  };
-
-  const handleTriviaVote = async (choice: boolean) => {
-    if (!trivia?.id || triviaVoteLoading || triviaReveal || triviaChoice !== null) return; // lock after first vote or reveal
-    setTriviaVoteLoading(true);
-    setTriviaError(null);
-
-    try {
-      const res = await fetch('/api/trivia/' + trivia.id + '/vote', {
+      const res = await fetch('/api/trivia/' + currentTrivia.id + '/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ choice }),
+        body: JSON.stringify({ answer }),
       });
       const data = await res.json();
 
       if (!res.ok) {
-        // If API encodes details in JSON string message, surface counts and choice
+        // Handle "already answered" scenario
         try {
           const parsed = typeof data?.error === 'string' ? JSON.parse(data.error) : null;
-          if (parsed?.userChoice !== undefined) {
-            setTriviaChoice(parsed.userChoice);
-            setTriviaCounts({ trueCount: parsed.trueCount ?? triviaCounts.trueCount, falseCount: parsed.falseCount ?? triviaCounts.falseCount });
-            setTrivia(prev => prev ? { ...prev, trueCount: parsed.trueCount ?? triviaCounts.trueCount, falseCount: parsed.falseCount ?? triviaCounts.falseCount, totalVotes: parsed.totalVotes ?? (parsed.trueCount ?? 0) + (parsed.falseCount ?? 0), userChoice: parsed.userChoice } : prev);
+          if (parsed?.userAnswer) {
+            // Update the current trivia with answer data
+            setTriviaState(prev => {
+              const updated = [...prev.trivias];
+              updated[prev.currentIndex] = {
+                ...updated[prev.currentIndex],
+                hasAnswered: true,
+                userAnswer: parsed.userAnswer,
+                isCorrect: parsed.isCorrect,
+                correctAnswer: parsed.correctAnswer,
+                xpAwarded: parsed.xpAwarded,
+                reveal: parsed.reveal,
+                totalAttempts: parsed.totalAttempts ?? updated[prev.currentIndex].totalAttempts,
+                correctCount: parsed.correctCount ?? updated[prev.currentIndex].correctCount,
+              };
+              return {
+                ...prev,
+                trivias: updated,
+                userTotalXp: prev.userTotalXp + (parsed.xpAwarded ?? 0),
+                dailyAnswered: prev.dailyAnswered + 1,
+              };
+            });
+            startCountdown();
+          } else {
+            setTriviaError(parsed?.message || data?.error || 'Unable to submit answer.');
           }
-        } catch { /* ignore parse errors */ }
-        setTriviaError(data?.error ?? 'Unable to record vote.');
+        } catch {
+          setTriviaError(data?.error ?? 'Unable to submit answer.');
+        }
       } else {
-        const trueCount = typeof data?.trueCount === 'number' ? data.trueCount : triviaCounts.trueCount;
-        const falseCount = typeof data?.falseCount === 'number' ? data.falseCount : triviaCounts.falseCount;
-        const userChoice = typeof data?.userChoice === 'boolean' ? data.userChoice : choice;
-
-        setTriviaChoice(userChoice);
-        setTriviaCounts({ trueCount, falseCount });
-        setTrivia(prev => prev ? { ...prev, trueCount, falseCount, totalVotes: data?.totalVotes ?? trueCount + falseCount, userChoice } : prev);
+        // Success! Update trivia state with result
+        setTriviaState(prev => {
+          const updated = [...prev.trivias];
+          updated[prev.currentIndex] = {
+            ...updated[prev.currentIndex],
+            hasAnswered: true,
+            userAnswer: data.userAnswer,
+            isCorrect: data.isCorrect,
+            correctAnswer: data.correctAnswer,
+            xpAwarded: data.xpAwarded,
+            reveal: data.reveal,
+            totalAttempts: data.totalAttempts ?? (updated[prev.currentIndex].totalAttempts ?? 0) + 1,
+            correctCount: data.correctCount ?? (data.isCorrect ? (updated[prev.currentIndex].correctCount ?? 0) + 1 : updated[prev.currentIndex].correctCount),
+          };
+          return {
+            ...prev,
+            trivias: updated,
+            userTotalXp: prev.userTotalXp + (data.xpAwarded ?? 0),
+            dailyAnswered: prev.dailyAnswered + 1,
+          };
+        });
+        startCountdown();
       }
     } catch {
-      setTriviaError('Unable to record vote.');
+      setTriviaError('Unable to submit answer.');
     }
 
-    setTriviaVoteLoading(false);
+    setTriviaAnswerLoading(false);
+  };
+
+  // Start 10 second countdown then advance to next trivia
+  const startCountdown = () => {
+    // Clear any existing countdown
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    
+    setTriviaState(prev => ({ ...prev, countdown: 10 }));
+    
+    countdownRef.current = setInterval(() => {
+      setTriviaState(prev => {
+        if (prev.countdown === null || prev.countdown <= 1) {
+          // Time's up - advance to next trivia
+          if (countdownRef.current) clearInterval(countdownRef.current);
+          const nextIndex = prev.currentIndex + 1;
+          if (nextIndex < prev.trivias.length) {
+            return { ...prev, countdown: null, currentIndex: nextIndex };
+          }
+          // No more trivias
+          return { ...prev, countdown: null };
+        }
+        return { ...prev, countdown: prev.countdown - 1 };
+      });
+    }, 1000);
+  };
+
+  // Skip countdown and go to next trivia immediately
+  const skipToNextTrivia = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    setTriviaState(prev => {
+      const nextIndex = prev.currentIndex + 1;
+      if (nextIndex < prev.trivias.length) {
+        return { ...prev, countdown: null, currentIndex: nextIndex };
+      }
+      return { ...prev, countdown: null };
+    });
   };
 
   return (
@@ -1428,6 +1769,25 @@ export default function CommunityPage() {
           </div>
         </div>
 
+        {/* Mobile Quiz Card — shown only on mobile/tablet */}
+        <div className="lg:hidden mb-6">
+          <TriviaSidebarCard
+            trivia={triviaState.trivias[triviaState.currentIndex] ?? null}
+            imageUrl={triviaImage}
+            loading={triviaLoading}
+            onAnswer={handleTriviaAnswer}
+            onSkip={skipToNextTrivia}
+            error={triviaError}
+            answerLoading={triviaAnswerLoading}
+            countdown={triviaState.countdown}
+            userTotalXp={triviaState.userTotalXp}
+            dailyAnswered={triviaState.dailyAnswered}
+            dailyLimit={triviaState.dailyLimit}
+            currentIndex={triviaState.currentIndex}
+            totalTrivias={triviaState.trivias.length}
+          />
+        </div>
+
         {/* Main grid: feed + sidebar */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
           {/* Feed */}
@@ -1486,18 +1846,19 @@ export default function CommunityPage() {
           {/* Sidebar — desktop only */}
           <div className="hidden lg:flex flex-col gap-5">
             <TriviaSidebarCard
-              trivia={trivia}
+              trivia={triviaState.trivias[triviaState.currentIndex] ?? null}
               imageUrl={triviaImage}
               loading={triviaLoading}
-              reveal={triviaReveal}
-              revealLoading={triviaRevealLoading}
-              onReveal={handleTriviaReveal}
-              onVote={handleTriviaVote}
+              onAnswer={handleTriviaAnswer}
+              onSkip={skipToNextTrivia}
               error={triviaError}
-              xpAwarded={triviaXp}
-              voteChoice={triviaChoice}
-              voteCounts={triviaCounts}
-              voteLoading={triviaVoteLoading}
+              answerLoading={triviaAnswerLoading}
+              countdown={triviaState.countdown}
+              userTotalXp={triviaState.userTotalXp}
+              dailyAnswered={triviaState.dailyAnswered}
+              dailyLimit={triviaState.dailyLimit}
+              currentIndex={triviaState.currentIndex}
+              totalTrivias={triviaState.trivias.length}
             />
             <TrendingSidebar memes={memes} />
 

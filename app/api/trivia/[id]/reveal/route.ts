@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
 import { requireActiveUser, apiError, apiSuccess } from "@/lib/api-utils";
-import { XpEventType } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
+// This endpoint now just returns the reveal if user has already answered
+// XP is awarded when they answer correctly via the /vote endpoint
 export async function POST(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireActiveUser();
@@ -11,38 +12,24 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
     const trivia = await prisma.triviaFact.findUnique({ where: { id } });
     if (!trivia || !trivia.isActive) return apiError("Trivia not found", 404);
 
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
-
-    const alreadyAwarded = await prisma.userXpEvent.findFirst({
-      where: {
-        userId: user.id,
-        type: XpEventType.TRIVIA_REVEAL,
-        createdAt: { gte: dayStart },
-        metadata: `trivia:${id}`,
-      },
+    // Check if user has answered this trivia
+    const userVote = await prisma.triviaVote.findUnique({
+      where: { triviaId_userId: { triviaId: id, userId: user.id } },
+      select: { selectedAnswer: true, isCorrect: true, xpAwarded: true },
     });
 
-    if (!alreadyAwarded) {
-      await prisma.userXpEvent.create({
-        data: {
-          userId: user.id,
-          type: XpEventType.TRIVIA_REVEAL,
-          xp: 10,
-          metadata: `trivia:${id}`,
-        },
-      });
+    if (!userVote) {
+      return apiError("Answer the quiz first to see the reveal!", 403);
     }
 
-    const aggregate = await prisma.userXpEvent.aggregate({
-      where: { userId: user.id },
-      _sum: { xp: true },
-    });
+    const correctAnswer = trivia.choices[trivia.correctAnswerIndex] ?? null;
 
     return apiSuccess({
       reveal: trivia.reveal,
-      xpAwarded: alreadyAwarded ? 0 : 10,
-      totalXp: aggregate._sum.xp || 0,
+      correctAnswer,
+      userAnswer: userVote.selectedAnswer,
+      isCorrect: userVote.isCorrect,
+      xpAwarded: userVote.xpAwarded,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to reveal trivia";
