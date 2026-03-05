@@ -92,9 +92,11 @@ interface TriviaState {
   trivias: TriviaFact[];
   currentIndex: number;
   userTotalXp: number;
+  todayXp: number;
   dailyAnswered: number;
   dailyLimit: number;
   countdown: number | null; // seconds remaining before next trivia
+  allCompletedToday: boolean;
 }
 
 /* ================================================================
@@ -1013,7 +1015,9 @@ const TriviaSidebarCard = ({
   error,
   answerLoading,
   countdown,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   userTotalXp,
+  todayXp,
   dailyAnswered,
   dailyLimit,
   currentIndex,
@@ -1028,6 +1032,7 @@ const TriviaSidebarCard = ({
   answerLoading: boolean;
   countdown: number | null;
   userTotalXp: number;
+  todayXp: number;
   dailyAnswered: number;
   dailyLimit: number;
   currentIndex: number;
@@ -1084,7 +1089,7 @@ const TriviaSidebarCard = ({
             </div>
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e8a000]">Daily Quiz</p>
-              <p className="text-[11px] text-zinc-500">{currentIndex + 1}/{dailyLimit} • {userTotalXp} XP earned</p>
+              <p className="text-[11px] text-zinc-500">{currentIndex + 1}/{dailyLimit} • +{todayXp} XP today</p>
             </div>
           </div>
           {trivia && !allCompleted && (
@@ -1125,8 +1130,8 @@ const TriviaSidebarCard = ({
               <p className="text-zinc-500 text-[11px] mt-1">You&apos;ve completed {dailyAnswered} quiz{dailyAnswered !== 1 ? 'zes' : ''}</p>
             </div>
             <div className="bg-[#e8a000]/10 border border-[#e8a000]/30 rounded-lg px-3 py-2">
-              <p className="text-[11px] text-zinc-400">Total XP Earned</p>
-              <p className="text-[#e8a000] font-black text-lg">{userTotalXp} XP</p>
+              <p className="text-[11px] text-zinc-400">XP Earned Today</p>
+              <p className="text-[#e8a000] font-black text-lg">+{todayXp} XP</p>
             </div>
             <p className="text-zinc-600 text-[10px]">Come back tomorrow for more!</p>
           </div>
@@ -1374,9 +1379,11 @@ export default function CommunityPage() {
     trivias: [],
     currentIndex: 0,
     userTotalXp: 0,
+    todayXp: 0,
     dailyAnswered: 0,
     dailyLimit: 5,
     countdown: null,
+    allCompletedToday: false,
   });
   const [triviaImage, setTriviaImage] = useState<string | null>(null);
   const [triviaError, setTriviaError] = useState<string | null>(null);
@@ -1459,8 +1466,10 @@ export default function CommunityPage() {
           trivias,
           currentIndex: 0,
           userTotalXp: data?.userTotalXp ?? 0,
+          todayXp: data?.todayXp ?? 0,
           dailyAnswered: data?.dailyAnswered ?? 0,
           dailyLimit: data?.dailyLimit ?? 5,
+          allCompletedToday: data?.allCompletedToday ?? false,
         }));
 
         // Set image for first trivia
@@ -1615,6 +1624,7 @@ export default function CommunityPage() {
                 ...prev,
                 trivias: updated,
                 userTotalXp: prev.userTotalXp + (parsed.xpAwarded ?? 0),
+                todayXp: prev.todayXp + (parsed.xpAwarded ?? 0),
                 dailyAnswered: prev.dailyAnswered + 1,
               };
             });
@@ -1644,6 +1654,7 @@ export default function CommunityPage() {
             ...prev,
             trivias: updated,
             userTotalXp: prev.userTotalXp + (data.xpAwarded ?? 0),
+            todayXp: prev.todayXp + (data.xpAwarded ?? 0),
             dailyAnswered: prev.dailyAnswered + 1,
           };
         });
@@ -1781,6 +1792,7 @@ export default function CommunityPage() {
             answerLoading={triviaAnswerLoading}
             countdown={triviaState.countdown}
             userTotalXp={triviaState.userTotalXp}
+            todayXp={triviaState.todayXp}
             dailyAnswered={triviaState.dailyAnswered}
             dailyLimit={triviaState.dailyLimit}
             currentIndex={triviaState.currentIndex}
@@ -1855,6 +1867,7 @@ export default function CommunityPage() {
               answerLoading={triviaAnswerLoading}
               countdown={triviaState.countdown}
               userTotalXp={triviaState.userTotalXp}
+              todayXp={triviaState.todayXp}
               dailyAnswered={triviaState.dailyAnswered}
               dailyLimit={triviaState.dailyLimit}
               currentIndex={triviaState.currentIndex}
