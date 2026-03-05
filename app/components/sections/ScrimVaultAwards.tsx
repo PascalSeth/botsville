@@ -525,6 +525,36 @@ export const MobileScrimAndAwards = () => {
             No scrim videos available yet.
           </div>
         </div>
+
+        <div className="h-px mx-4 sm:mx-6 bg-white/4 mb-6" />
+
+        <div className="px-4 sm:px-6">
+          <div className="flex items-center justify-between mb-4">
+            <SectionLabel>Best Role Awards</SectionLabel>
+            {season?.status === 'ACTIVE' && (
+              <span className="text-[#e8a000] text-[9px] font-black tracking-widest uppercase -mt-4">Voting open</span>
+            )}
+          </div>
+          {loading ? (
+            <div className="flex items-center justify-center py-6 gap-2">
+              <Loader2 size={16} className="animate-spin text-[#e8a000]" />
+              <span className="text-[#444] text-xs font-mono">Loading…</span>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {AWARD_ROLES.map((meta, i) => {
+                const leader = (grouped[meta.key] ?? [])[0] ?? null;
+                return (
+                  <MobileAwardCard key={meta.key} meta={meta} nominee={leader} index={i}
+                    canVote={canVote} isPending={isPending && pendingId === leader?.id} onVote={handleVote} />
+                );
+              })}
+            </div>
+          )}
+          {!session && !loading && (
+            <p className="mt-3 text-[#444] text-[10px] tracking-wide">Sign in to vote.</p>
+          )}
+        </div>
       </section>
     );
   }
