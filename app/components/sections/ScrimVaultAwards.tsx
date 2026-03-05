@@ -6,7 +6,7 @@ import {
   Play, ChevronRight, Trophy, Vote, CheckCircle2, Loader2, Users,
   Shield, Swords, Zap, Crosshair, HeartHandshake,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 
 // ─── Scrim types ────────────────────────────────────────────
@@ -188,75 +188,85 @@ const DesktopScrimCard = ({ scrim }: { scrim: ScrimItem }) => (
   </div>
 );
 
-// ─── Desktop Award Card ───────────────────────────────────────
-const DesktopAwardCard = ({
-  meta, nominee, canVote, isPending, onVote,
+// ─── Awards Slider Slide ───────────────────────────────────────
+const AwardSlide = ({
+  meta, nominee, isActive,
 }: {
   meta: RoleMeta;
   nominee: AwardNominee | null;
-  canVote: boolean;
-  isPending: boolean;
-  onVote: (playerId: string, role: string) => void;
+  isActive: boolean;
 }) => {
   const { color, Icon } = meta;
-  if (!nominee) {
-    return (
-      <div className="flex flex-col gap-1.5 opacity-40">
-        <div className="relative w-full aspect-square bg-[#111] flex flex-col items-center justify-center gap-2 border border-white/5">
-          <Icon size={22} style={{ color }} />
-          <p className="text-[#444] text-[9px] tracking-widest uppercase">{meta.label}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black tracking-[0.15em] uppercase" style={{ color }}>{meta.award}</p>
-          <p className="text-[#333] text-[11px] uppercase tracking-wide">No nominees yet</p>
-        </div>
-      </div>
-    );
-  }
+  
   return (
-    <div className="group flex flex-col gap-1.5">
-      <div className="relative w-full aspect-square overflow-hidden bg-[#111]">
-        {nominee.photo ? (
-          <Image src={nominee.photo} alt={nominee.ign} fill className="object-cover object-top group-hover:scale-105 transition-transform duration-500 grayscale-40 group-hover:grayscale-0" />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center"><Users size={28} className="text-[#2a2a2a]" /></div>
-        )}
-        <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/10 to-transparent" />
-        <span className="absolute top-1.5 right-1.5 flex items-center gap-1 text-[9px] font-black tracking-wide uppercase px-1.5 py-0.5"
-          style={{ background: `${color}22`, color, border: `1px solid ${color}44` }}>
-          <Icon size={8} /> {meta.label}
-        </span>
-        {nominee.votedByMe && (
-          <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 1px ${color}55` }} />
-        )}
-        {nominee.signatureHero && (
-          <p className="absolute bottom-1.5 left-2 text-[#aaa] text-[9px] tracking-widest uppercase font-semibold">{nominee.signatureHero}</p>
-        )}
-      </div>
-      <div>
-        <p className="text-[10px] font-black tracking-[0.15em] uppercase" style={{ color }}>{meta.award}</p>
-        <div className="flex items-center justify-between gap-1 mt-0.5">
-          <div className="min-w-0">
-            <p className="text-white font-black text-[11px] uppercase tracking-wide leading-tight group-hover:text-[#e8a000] transition-colors truncate">{nominee.ign}</p>
-            <p className="text-[#444] text-[9px] truncate">{nominee.team.tag}</p>
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: isActive ? 1 : 0, scale: isActive ? 1 : 0.95 }}
+      transition={{ duration: 0.4 }}
+      className={`absolute inset-0 flex items-center justify-center ${isActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
+    >
+      <div className="w-full max-w-xs mx-auto">
+        {/* Award Title */}
+        <div className="text-center mb-5">
+          <div className="inline-flex items-center gap-2 px-4 py-2 mb-3"
+            style={{ background: `${color}12`, border: `1px solid ${color}25` }}>
+            <Icon size={14} style={{ color }} />
+            <span className="text-[11px] font-black tracking-[0.25em] uppercase" style={{ color }}>{meta.label}</span>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-[#555] text-[9px] tabular-nums">{nominee.votes}</span>
-            <motion.button
-              whileTap={{ scale: 0.88 }}
-              onClick={() => onVote(nominee.id, meta.key)}
-              disabled={!canVote || isPending}
-              className="flex items-center justify-center w-6 h-6 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed"
-              style={nominee.votedByMe
-                ? { background: `${color}20`, border: `1px solid ${color}50`, color }
-                : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#666' }}
-            >
-              {isPending ? <Loader2 size={9} className="animate-spin" /> : nominee.votedByMe ? <CheckCircle2 size={9} /> : <Vote size={9} />}
-            </motion.button>
-          </div>
+          <h3 className="text-xl font-black tracking-[0.18em] uppercase" style={{ color }}>{meta.award}</h3>
         </div>
+        
+        {/* Leader Card */}
+        {nominee ? (
+          <div className="relative">
+            {/* Glow effect */}
+            <div className="absolute -inset-2 opacity-20 blur-2xl" style={{ background: color }} />
+            
+            <div className="relative bg-[#0a0a0f] border overflow-hidden" style={{ borderColor: `${color}35` }}>
+              {/* Player Image */}
+              <div className="relative aspect-[3/4] overflow-hidden">
+                {nominee.photo ? (
+                  <Image src={nominee.photo} alt={nominee.ign} fill className="object-cover object-top" />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-[#0c0c12]">
+                    <Users size={48} style={{ color, opacity: 0.2 }} />
+                  </div>
+                )}
+                
+                {/* Gradient overlay */}
+                <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0f] via-[#0a0a0f]/40 to-transparent" />
+                
+                {/* Team badge - top left */}
+                <div className="absolute top-3 left-3 max-w-[45%] px-2 py-1 bg-black/60 backdrop-blur-sm border border-white/10">
+                  <span className="text-[#999] text-[9px] font-bold tracking-wider uppercase truncate block">{nominee.team.name}</span>
+                </div>
+                
+                {/* Vote count - top right */}
+                <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm border border-white/10">
+                  <Trophy size={10} style={{ color }} />
+                  <span className="text-white text-[10px] font-black tabular-nums">{nominee.votes}</span>
+                </div>
+                
+                {/* Player Info - bottom overlay */}
+                <div className="absolute bottom-0 left-0 right-0 p-4">
+                  <p className="text-white font-black text-2xl uppercase tracking-wider text-center">{nominee.ign}</p>
+                  {nominee.signatureHero && (
+                    <p className="text-center mt-1.5">
+                      <span className="text-[11px] font-medium tracking-wide" style={{ color }}>{nominee.signatureHero}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-16 border border-white/5 bg-[#0a0a0f]">
+            <Icon size={36} style={{ color, opacity: 0.25 }} />
+            <p className="text-[#444] text-sm uppercase tracking-widest mt-4">No nominees yet</p>
+          </div>
+        )}
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -283,39 +293,16 @@ export const ScrimVault = () => {
 };
 
 export const BestRoleAwards = () => {
-  const { data: session } = useSession();
-  const { season, grouped, userVotes, setGrouped, setUserVotes, loading } = useRoleNominees();
-  const [isPending, startTransition] = useTransition();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const { season, grouped, loading } = useRoleNominees();
+  const [activeIndex, setActiveIndex] = useState(0);
 
-  const handleVote = useCallback((playerId: string, role: string) => {
-    if (!session || !season || season.status !== 'ACTIVE') return;
-    const currentVote = userVotes[role];
-    const isToggle = currentVote === playerId;
-    setUserVotes(prev => { const n = { ...prev }; if (isToggle) delete n[role]; else n[role] = playerId; return n; });
-    setGrouped(prev => {
-      const list = (prev[role] ?? []).map(n => {
-        let v = n.votes;
-        if (n.id === currentVote && !isToggle) v = Math.max(0, v - 1);
-        if (n.id === playerId) v = isToggle ? Math.max(0, v - 1) : v + 1;
-        return { ...n, votes: v, votedByMe: !isToggle && n.id === playerId };
-      }).sort((a, b) => b.votes - a.votes);
-      return { ...prev, [role]: list };
-    });
-    setPendingId(playerId);
-    startTransition(async () => {
-      try {
-        await fetch('/api/awards/vote', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ playerId, role, seasonId: season.id }),
-        });
-      } catch { /* silent */ }
-      finally { setPendingId(null); }
-    });
-  }, [session, season, userVotes, setGrouped, setUserVotes]);
-
-  const canVote = !!session && season?.status === 'ACTIVE';
+  // Auto-slide every 4 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveIndex(prev => (prev + 1) % AWARD_ROLES.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <section className="hidden lg:block bg-[#0d0d12] pb-10 border-t border-white/4">
@@ -326,31 +313,62 @@ export const BestRoleAwards = () => {
             <div className="flex items-center gap-2 -mt-4">
               <Trophy size={10} className="text-[#e8a000]" />
               <span className="text-[#555] text-[10px] font-mono">{season.name}</span>
-              {season.status === 'ACTIVE'
-                ? <span className="text-[#e8a000] text-[9px] font-black tracking-widest uppercase">· Voting open</span>
-                : <span className="text-[#444] text-[9px] font-black tracking-widest uppercase">· Voting closed</span>
-              }
+              {season.status === 'ACTIVE' && (
+                <a href="/awards" className="text-[#e8a000] text-[9px] font-black tracking-widest uppercase hover:underline ml-1">· Vote Now →</a>
+              )}
             </div>
           )}
         </div>
+        
         {loading ? (
           <div className="flex items-center justify-center py-10 gap-3">
             <Loader2 size={18} className="animate-spin text-[#e8a000]" />
             <span className="text-[#444] text-xs font-mono">Loading…</span>
           </div>
         ) : (
-          <div className="grid grid-cols-5 gap-3">
-            {AWARD_ROLES.map(meta => {
-              const leader = (grouped[meta.key] ?? [])[0] ?? null;
-              return (
-                <DesktopAwardCard key={meta.key} meta={meta} nominee={leader}
-                  canVote={canVote} isPending={isPending && pendingId === leader?.id} onVote={handleVote} />
-              );
-            })}
+          <div className="relative">
+            {/* Slider Container */}
+            <div className="relative h-[480px] overflow-hidden">
+              {AWARD_ROLES.map((meta, i) => {
+                const leader = (grouped[meta.key] ?? [])[0] ?? null;
+                return (
+                  <AwardSlide key={meta.key} meta={meta} nominee={leader} isActive={i === activeIndex} />
+                );
+              })}
+            </div>
+            
+            {/* Navigation Dots */}
+            <div className="flex items-center justify-center gap-3 mt-5">
+              {AWARD_ROLES.map((meta, i) => (
+                <button
+                  key={meta.key}
+                  onClick={() => setActiveIndex(i)}
+                  className="group relative flex items-center justify-center w-7 h-7 transition-all"
+                >
+                  <div
+                    className={`w-2.5 h-2.5 transition-all duration-300 ${i === activeIndex ? 'scale-110' : 'scale-100 opacity-30 hover:opacity-60'}`}
+                    style={{ background: i === activeIndex ? meta.color : '#555' }}
+                  />
+                  {/* Tooltip */}
+                  <span className="absolute -top-7 left-1/2 -translate-x-1/2 px-2.5 py-1 bg-black/95 text-[8px] font-black tracking-widest uppercase whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity border border-white/5"
+                    style={{ color: meta.color }}>
+                    {meta.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+            
+            {/* CTA Button */}
+            {season?.status === 'ACTIVE' && (
+              <div className="text-center mt-5">
+                <a href="/awards" className="inline-flex items-center gap-2.5 px-7 py-3 bg-[#e8a000] text-black text-[10px] font-black tracking-[0.2em] uppercase hover:bg-[#ffb800] transition-colors">
+                  <Vote size={13} />
+                  Vote for your favorites
+                  <ChevronRight size={13} />
+                </a>
+              </div>
+            )}
           </div>
-        )}
-        {!session && !loading && (
-          <p className="mt-3 text-[#444] text-[10px] tracking-wide">Sign in to vote for your favourite players.</p>
         )}
       </div>
     </section>
@@ -405,116 +423,146 @@ const MobileScrimRow = ({ scrim, index }: { scrim: ScrimItem; index: number }) =
   </motion.div>
 );
 
-const MobileAwardCard = ({
-  meta, nominee, index, canVote, isPending, onVote,
-}: {
-  meta: RoleMeta;
-  nominee: AwardNominee | null;
-  index: number;
-  canVote: boolean;
-  isPending: boolean;
-  onVote: (playerId: string, role: string) => void;
-}) => {
+const MobileAwardsSlider = ({ grouped, season }: { grouped: AwardGrouped; season?: { status: string } | null }) => {
+  const [current, setCurrent] = useState(0);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrent(c => (c + 1) % AWARD_ROLES.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleTouchStart = (e: React.TouchEvent) => setTouchStart(e.touches[0].clientX);
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStart === null) return;
+    const diff = touchStart - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) {
+      setCurrent(c => diff > 0 ? (c + 1) % AWARD_ROLES.length : (c - 1 + AWARD_ROLES.length) % AWARD_ROLES.length);
+    }
+    setTouchStart(null);
+  };
+
+  const meta = AWARD_ROLES[current];
   const { color, Icon } = meta;
+  const nominee = (grouped[meta.key] ?? [])[0] ?? null;
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.38, delay: index * 0.1 }}
-      className="flex items-stretch border border-white/6 overflow-hidden bg-[#0c0c12]"
-      style={nominee?.votedByMe ? { borderColor: `${color}44` } : undefined}
-    >
-      <div className="w-0.5 shrink-0" style={{ background: color }} />
-      <div className="relative w-16 shrink-0 aspect-square bg-[#111]">
-        {nominee?.photo ? (
-          <>
-            <Image src={nominee.photo} alt={nominee.ign} fill className="object-cover object-top grayscale-30" />
-            <div className="absolute inset-0 bg-linear-to-r from-transparent to-[#0c0c12]/60" />
-          </>
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Icon size={20} style={{ color, opacity: 0.3 }} />
+    <div className="relative" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      {/* Award Title */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={meta.key + '-title'}
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 10 }}
+          transition={{ duration: 0.3 }}
+          className="text-center mb-4"
+        >
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-2"
+            style={{ background: `${color}15`, border: `1px solid ${color}30` }}>
+            <Icon size={11} style={{ color }} />
+            <span className="text-[9px] font-black tracking-[0.2em] uppercase" style={{ color }}>{meta.label}</span>
           </div>
-        )}
+          <h3 className="text-base font-black tracking-[0.15em] uppercase" style={{ color }}>{meta.award}</h3>
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Leader Card */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={meta.key}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.35 }}
+        >
+          {nominee ? (
+            <div className="relative max-w-xs mx-auto">
+              {/* Glow effect */}
+              <div className="absolute -inset-1 opacity-25 blur-xl" style={{ background: color }} />
+              
+              <div className="relative bg-[#0c0c12] border overflow-hidden" style={{ borderColor: `${color}40` }}>
+                {/* Player Image */}
+                <div className="relative aspect-[4/3] overflow-hidden">
+                  {nominee.photo ? (
+                    <Image src={nominee.photo} alt={nominee.ign} fill className="object-cover object-top" />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[#111]">
+                      <Users size={36} style={{ color, opacity: 0.3 }} />
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-linear-to-t from-[#0c0c12] via-transparent to-transparent" />
+                  
+                  {/* Vote count badge */}
+                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1 px-2 py-1 bg-black/70 backdrop-blur-sm">
+                    <Trophy size={9} style={{ color }} />
+                    <span className="text-white text-[9px] font-black tabular-nums">{nominee.votes}</span>
+                    <span className="text-[#666] text-[8px]">votes</span>
+                  </div>
+                </div>
+                
+                {/* Player Info */}
+                <div className="p-3 text-center">
+                  <p className="text-white font-black text-lg uppercase tracking-wide">{nominee.ign}</p>
+                  <div className="flex items-center justify-center gap-2 mt-0.5">
+                    <span className="text-[#666] text-[9px] tracking-widest uppercase">{nominee.team.name}</span>
+                    {nominee.signatureHero && (
+                      <>
+                        <span className="text-[#333]">·</span>
+                        <span className="text-[9px] tracking-wide" style={{ color }}>{nominee.signatureHero}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 border border-white/5 bg-[#0c0c12] max-w-xs mx-auto">
+              <Icon size={28} style={{ color, opacity: 0.3 }} />
+              <p className="text-[#333] text-xs uppercase tracking-wide mt-2">No nominees yet</p>
+            </div>
+          )}
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Navigation Dots */}
+      <div className="flex items-center justify-center gap-3 mt-5">
+        {AWARD_ROLES.map((r, i) => (
+          <button
+            key={r.key}
+            onClick={() => setCurrent(i)}
+            className="relative w-6 h-6 flex items-center justify-center"
+          >
+            <div
+              className={`w-2 h-2 transition-all duration-300 ${i === current ? 'scale-125' : 'scale-100 opacity-40'}`}
+              style={{ background: i === current ? r.color : '#444' }}
+            />
+          </button>
+        ))}
       </div>
-      <div className="flex-1 flex flex-col justify-center px-3 py-2.5 min-w-0">
-        <span className="inline-flex items-center gap-1 text-[8px] font-black tracking-widest uppercase px-1.5 py-0.5 self-start mb-1"
-          style={{ background: `${color}18`, color, border: `1px solid ${color}35` }}>
-          <Icon size={7} /> {meta.label}
-        </span>
-        <p className="text-[10px] font-black tracking-[0.12em] uppercase leading-none" style={{ color }}>{meta.award}</p>
-        {nominee ? (
-          <>
-            <p className="text-white font-black text-sm uppercase tracking-wide leading-tight mt-0.5 truncate">{nominee.ign}</p>
-            <p className="text-[#444] text-[9px] tracking-widest uppercase mt-0.5">{nominee.signatureHero ?? nominee.team.tag}</p>
-          </>
-        ) : (
-          <p className="text-[#333] text-[11px] uppercase tracking-wide mt-0.5">No nominees yet</p>
-        )}
-      </div>
-      <div className="shrink-0 flex flex-col items-center justify-center px-3 gap-1">
-        {nominee ? (
-          <>
-            <motion.button
-              whileTap={{ scale: 0.88 }}
-              onClick={() => onVote(nominee.id, meta.key)}
-              disabled={!canVote || isPending}
-              className="flex items-center justify-center w-7 h-7 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed"
-              style={nominee.votedByMe
-                ? { background: `${color}20`, border: `1px solid ${color}55`, color }
-                : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#555' }}
-            >
-              {isPending ? <Loader2 size={10} className="animate-spin" /> : nominee.votedByMe ? <CheckCircle2 size={10} /> : <Vote size={10} />}
-            </motion.button>
-            <span className="text-[#444] text-[9px] font-black tabular-nums">{nominee.votes}</span>
-          </>
-        ) : (
-          <span className="text-[#222] font-black text-2xl tabular-nums font-mono leading-none">
-            {String(index + 1).padStart(2, '0')}
-          </span>
-        )}
-      </div>
-    </motion.div>
+
+      {/* CTA Button */}
+      {season?.status === 'ACTIVE' && (
+        <div className="text-center mt-4">
+          <a href="/awards" className="inline-flex items-center gap-2 px-5 py-2 bg-[#e8a000] text-black text-[9px] font-black tracking-[0.2em] uppercase hover:bg-[#ffb800] transition-colors">
+            <Vote size={11} />
+            Vote Now
+            <ChevronRight size={11} />
+          </a>
+        </div>
+      )}
+    </div>
   );
 };
 
 export const MobileScrimAndAwards = () => {
   const scrims = useRealtimeScrims();
-  const { data: session } = useSession();
-  const { season, grouped, userVotes, setGrouped, setUserVotes, loading } = useRoleNominees();
-  const [isPending, startTransition] = useTransition();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const { season, grouped, loading } = useRoleNominees();
 
   const featured = scrims.find(s => s.featured) || scrims[0];
   const rest = scrims.filter(s => s.id !== featured?.id).slice(0, 3);
-
-  const handleVote = useCallback((playerId: string, role: string) => {
-    if (!session || !season || season.status !== 'ACTIVE') return;
-    const currentVote = userVotes[role];
-    const isToggle = currentVote === playerId;
-    setUserVotes(prev => { const n = { ...prev }; if (isToggle) delete n[role]; else n[role] = playerId; return n; });
-    setGrouped(prev => {
-      const list = (prev[role] ?? []).map(n => {
-        let v = n.votes;
-        if (n.id === currentVote && !isToggle) v = Math.max(0, v - 1);
-        if (n.id === playerId) v = isToggle ? Math.max(0, v - 1) : v + 1;
-        return { ...n, votes: v, votedByMe: !isToggle && n.id === playerId };
-      }).sort((a, b) => b.votes - a.votes);
-      return { ...prev, [role]: list };
-    });
-    setPendingId(playerId);
-    startTransition(async () => {
-      try {
-        await fetch('/api/awards/vote', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ playerId, role, seasonId: season.id }),
-        });
-      } catch { /* silent */ }
-      finally { setPendingId(null); }
-    });
-  }, [session, season, userVotes, setGrouped, setUserVotes]);
-
-  const canVote = !!session && season?.status === 'ACTIVE';
 
   if (!featured) {
     return (
@@ -531,8 +579,11 @@ export const MobileScrimAndAwards = () => {
         <div className="px-4 sm:px-6">
           <div className="flex items-center justify-between mb-4">
             <SectionLabel>Best Role Awards</SectionLabel>
-            {season?.status === 'ACTIVE' && (
-              <span className="text-[#e8a000] text-[9px] font-black tracking-widest uppercase -mt-4">Voting open</span>
+            {season && (
+              <div className="flex items-center gap-2 -mt-4">
+                <Trophy size={9} className="text-[#e8a000]" />
+                <span className="text-[#555] text-[9px] font-mono">{season.name}</span>
+              </div>
             )}
           </div>
           {loading ? (
@@ -541,18 +592,7 @@ export const MobileScrimAndAwards = () => {
               <span className="text-[#444] text-xs font-mono">Loading…</span>
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              {AWARD_ROLES.map((meta, i) => {
-                const leader = (grouped[meta.key] ?? [])[0] ?? null;
-                return (
-                  <MobileAwardCard key={meta.key} meta={meta} nominee={leader} index={i}
-                    canVote={canVote} isPending={isPending && pendingId === leader?.id} onVote={handleVote} />
-                );
-              })}
-            </div>
-          )}
-          {!session && !loading && (
-            <p className="mt-3 text-[#444] text-[10px] tracking-wide">Sign in to vote.</p>
+            <MobileAwardsSlider grouped={grouped} season={season} />
           )}
         </div>
       </section>
@@ -574,8 +614,11 @@ export const MobileScrimAndAwards = () => {
       <div className="px-4 sm:px-6">
         <div className="flex items-center justify-between mb-4">
           <SectionLabel>Best Role Awards</SectionLabel>
-          {season?.status === 'ACTIVE' && (
-            <span className="text-[#e8a000] text-[9px] font-black tracking-widest uppercase -mt-4">Voting open</span>
+          {season && (
+            <div className="flex items-center gap-2 -mt-4">
+              <Trophy size={9} className="text-[#e8a000]" />
+              <span className="text-[#555] text-[9px] font-mono">{season.name}</span>
+            </div>
           )}
         </div>
         {loading ? (
@@ -584,18 +627,7 @@ export const MobileScrimAndAwards = () => {
             <span className="text-[#444] text-xs font-mono">Loading…</span>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {AWARD_ROLES.map((meta, i) => {
-              const leader = (grouped[meta.key] ?? [])[0] ?? null;
-              return (
-                <MobileAwardCard key={meta.key} meta={meta} nominee={leader} index={i}
-                  canVote={canVote} isPending={isPending && pendingId === leader?.id} onVote={handleVote} />
-              );
-            })}
-          </div>
-        )}
-        {!session && !loading && (
-          <p className="mt-3 text-[#444] text-[10px] tracking-wide">Sign in to vote.</p>
+          <MobileAwardsSlider grouped={grouped} season={season} />
         )}
       </div>
     </section>

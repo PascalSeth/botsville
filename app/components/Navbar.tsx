@@ -499,7 +499,7 @@ const MobileMenu = ({
                 </div>
               </div>
               {[
-                { href: '/profile', icon: Settings, label: 'Profile Settings' },
+                { href: '/settings', icon: Settings, label: 'Profile Settings' },
                 { href: '/my-team', icon: Users, label: 'My Team' },
               ].map((lnk) => (
                 <Link
@@ -639,7 +639,7 @@ const UserDropdown = ({
               <p className="text-[#7a7a7a] text-[9px] uppercase tracking-wider">{user.role || 'Player'}</p>
             </div>
             {[
-              { href: '/profile', icon: Settings, label: 'Profile Settings' },
+              { href: '/settings', icon: Settings, label: 'Profile Settings' },
               { href: '/my-team', icon: Users, label: 'My Team' },
             ].map((lnk) => (
               <Link

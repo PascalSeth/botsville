@@ -93,13 +93,13 @@ function NomineeCard({
         {/* Team badge */}
         {nominee.team && (
           <div
-            className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 text-[9px] font-black tracking-widest uppercase"
+            className="absolute top-5 left-2 flex items-center gap-1.5 px-2 py-1 text-[9px] font-black tracking-widest uppercase"
             style={{ background: `#${nominee.team.color?.replace("#", "") ?? "1a1a24"}22`, border: `1px solid #${nominee.team.color?.replace("#", "") ?? "444"}44`, color: nominee.team.color ?? "#888" }}
           >
             {nominee.team.logo && (
-              <Image src={nominee.team.logo} alt={nominee.team.tag} width={12} height={12} className="object-contain" />
+              <Image src={nominee.team.logo} alt={nominee.team.name} width={12} height={12} className="object-contain" />
             )}
-            {nominee.team.tag}
+            {nominee.team.name}
           </div>
         )}
       </div>
