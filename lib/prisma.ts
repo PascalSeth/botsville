@@ -1,7 +1,7 @@
 import { PrismaClient } from "@/app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import "dotenv/config";
-import { getIO } from "@/lib/socket-server";
+import { broadcastToUser } from "@/lib/socket-server";
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!,
@@ -20,11 +20,10 @@ function buildPrismaClient() {
         async create({ args, query }) {
           const result = await query(args);
           try {
-            const io = getIO();
-            if (io && result?.userId) {
-              io.to('user:' + result.userId).emit('new-notification', result);
+            if (result?.userId) {
+              void broadcastToUser(result.userId, 'notification', result);
             }
-          } catch { /* socket not ready */ }
+          } catch { /* broadcast failed */ }
           return result;
         },
         async createMany({ args, query }) {
@@ -32,15 +31,12 @@ function buildPrismaClient() {
           // createMany doesn't return rows in Prisma by default;
           // fire a generic "reload" event so clients re-fetch.
           try {
-            const io = getIO();
-            if (io) {
-              const rows = Array.isArray(args.data) ? args.data : [args.data];
-              const userIds = [...new Set(rows.map((r: { userId?: string }) => r.userId).filter(Boolean))];
-              for (const uid of userIds) {
-                io.to('user:' + uid).emit('notifications-reload');
-              }
+            const rows = Array.isArray(args.data) ? args.data : [args.data];
+            const userIds = [...new Set(rows.map((r: { userId?: string }) => r.userId).filter(Boolean))];
+            for (const uid of userIds) {
+              void broadcastToUser(uid as string, 'notification', { reload: true });
             }
-          } catch { /* socket not ready */ }
+          } catch { /* broadcast failed */ }
           return result;
         },
       },

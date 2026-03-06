@@ -10,7 +10,7 @@ import {
   Swords, Globe, Newspaper, BarChart3, ChevronRight, Star, Medal
 } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
-import { getSocket } from '@/lib/socket-client';
+import { subscribeToUserNotifications, unsubscribeFromChannel } from '@/lib/socket-client';
 
 // ── Constants ──────────────────────────────────────────────
 const TICKER_MESSAGES = [
@@ -719,7 +719,7 @@ const NotificationBell = ({ isLoggedIn, userId }: { isLoggedIn: boolean; userId?
 
   useEffect(() => { if (isOpen) void fetchNotifications(); }, [fetchNotifications, isOpen]);
 
-  // Socket.io real-time notifications
+  // Supabase real-time notifications
   useEffect(() => {
     if (!isLoggedIn || !userId) return;
 
@@ -727,9 +727,6 @@ const NotificationBell = ({ isLoggedIn, userId }: { isLoggedIn: boolean; userId?
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
-
-    const socket = getSocket();
-    socket.emit('join-user-room', userId);
 
     const fireDesktopNotif = (item: NotificationItem) => {
       if (
@@ -752,21 +749,21 @@ const NotificationBell = ({ isLoggedIn, userId }: { isLoggedIn: boolean; userId?
       }
     };
 
-    const handleNew = (item: NotificationItem) => {
+    const handleNew = (payload: unknown) => {
+      const item = payload as NotificationItem;
+      if (!item?.id) return;
       setNotifications(prev => prev.some(n => n.id === item.id) ? prev : [item, ...prev.slice(0, 7)]);
       setUnreadCount(prev => prev + 1);
       fireDesktopNotif(item);
     };
 
-    const handleReload = () => void fetchNotifications();
+    // Subscribe to user-specific notifications via Supabase Realtime
+    subscribeToUserNotifications(userId, handleNew);
 
-    socket.on('new-notification', handleNew);
-    socket.on('notifications-reload', handleReload);
     return () => {
-      socket.off('new-notification', handleNew);
-      socket.off('notifications-reload', handleReload);
+      unsubscribeFromChannel(`user:${userId}`);
     };
-  }, [isLoggedIn, userId, fetchNotifications]);
+  }, [isLoggedIn, userId]);
 
   const markRead = async (id: string) => {
     setNotifications((p) => p.map((n) => n.id === id ? { ...n, read: true } : n));

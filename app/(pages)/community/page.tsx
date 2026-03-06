@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadImage, STORAGE_BUCKETS, supabase } from '@/lib/supabase';
-import { getSocket } from '@/lib/socket-client';
+import { subscribeToCommunityPosts, unsubscribeFromChannel } from '@/lib/socket-client';
 import {
   Flame, ThumbsUp, ThumbsDown, Laugh, Eye, Zap, Heart,
   MessageSquare, ChevronRight, ChevronDown, Send, X, Check,
@@ -1519,11 +1519,10 @@ export default function CommunityPage() {
     };
   }, []);
 
-  // Socket.io Realtime — prepend new posts without a manual refresh
+  // Supabase Realtime — prepend new posts without a manual refresh
   useEffect(() => {
-    const socket = getSocket();
-
-    const handleNewPost = (post: Post) => {
+    const handleNewPost = (payload: unknown) => {
+      const post = payload as Post;
       if (!post?.id) return;
 
       setPosts(prev => prev.some(p => p.id === post.id) ? prev : [post, ...prev]);
@@ -1553,8 +1552,10 @@ export default function CommunityPage() {
       }
     };
 
-    socket.on('new-post', handleNewPost);
-    return () => { socket.off('new-post', handleNewPost); };
+    // Subscribe to community posts via Supabase Realtime
+    subscribeToCommunityPosts(handleNewPost);
+    
+    return () => { unsubscribeFromChannel('community'); };
   }, [currentUserId]);
 
   const handleReact = async (postId: string, type: ReactionType) => {
