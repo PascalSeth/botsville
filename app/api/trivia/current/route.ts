@@ -36,19 +36,21 @@ export async function GET() {
       return apiSuccess({ trivias: [], userTotalXp: 0, dailyAnswered: 0, dailyLimit: DAILY_LIMIT });
     }
 
-    // Get user's votes from TODAY only (for daily limit tracking)
-    const todaysVotes = user
-      ? await prisma.triviaVote.findMany({
-          where: {
-            userId: user.id,
-            createdAt: { gte: startOfToday },
-          },
-          select: { triviaId: true, selectedAnswer: true, isCorrect: true, xpAwarded: true },
-          orderBy: { createdAt: "desc" },
-        })
-      : [];
+    // Get user's votes from TODAY (for daily limit) and ALL TIME (to exclude already answered)
+    const [todaysVotes, allUserVotes] = user
+      ? await Promise.all([
+          prisma.triviaVote.findMany({
+            where: { userId: user.id, createdAt: { gte: startOfToday } },
+            select: { triviaId: true },
+          }),
+          prisma.triviaVote.findMany({
+            where: { userId: user.id },
+            select: { triviaId: true },
+          }),
+        ])
+      : [[], []];
 
-    const todayAnsweredIds = todaysVotes.map(v => v.triviaId);
+    const allAnsweredIds = new Set(allUserVotes.map(v => v.triviaId));
     const dailyAnswered = todaysVotes.length;
 
     // Get user's total XP from ALL trivia (lifetime)
@@ -79,9 +81,9 @@ export async function GET() {
       });
     }
 
-    // Filter out today's answered trivias and pick remaining up to daily limit
+    // Filter out ALL previously answered trivias and pick remaining up to daily limit
     const unansweredTrivias = allTrivias
-      .filter(t => !todayAnsweredIds.includes(t.id))
+      .filter(t => !allAnsweredIds.has(t.id))
       .slice(0, DAILY_LIMIT - dailyAnswered);
 
     // Get stats for each trivia

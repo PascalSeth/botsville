@@ -4,6 +4,8 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence, useInView } from 'framer-motion'
+import { useSession } from 'next-auth/react'
+import { toast } from 'sonner'
 import {
   Brain,
   Film,
@@ -71,6 +73,7 @@ const TRIVIA_CATEGORY_CONFIG: Record<string, { emoji: string; label: string; col
 /*  Data hook                                                 */
 /* ────────────────────────────────────────────────────────── */
 function useCommunityData() {
+  const { data: session } = useSession()
   const [triviaState, setTriviaState] = useState<TriviaState>({
     trivias: [],
     currentIndex: 0,
@@ -172,6 +175,10 @@ function useCommunityData() {
 
   // Handle trivia answer
   const handleTriviaAnswer = async (answer: string) => {
+    if (!session) {
+      toast.error('You must log in to play trivia', { duration: 3000 })
+      return
+    }
     const currentTrivia = triviaState.trivias[triviaState.currentIndex]
     if (!currentTrivia?.id || triviaAnswerLoading || currentTrivia.hasAnswered) return
     setTriviaAnswerLoading(true)

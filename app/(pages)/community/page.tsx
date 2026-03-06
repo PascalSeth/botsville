@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadImage, STORAGE_BUCKETS, supabase } from '@/lib/supabase';
 import { getSocket } from '@/lib/socket-client';
@@ -370,6 +371,7 @@ const Avatar = ({ user, size = 32 }: { user: Author; size?: number }) => (
    ================================================================ */
 
 const PostCard = ({ post, onReact, reactionLoadingId }: { post: Post; onReact: (postId: string, type: ReactionType) => void; reactionLoadingId: string | null }) => {
+  const { data: session } = useSession();
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
@@ -394,6 +396,10 @@ const PostCard = ({ post, onReact, reactionLoadingId }: { post: Post; onReact: (
   };
 
   const submitComment = async () => {
+    if (!session) {
+      toast.error('You must log in to comment', { duration: 3000 });
+      return;
+    }
     if (!commentText.trim() || submitting) return;
     setSubmitting(true);
     try {
@@ -667,6 +673,7 @@ const TYPE_ACCENT: Record<string, string> = {
 };
 
 const ComposeModal = ({ open, onClose, onPosted }: { open: boolean; onClose: () => void; onPosted: () => void }) => {
+  const { data: session } = useSession();
   const [type, setType] = useState<PostType>('HOT_TAKE');
   const [content, setContent] = useState('');
   const [title, setTitle] = useState('');
@@ -703,6 +710,10 @@ const ComposeModal = ({ open, onClose, onPosted }: { open: boolean; onClose: () 
   }, [open]);
 
   const submit = async () => {
+    if (!session) {
+      toast.error('You must log in to post', { duration: 3000 });
+      return;
+    }
     if (!content.trim() || submitting || content.length > MAX) return;
     let uploadedUrl = '';
     if (file) {
@@ -1547,6 +1558,10 @@ export default function CommunityPage() {
   }, [currentUserId]);
 
   const handleReact = async (postId: string, type: ReactionType) => {
+    if (!session) {
+      toast.error('You must log in to react', { duration: 3000 });
+      return;
+    }
     if (reactionLoadingId === postId) return;
     setReactionLoadingId(postId);
 
@@ -1588,6 +1603,10 @@ export default function CommunityPage() {
 
   // Handle trivia answer selection
   const handleTriviaAnswer = async (answer: string) => {
+    if (!session) {
+      toast.error('You must log in to play trivia', { duration: 3000 });
+      return;
+    }
     const currentTrivia = triviaState.trivias[triviaState.currentIndex];
     if (!currentTrivia?.id || triviaAnswerLoading || currentTrivia.hasAnswered) return;
     setTriviaAnswerLoading(true);
