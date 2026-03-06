@@ -1,14 +1,23 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Image from 'next/image';
-import { Eye, Bell, Radio, Clock, Trophy, Swords, ChevronRight } from 'lucide-react';
+import { Eye, Bell, Radio, Clock, Trophy, Swords, ChevronRight, X, Users } from 'lucide-react';
 import { motion, useInView, AnimatePresence } from 'framer-motion';
 
 /* ────────────────────────────────────────────────────────── */
 /*  Types                                                     */
 /* ────────────────────────────────────────────────────────── */
-type MatchTeam = { name: string; tag: string; logo: string | null };
+type MatchTeam = { id?: string; name: string; tag: string; logo: string | null };
+
+type PlayerData = {
+  id: string;
+  ign: string;
+  role: string;
+  photo: string | null;
+  isSubstitute: boolean;
+  user?: { photo: string | null };
+};
 
 type ScheduleMatch = {
   id: string;
@@ -33,8 +42,8 @@ type ApiMatch = {
   scoreA: number;
   scoreB: number;
   stage: string | null;
-  teamA: { name: string; tag: string | null; logo: string | null };
-  teamB: { name: string; tag: string | null; logo: string | null };
+  teamA: { id: string; name: string; tag: string | null; logo: string | null };
+  teamB: { id: string; name: string; tag: string | null; logo: string | null };
 };
 
 /* ────────────────────────────────────────────────────────── */
@@ -88,8 +97,8 @@ const useRealtimeMatches = () => {
           id: m.id,
           time: formatMatchTime(m.scheduledTime),
           elapsed: m.elapsed,
-          teamA: { name: m.teamA?.name || 'Team A', tag: buildTeamTag(m.teamA?.name || 'Team A', m.teamA?.tag), logo: m.teamA?.logo || null },
-          teamB: { name: m.teamB?.name || 'Team B', tag: buildTeamTag(m.teamB?.name || 'Team B', m.teamB?.tag), logo: m.teamB?.logo || null },
+          teamA: { id: m.teamA?.id, name: m.teamA?.name || 'Team A', tag: buildTeamTag(m.teamA?.name || 'Team A', m.teamA?.tag), logo: m.teamA?.logo || null },
+          teamB: { id: m.teamB?.id, name: m.teamB?.name || 'Team B', tag: buildTeamTag(m.teamB?.name || 'Team B', m.teamB?.tag), logo: m.teamB?.logo || null },
           status: m.status,
           scoreA: typeof m.scoreA === 'number' ? m.scoreA : 0,
           scoreB: typeof m.scoreB === 'number' ? m.scoreB : 0,
@@ -141,11 +150,214 @@ const StatusPill = ({ status }: { status: ScheduleMatch['status'] }) => {
 /*  Team avatar                                              */
 /* ────────────────────────────────────────────────────────── */
 const TeamAvatar = ({ team, size = 'md' }: { team: MatchTeam; size?: 'sm' | 'md' }) => {
-  const dims = size === 'sm' ? 'w-8 h-8 text-[10px]' : 'w-10 h-10 text-xs';
+  const dims = size === 'sm' ? 'w-8 h-8' : 'w-10 h-10';
+  const textSize = size === 'sm' ? 'text-[10px]' : 'text-xs';
+  
+  if (team.logo) {
+    return (
+      <div className={dims + ' rounded-lg bg-white/6 border border-white/10 overflow-hidden shrink-0'}>
+        <Image
+          src={team.logo}
+          alt={team.name}
+          width={size === 'sm' ? 32 : 40}
+          height={size === 'sm' ? 32 : 40}
+          className="w-full h-full object-cover"
+        />
+      </div>
+    );
+  }
+  
   return (
-    <div className={dims + ' rounded-lg bg-white/6 border border-white/10 flex items-center justify-center font-bold text-white/60 shrink-0 uppercase tracking-wider'}>
+    <div className={dims + ' ' + textSize + ' rounded-lg bg-white/6 border border-white/10 flex items-center justify-center font-bold text-white/60 shrink-0 uppercase tracking-wider'}>
       {team.tag.slice(0, 3)}
     </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────── */
+/*  Role icon helper                                         */
+/* ────────────────────────────────────────────────────────── */
+const ROLE_ICONS: Record<string, string> = {
+  JUNGLER: '/roles/jungle.png',
+  MID_LANER: '/roles/mid.png',
+  GOLD_LANER: '/roles/gold.png',
+  EXP_LANER: '/roles/exp.png',
+  ROAMER: '/roles/roam.png',
+};
+
+const getRoleLabel = (role: string) => {
+  const labels: Record<string, string> = {
+    JUNGLER: 'JG',
+    MID_LANER: 'MID',
+    GOLD_LANER: 'GOLD',
+    EXP_LANER: 'EXP',
+    ROAMER: 'ROAM',
+  };
+  return labels[role] || role.slice(0, 3);
+};
+
+/* ────────────────────────────────────────────────────────── */
+/*  Player card for starting five                            */
+/* ────────────────────────────────────────────────────────── */
+const PlayerCard = ({ player, side }: { player: PlayerData; side: 'left' | 'right' }) => {
+  const photo = player.photo || player.user?.photo;
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: side === 'left' ? -20 : 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.3 }}
+      className="flex flex-col items-center gap-1.5"
+    >
+      <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+        {photo ? (
+          <Image src={photo} alt={player.ign} fill className="object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-white/30">
+            <Users size={20} />
+          </div>
+        )}
+        {/* Role badge */}
+        <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-md bg-[#0a0a0f] border border-white/20 flex items-center justify-center">
+          {ROLE_ICONS[player.role] ? (
+            <Image src={ROLE_ICONS[player.role]} alt={player.role} width={14} height={14} className="opacity-70" />
+          ) : (
+            <span className="text-[8px] font-bold text-white/50">{getRoleLabel(player.role)}</span>
+          )}
+        </div>
+      </div>
+      <span className="text-white/80 text-[10px] sm:text-xs font-semibold truncate max-w-15 sm:max-w-20">
+        {player.ign}
+      </span>
+      <span className="text-white/30 text-[8px] font-medium uppercase">
+        {getRoleLabel(player.role)}
+      </span>
+    </motion.div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────── */
+/*  Starting Five Modal                                      */
+/* ────────────────────────────────────────────────────────── */
+const StartingFiveModal = ({
+  match,
+  teamAPlayers,
+  teamBPlayers,
+  loading,
+  onClose,
+}: {
+  match: ScheduleMatch;
+  teamAPlayers: PlayerData[];
+  teamBPlayers: PlayerData[];
+  loading: boolean;
+  onClose: () => void;
+}) => {
+  const startingA = teamAPlayers.filter(p => !p.isSubstitute).slice(0, 5);
+  const startingB = teamBPlayers.filter(p => !p.isSubstitute).slice(0, 5);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="relative w-full max-w-4xl bg-[#0f0f14] border border-white/10 rounded-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="relative p-4 sm:p-6 border-b border-white/10 bg-white/2">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
+          >
+            <X size={18} />
+          </button>
+          <div className="text-center">
+            <StatusPill status={match.status} />
+            <h3 className="mt-3 text-white font-bold text-lg sm:text-xl">{match.stage}</h3>
+            <p className="text-white/40 text-sm mt-1">Starting Lineup</p>
+          </div>
+        </div>
+
+        {/* Teams matchup */}
+        <div className="p-4 sm:p-8">
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="w-10 h-10 border-2 border-[#e8a000]/20 border-t-[#e8a000] rounded-full animate-spin" />
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row items-stretch gap-4 sm:gap-8">
+              {/* Team A */}
+              <div className="flex-1">
+                <div className="flex items-center justify-center gap-3 mb-6">
+                  <TeamAvatar team={match.teamA} size="md" />
+                  <div className="text-center sm:text-left">
+                    <p className="text-white font-bold text-base sm:text-lg">{match.teamA.name}</p>
+                    <p className="text-white/40 text-xs font-medium">{match.teamA.tag}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
+                  {startingA.length > 0 ? (
+                    startingA.map((p, i) => (
+                      <PlayerCard key={p.id || i} player={p} side="left" />
+                    ))
+                  ) : (
+                    <p className="text-white/30 text-sm py-8">No roster available</p>
+                  )}
+                </div>
+              </div>
+
+              {/* VS divider */}
+              <div className="flex sm:flex-col items-center justify-center gap-2 py-4 sm:py-0">
+                <div className="flex-1 sm:flex-none w-12 sm:w-px h-px sm:h-12 bg-white/10" />
+                <span className="text-white/20 text-sm font-black">VS</span>
+                <div className="flex-1 sm:flex-none w-12 sm:w-px h-px sm:h-12 bg-white/10" />
+              </div>
+
+              {/* Team B */}
+              <div className="flex-1">
+                <div className="flex items-center justify-center gap-3 mb-6">
+                  <TeamAvatar team={match.teamB} size="md" />
+                  <div className="text-center sm:text-left">
+                    <p className="text-white font-bold text-base sm:text-lg">{match.teamB.name}</p>
+                    <p className="text-white/40 text-xs font-medium">{match.teamB.tag}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
+                  {startingB.length > 0 ? (
+                    startingB.map((p, i) => (
+                      <PlayerCard key={p.id || i} player={p} side="right" />
+                    ))
+                  ) : (
+                    <p className="text-white/30 text-sm py-8">No roster available</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer with score if available */}
+        {(match.status === 'LIVE' || match.status === 'COMPLETED') && (
+          <div className="p-4 border-t border-white/10 bg-white/2">
+            <div className="flex items-center justify-center gap-6">
+              <span className={`text-3xl font-black ${match.scoreA > match.scoreB ? 'text-emerald-400' : 'text-white/50'}`}>
+                {match.scoreA}
+              </span>
+              <span className="text-white/20 text-lg">-</span>
+              <span className={`text-3xl font-black ${match.scoreB > match.scoreA ? 'text-emerald-400' : 'text-white/50'}`}>
+                {match.scoreB}
+              </span>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
   );
 };
 
@@ -223,18 +435,19 @@ const EmptyState = () => (
 /* ────────────────────────────────────────────────────────── */
 /*  MOBILE match card                                        */
 /* ────────────────────────────────────────────────────────── */
-const MobileMatchCard = ({ match, index }: { match: ScheduleMatch; index: number }) => {
+const MobileMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; index: number; onClick: () => void }) => {
   const isLive = match.status === 'LIVE';
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.06, ease: [0.25, 0.46, 0.45, 0.94] }}
+      onClick={onClick}
       className={
-        'relative rounded-xl overflow-hidden border transition-all duration-300 ' +
+        'relative rounded-xl overflow-hidden border transition-all duration-300 cursor-pointer ' +
         (isLive
-          ? 'bg-red-500/4 border-red-500/20'
-          : 'bg-white/2 border-white/6 active:bg-white/4')
+          ? 'bg-red-500/4 border-red-500/20 active:bg-red-500/8'
+          : 'bg-white/2 border-white/6 active:bg-white/6')
       }
     >
       {isLive && (
@@ -252,37 +465,50 @@ const MobileMatchCard = ({ match, index }: { match: ScheduleMatch; index: number
             <span className="text-white/30 text-[10px] font-medium tracking-wide">{match.stage}</span>
           </div>
           {isLive ? (
-            <button className="flex items-center gap-1 bg-red-500 hover:bg-red-400 text-white text-[10px] font-bold tracking-wide uppercase px-3 py-1.5 rounded-lg transition-colors">
+            <button onClick={(e) => { e.stopPropagation(); }} className="flex items-center gap-1 bg-red-500 hover:bg-red-400 text-white text-[10px] font-bold tracking-wide uppercase px-3 py-1.5 rounded-lg transition-colors">
               <Eye size={10} />
               Watch
             </button>
           ) : (
-            <button className="flex items-center gap-1 text-white/30 hover:text-[#e8a000] text-[10px] font-medium tracking-wide transition-colors">
+            <button onClick={(e) => { e.stopPropagation(); }} className="flex items-center gap-1 text-white/30 hover:text-[#e8a000] text-[10px] font-medium tracking-wide transition-colors">
               <Bell size={10} />
               Remind
             </button>
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 flex-1 min-w-0">
-            <TeamAvatar team={match.teamA} size="sm" />
-            <div className="min-w-0">
-              <p className="text-white font-bold text-sm truncate">{match.teamA.name}</p>
-              <p className="text-white/30 text-[10px] font-medium">{match.teamA.tag}</p>
-            </div>
+        {/* Team logos side by side - NEW PROMINENT DISPLAY */}
+        <div className="flex items-center justify-center gap-4 mb-3">
+          <div className="relative w-14 h-14 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
+            {match.teamA.logo ? (
+              <Image src={match.teamA.logo} alt={match.teamA.name} fill className="object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-white/40 font-bold text-sm">
+                {match.teamA.tag.slice(0, 3)}
+              </div>
+            )}
           </div>
-
           <ScoreBlock match={match} />
-
-          <div className="flex items-center gap-2.5 flex-1 min-w-0 justify-end">
-            <div className="min-w-0 text-right">
-              <p className="text-white font-bold text-sm truncate">{match.teamB.name}</p>
-              <p className="text-white/30 text-[10px] font-medium">{match.teamB.tag}</p>
-            </div>
-            <TeamAvatar team={match.teamB} size="sm" />
+          <div className="relative w-14 h-14 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
+            {match.teamB.logo ? (
+              <Image src={match.teamB.logo} alt={match.teamB.name} fill className="object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-white/40 font-bold text-sm">
+                {match.teamB.tag.slice(0, 3)}
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Team names below */}
+        <div className="flex items-center justify-between">
+          <p className="text-white/70 text-xs font-semibold truncate flex-1 text-center">{match.teamA.tag}</p>
+          <span className="text-white/20 text-[10px] px-2">VS</span>
+          <p className="text-white/70 text-xs font-semibold truncate flex-1 text-center">{match.teamB.tag}</p>
+        </div>
+        
+        {/* Click hint */}
+        <p className="text-center text-white/20 text-[9px] mt-2 font-medium">Tap to view lineups</p>
       </div>
     </motion.div>
   );
@@ -291,7 +517,7 @@ const MobileMatchCard = ({ match, index }: { match: ScheduleMatch; index: number
 /* ────────────────────────────────────────────────────────── */
 /*  DESKTOP match card                                       */
 /* ────────────────────────────────────────────────────────── */
-const DesktopMatchCard = ({ match, index }: { match: ScheduleMatch; index: number }) => {
+const DesktopMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; index: number; onClick: () => void }) => {
   const isLive = match.status === 'LIVE';
   return (
     <motion.div
@@ -299,6 +525,7 @@ const DesktopMatchCard = ({ match, index }: { match: ScheduleMatch; index: numbe
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, delay: index * 0.07, ease: [0.25, 0.46, 0.45, 0.94] }}
       whileHover={{ y: -2 }}
+      onClick={onClick}
       className={
         'group relative rounded-xl overflow-hidden border cursor-pointer transition-all duration-300 ' +
         (isLive
@@ -323,6 +550,7 @@ const DesktopMatchCard = ({ match, index }: { match: ScheduleMatch; index: numbe
           <div className="flex items-center gap-2">
             {isLive ? (
               <motion.button
+                onClick={(e) => { e.stopPropagation(); }}
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.96 }}
                 className="flex items-center gap-1.5 bg-red-500 hover:bg-red-400 text-white text-[11px] font-bold tracking-wide uppercase px-4 py-1.5 rounded-lg transition-colors duration-200"
@@ -332,6 +560,7 @@ const DesktopMatchCard = ({ match, index }: { match: ScheduleMatch; index: numbe
               </motion.button>
             ) : (
               <motion.button
+                onClick={(e) => { e.stopPropagation(); }}
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.96 }}
                 className="flex items-center gap-1.5 text-white/25 hover:text-[#e8a000] text-[11px] font-medium tracking-wide transition-colors duration-200"
@@ -343,9 +572,18 @@ const DesktopMatchCard = ({ match, index }: { match: ScheduleMatch; index: numbe
           </div>
         </div>
 
+        {/* Team logos prominently displayed side by side */}
         <div className="flex items-center justify-between gap-6">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <TeamAvatar team={match.teamA} />
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <div className="relative w-16 h-16 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0 group-hover:border-white/20 transition-colors">
+              {match.teamA.logo ? (
+                <Image src={match.teamA.logo} alt={match.teamA.name} fill className="object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white/40 font-bold">
+                  {match.teamA.tag.slice(0, 3)}
+                </div>
+              )}
+            </div>
             <div className="min-w-0">
               <p className="text-white font-bold text-base truncate group-hover:text-white/90 transition-colors">
                 {match.teamA.name}
@@ -356,16 +594,27 @@ const DesktopMatchCard = ({ match, index }: { match: ScheduleMatch; index: numbe
 
           <ScoreBlock match={match} />
 
-          <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
+          <div className="flex items-center gap-4 flex-1 min-w-0 justify-end">
             <div className="min-w-0 text-right">
               <p className="text-white font-bold text-base truncate group-hover:text-white/90 transition-colors">
                 {match.teamB.name}
               </p>
               <p className="text-white/30 text-[11px] font-medium">{match.teamB.tag}</p>
             </div>
-            <TeamAvatar team={match.teamB} />
+            <div className="relative w-16 h-16 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0 group-hover:border-white/20 transition-colors">
+              {match.teamB.logo ? (
+                <Image src={match.teamB.logo} alt={match.teamB.name} fill className="object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white/40 font-bold">
+                  {match.teamB.tag.slice(0, 3)}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+        
+        {/* Click hint */}
+        <p className="text-center text-white/15 text-[10px] mt-3 font-medium group-hover:text-white/30 transition-colors">Click to view starting lineup</p>
       </div>
     </motion.div>
   );
@@ -390,12 +639,52 @@ export const MatchSchedule = () => {
   const sectionRef = useRef<HTMLElement>(null);
   const inView = useInView(sectionRef, { once: true, margin: '-40px' });
   const [activeTab, setActiveTab] = useState<FilterTab>('ALL');
+  
+  // Modal state for starting five
+  const [selectedMatch, setSelectedMatch] = useState<ScheduleMatch | null>(null);
+  const [teamAPlayers, setTeamAPlayers] = useState<PlayerData[]>([]);
+  const [teamBPlayers, setTeamBPlayers] = useState<PlayerData[]>([]);
+  const [loadingPlayers, setLoadingPlayers] = useState(false);
 
   const liveCount = matches.filter((m) => m.status === 'LIVE').length;
 
   const filtered = activeTab === 'ALL'
     ? matches
     : matches.filter((m) => m.status === activeTab);
+
+  // Fetch team players when match is selected
+  const handleMatchClick = useCallback(async (match: ScheduleMatch) => {
+    setSelectedMatch(match);
+    setLoadingPlayers(true);
+    setTeamAPlayers([]);
+    setTeamBPlayers([]);
+
+    try {
+      const [resA, resB] = await Promise.all([
+        match.teamA.id ? fetch(`/api/teams/${match.teamA.id}/players`) : null,
+        match.teamB.id ? fetch(`/api/teams/${match.teamB.id}/players`) : null,
+      ]);
+
+      if (resA?.ok) {
+        const dataA = await resA.json();
+        setTeamAPlayers(Array.isArray(dataA) ? dataA : dataA?.data || []);
+      }
+      if (resB?.ok) {
+        const dataB = await resB.json();
+        setTeamBPlayers(Array.isArray(dataB) ? dataB : dataB?.data || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch team players:', err);
+    } finally {
+      setLoadingPlayers(false);
+    }
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    setSelectedMatch(null);
+    setTeamAPlayers([]);
+    setTeamBPlayers([]);
+  }, []);
 
   return (
     <section
@@ -594,7 +883,7 @@ export const MatchSchedule = () => {
             ) : (
               <motion.div key="cards" className="flex flex-col gap-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 {filtered.map((match, i) => (
-                  <MobileMatchCard key={match.id} match={match} index={i} />
+                  <MobileMatchCard key={match.id} match={match} index={i} onClick={() => handleMatchClick(match)} />
                 ))}
               </motion.div>
             )}
@@ -613,7 +902,7 @@ export const MatchSchedule = () => {
             ) : (
               <motion.div key="cards" className="grid grid-cols-2 gap-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 {filtered.map((match, i) => (
-                  <DesktopMatchCard key={match.id} match={match} index={i} />
+                  <DesktopMatchCard key={match.id} match={match} index={i} onClick={() => handleMatchClick(match)} />
                 ))}
               </motion.div>
             )}
@@ -621,6 +910,19 @@ export const MatchSchedule = () => {
         </div>
 
       </div>
+
+      {/* Starting Five Modal */}
+      <AnimatePresence>
+        {selectedMatch && (
+          <StartingFiveModal
+            match={selectedMatch}
+            teamAPlayers={teamAPlayers}
+            teamBPlayers={teamBPlayers}
+            loading={loadingPlayers}
+            onClose={handleCloseModal}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Bottom animated accent line — CSS animation */}
       <div className="absolute bottom-0 left-0 right-0 h-px overflow-hidden">
