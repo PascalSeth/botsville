@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isValidIGN(ign)) {
-      return apiError("IGN must be 3-20 characters (alphanumeric, spaces, underscores only)");
+      return apiError("IGN must be 2-20 characters");
     }
 
     if (password.length < 8) {

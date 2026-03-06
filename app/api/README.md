@@ -327,7 +327,7 @@ All errors follow this format:
 ## Validation
 
 - **Email:** Standard email format
-- **IGN:** 3-20 characters (alphanumeric, spaces, underscores)
+- **IGN:** 2-20 characters (supports special characters, unicode, symbols)
 - **Team Tag:** 3-5 uppercase alphanumeric characters
 - **Hex Color:** Format `#RRGGBB`
 - **Region:** Must be one of: Accra, Kumasi, Takoradi, Tema, Cape Coast

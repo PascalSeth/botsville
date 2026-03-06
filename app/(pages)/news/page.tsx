@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Calendar } from 'lucide-react';
+import { Calendar, ArrowRight } from 'lucide-react';
 
 type Article = {
   id: string;
@@ -80,7 +81,7 @@ export default function NewsPage() {
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
       {/* ── Header ────────────────────────────────────────────── */}
-      <div className="border-b border-white/10 bg-gradient-to-b from-white/[0.02] to-transparent">
+      <div className="border-b border-white/10 bg-linear-to-b from-white/2 to-transparent">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -88,7 +89,7 @@ export default function NewsPage() {
             transition={{ duration: 0.6 }}
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="h-1 w-12 bg-gradient-to-r from-[#e8a000] to-[#e8a000]/50" />
+              <div className="h-1 w-12 bg-linear-to-r from-[#e8a000] to-[#e8a000]/50" />
               <span className="text-[#e8a000] text-xs font-black tracking-[0.2em] uppercase">
                 Latest Updates
               </span>
@@ -154,20 +155,20 @@ export default function NewsPage() {
         {!loading && featuredArticles.length > 0 && (
           <div className="mb-16">
             <div className="flex items-center gap-2 mb-8">
-              <div className="h-px flex-1 bg-gradient-to-r from-[#e8a000]/50 to-transparent" />
+              <div className="h-px flex-1 bg-linear-to-r from-[#e8a000]/50 to-transparent" />
               <span className="text-[#e8a000] text-[10px] font-black tracking-[0.2em] uppercase">Featured</span>
-              <div className="h-px flex-1 bg-gradient-to-l from-[#e8a000]/50 to-transparent" />
+              <div className="h-px flex-1 bg-linear-to-l from-[#e8a000]/50 to-transparent" />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {featuredArticles.slice(0, 2).map((article, index) => (
-                <motion.article
-                  key={article.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.1 * index }}
-                  className="group cursor-pointer"
-                >
-                  <div className="relative overflow-hidden bg-[#111] border border-white/10 hover:border-[#e8a000]/30 transition-all duration-500 h-96">
+                <Link key={article.id} href={`/news/${article.id}`}>
+                  <motion.article
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: 0.1 * index }}
+                    className="group cursor-pointer"
+                  >
+                    <div className="relative overflow-hidden bg-[#111] border border-white/10 hover:border-[#e8a000]/30 transition-all duration-500 h-96">
                     {article.image && (
                       <Image
                         src={article.image}
@@ -176,7 +177,7 @@ export default function NewsPage() {
                         className="object-cover group-hover:scale-110 transition-transform duration-700"
                       />
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+                    <div className="absolute inset-0 bg-linear-to-t from-black via-black/40 to-transparent" />
 
                     {/* Category Badge */}
                     <div className="absolute top-4 left-4 flex items-center gap-2">
@@ -213,10 +214,15 @@ export default function NewsPage() {
                             </span>
                           )}
                         </div>
+                        <div className="mt-4 flex items-center gap-2 text-[#e8a000] text-xs font-bold uppercase tracking-wide opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span>Read Article</span>
+                          <ArrowRight size={12} />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </motion.article>
+                  </motion.article>
+                </Link>
               ))}
             </div>
           </div>
@@ -226,20 +232,20 @@ export default function NewsPage() {
         {!loading && regularArticles.length > 0 && (
           <div>
             <div className="flex items-center gap-2 mb-8">
-              <div className="h-px flex-1 bg-gradient-to-r from-[#e8a000]/50 to-transparent" />
+              <div className="h-px flex-1 bg-linear-to-r from-[#e8a000]/50 to-transparent" />
               <span className="text-[#888] text-[10px] font-black tracking-[0.2em] uppercase">All Articles</span>
-              <div className="h-px flex-1 bg-gradient-to-l from-[#e8a000]/50 to-transparent" />
+              <div className="h-px flex-1 bg-linear-to-l from-[#e8a000]/50 to-transparent" />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {regularArticles.map((article, index) => (
-                <motion.article
-                  key={article.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.05 * index }}
-                  className="group cursor-pointer flex flex-col h-full"
-                >
-                  <div className="relative overflow-hidden bg-[#111] border border-white/10 hover:border-[#e8a000]/30 transition-all duration-500 h-48 mb-4">
+                <Link key={article.id} href={`/news/${article.id}`} className="flex flex-col h-full">
+                  <motion.article
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: 0.05 * index }}
+                    className="group cursor-pointer flex flex-col h-full"
+                  >
+                    <div className="relative overflow-hidden bg-[#111] border border-white/10 hover:border-[#e8a000]/30 transition-all duration-500 h-48 mb-4">
                     {article.image && (
                       <Image
                         src={article.image}
@@ -248,7 +254,7 @@ export default function NewsPage() {
                         className="object-cover group-hover:scale-110 transition-transform duration-700"
                       />
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                    <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent" />
 
                     {/* Category Badge */}
                     <div className="absolute top-3 left-3">
@@ -299,7 +305,8 @@ export default function NewsPage() {
                       )}
                     </div>
                   </div>
-                </motion.article>
+                  </motion.article>
+                </Link>
               ))}
             </div>
           </div>

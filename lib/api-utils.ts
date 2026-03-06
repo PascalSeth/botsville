@@ -188,11 +188,18 @@ export function isValidEmail(email: string): boolean {
 }
 
 /**
- * Validate IGN (In-Game Name) - alphanumeric, spaces, underscores, 2-20 chars
+ * Validate IGN (In-Game Name) - allows special characters, unicode, symbols
+ * 2-20 characters, no control characters or newlines
  */
 export function isValidIGN(ign: string): boolean {
-  const ignRegex = /^[a-zA-Z0-9_ ]{2,20}$/;
-  return ignRegex.test(ign);
+  // Allow most printable characters including unicode, symbols, etc.
+  // Only reject control characters, newlines, and extremely long names
+  if (!ign || ign.length < 2 || ign.length > 20) return false;
+  // Reject control characters and newlines
+  if (/[\x00-\x1F\x7F\n\r\t]/.test(ign)) return false;
+  // Reject if it's all whitespace
+  if (ign.trim().length === 0) return false;
+  return true;
 }
 
 /**

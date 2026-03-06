@@ -461,7 +461,7 @@ const RegisterForm = () => {
   // Debounced roster check — requires both a valid IGN and a full 6-char team code
   useEffect(() => {
     setRosterMatch(null);
-    if (ign.trim().length < 3 || teamCode.trim().length !== 6) return;
+    if (ign.trim().length < 2 || teamCode.trim().length !== 6) return;
     const t = setTimeout(async () => {
       setCheckingIgn(true);
       try {
@@ -483,7 +483,7 @@ const RegisterForm = () => {
     if (!ign || !email || !password || !confirm || !role) return setError('All fields are required');
     if (password.length < 8) return setError('Password must be at least 8 characters');
     if (password !== confirm) return setError('Passwords do not match');
-    if (ign.length < 3 || ign.length > 20) return setError('IGN must be 3–20 characters');
+    if (ign.length < 2 || ign.length > 20) return setError('IGN must be 2–20 characters');
     if (teamCode && !/^[A-Z0-9]{6}$/.test(teamCode.trim().toUpperCase())) return setError('Team code must be 6 alphanumeric characters');
     setLoading(true);
     try {
