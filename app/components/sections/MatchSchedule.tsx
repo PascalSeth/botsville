@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Image from 'next/image';
-import { Eye, Bell, Radio, Clock, Trophy, Swords, ChevronRight, X, Users } from 'lucide-react';
+import { Eye, Bell, Radio, Clock, Trophy, Swords, ChevronRight, X, Users, Crown, Skull } from 'lucide-react';
 import { motion, useInView, AnimatePresence } from 'framer-motion';
 
 /* ────────────────────────────────────────────────────────── */
@@ -253,6 +253,11 @@ const StartingFiveModal = ({
 }) => {
   const startingA = teamAPlayers.filter(p => !p.isSubstitute).slice(0, 5);
   const startingB = teamBPlayers.filter(p => !p.isSubstitute).slice(0, 5);
+  
+  const isCompleted = match.status === 'COMPLETED';
+  const teamAWon = isCompleted && match.scoreA > match.scoreB;
+  const teamBWon = isCompleted && match.scoreB > match.scoreA;
+  const isDraw = isCompleted && match.scoreA === match.scoreB;
 
   return (
     <motion.div
@@ -269,6 +274,42 @@ const StartingFiveModal = ({
         className="relative w-full max-w-4xl bg-[#0f0f14] border border-white/10 rounded-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Winner celebration particles */}
+        {isCompleted && !isDraw && (
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            {[...Array(20)].map((_, i) => {
+              // Deterministic pseudo-random values based on index
+              const xOffset = ((i * 7) % 30);
+              const yOffset = ((i * 13) % 80);
+              const durationOffset = (i % 3) * 0.5;
+              return (
+                <motion.div
+                  key={i}
+                  className={`absolute w-1 h-1 rounded-full ${teamAWon ? 'bg-emerald-400' : 'bg-emerald-400'}`}
+                  initial={{
+                    x: teamAWon ? '25%' : '75%',
+                    y: '50%',
+                    scale: 0,
+                    opacity: 0,
+                  }}
+                  animate={{
+                    x: `${(teamAWon ? 10 : 60) + xOffset}%`,
+                    y: `${10 + yOffset}%`,
+                    scale: [0, 1, 0],
+                    opacity: [0, 1, 0],
+                  }}
+                  transition={{
+                    duration: 2 + durationOffset,
+                    delay: i * 0.1,
+                    repeat: Infinity,
+                    repeatDelay: 1,
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
+
         {/* Header */}
         <div className="relative p-4 sm:p-6 border-b border-white/10 bg-white/2">
           <button
@@ -280,7 +321,7 @@ const StartingFiveModal = ({
           <div className="text-center">
             <StatusPill status={match.status} />
             <h3 className="mt-3 text-white font-bold text-lg sm:text-xl">{match.stage}</h3>
-            <p className="text-white/40 text-sm mt-1">Starting Lineup</p>
+            <p className="text-white/40 text-sm mt-1">{isCompleted ? 'Final Result' : 'Starting Lineup'}</p>
           </div>
         </div>
 
@@ -293,11 +334,45 @@ const StartingFiveModal = ({
           ) : (
             <div className="flex flex-col sm:flex-row items-stretch gap-4 sm:gap-8">
               {/* Team A */}
-              <div className="flex-1">
-                <div className="flex items-center justify-center gap-3 mb-6">
-                  <TeamAvatar team={match.teamA} size="md" />
+              <div className={`flex-1 relative rounded-xl p-4 transition-all duration-500 ${
+                teamAWon 
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 shadow-lg shadow-emerald-500/20' 
+                  : teamBWon 
+                    ? 'bg-red-500/5 border border-red-500/20 opacity-60' 
+                    : ''
+              }`}>
+                {/* Winner/Loser badge */}
+                {isCompleted && !isDraw && (
+                  <div className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+                    teamAWon 
+                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/50' 
+                      : 'bg-red-500/80 text-white/90'
+                  }`}>
+                    {teamAWon ? (
+                      <><Crown size={12} className="animate-pulse" /> Victory</>
+                    ) : (
+                      <><Skull size={12} /> Defeat</>
+                    )}
+                  </div>
+                )}
+                
+                <div className="flex items-center justify-center gap-3 mb-6 mt-2">
+                  <div className={`relative ${teamAWon ? 'animate-bounce' : ''}`}>
+                    <TeamAvatar team={match.teamA} size="md" />
+                    {teamAWon && (
+                      <motion.div
+                        className="absolute -top-2 -right-2"
+                        animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
+                        transition={{ duration: 2, repeat: Infinity }}
+                      >
+                        <Crown size={16} className="text-amber-400 fill-amber-400" />
+                      </motion.div>
+                    )}
+                  </div>
                   <div className="text-center sm:text-left">
-                    <p className="text-white font-bold text-base sm:text-lg">{match.teamA.name}</p>
+                    <p className={`font-bold text-base sm:text-lg transition-colors ${teamAWon ? 'text-emerald-400' : teamBWon ? 'text-white/40' : 'text-white'}`}>
+                      {match.teamA.name}
+                    </p>
                     <p className="text-white/40 text-xs font-medium">{match.teamA.tag}</p>
                   </div>
                 </div>
@@ -320,11 +395,45 @@ const StartingFiveModal = ({
               </div>
 
               {/* Team B */}
-              <div className="flex-1">
-                <div className="flex items-center justify-center gap-3 mb-6">
-                  <TeamAvatar team={match.teamB} size="md" />
+              <div className={`flex-1 relative rounded-xl p-4 transition-all duration-500 ${
+                teamBWon 
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 shadow-lg shadow-emerald-500/20' 
+                  : teamAWon 
+                    ? 'bg-red-500/5 border border-red-500/20 opacity-60' 
+                    : ''
+              }`}>
+                {/* Winner/Loser badge */}
+                {isCompleted && !isDraw && (
+                  <div className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+                    teamBWon 
+                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/50' 
+                      : 'bg-red-500/80 text-white/90'
+                  }`}>
+                    {teamBWon ? (
+                      <><Crown size={12} className="animate-pulse" /> Victory</>
+                    ) : (
+                      <><Skull size={12} /> Defeat</>
+                    )}
+                  </div>
+                )}
+                
+                <div className="flex items-center justify-center gap-3 mb-6 mt-2">
+                  <div className={`relative ${teamBWon ? 'animate-bounce' : ''}`}>
+                    <TeamAvatar team={match.teamB} size="md" />
+                    {teamBWon && (
+                      <motion.div
+                        className="absolute -top-2 -right-2"
+                        animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
+                        transition={{ duration: 2, repeat: Infinity }}
+                      >
+                        <Crown size={16} className="text-amber-400 fill-amber-400" />
+                      </motion.div>
+                    )}
+                  </div>
                   <div className="text-center sm:text-left">
-                    <p className="text-white font-bold text-base sm:text-lg">{match.teamB.name}</p>
+                    <p className={`font-bold text-base sm:text-lg transition-colors ${teamBWon ? 'text-emerald-400' : teamAWon ? 'text-white/40' : 'text-white'}`}>
+                      {match.teamB.name}
+                    </p>
                     <p className="text-white/40 text-xs font-medium">{match.teamB.tag}</p>
                   </div>
                 </div>
@@ -344,15 +453,37 @@ const StartingFiveModal = ({
 
         {/* Footer with score if available */}
         {(match.status === 'LIVE' || match.status === 'COMPLETED') && (
-          <div className="p-4 border-t border-white/10 bg-white/2">
+          <div className={`p-4 border-t transition-colors ${
+            isCompleted 
+              ? 'border-emerald-500/30 bg-emerald-500/5' 
+              : 'border-white/10 bg-white/2'
+          }`}>
             <div className="flex items-center justify-center gap-6">
-              <span className={`text-3xl font-black ${match.scoreA > match.scoreB ? 'text-emerald-400' : 'text-white/50'}`}>
-                {match.scoreA}
-              </span>
+              <div className="flex flex-col items-center">
+                {teamAWon && <Crown size={16} className="text-amber-400 fill-amber-400 mb-1 animate-pulse" />}
+                <span className={`text-3xl font-black transition-all ${
+                  teamAWon 
+                    ? 'text-emerald-400 scale-110' 
+                    : teamBWon 
+                      ? 'text-red-400/60' 
+                      : 'text-white/50'
+                }`}>
+                  {match.scoreA}
+                </span>
+              </div>
               <span className="text-white/20 text-lg">-</span>
-              <span className={`text-3xl font-black ${match.scoreB > match.scoreA ? 'text-emerald-400' : 'text-white/50'}`}>
-                {match.scoreB}
-              </span>
+              <div className="flex flex-col items-center">
+                {teamBWon && <Crown size={16} className="text-amber-400 fill-amber-400 mb-1 animate-pulse" />}
+                <span className={`text-3xl font-black transition-all ${
+                  teamBWon 
+                    ? 'text-emerald-400 scale-110' 
+                    : teamAWon 
+                      ? 'text-red-400/60' 
+                      : 'text-white/50'
+                }`}>
+                  {match.scoreB}
+                </span>
+              </div>
             </div>
           </div>
         )}
@@ -366,6 +497,10 @@ const StartingFiveModal = ({
 /* ────────────────────────────────────────────────────────── */
 const ScoreBlock = ({ match }: { match: ScheduleMatch }) => {
   const hasScore = match.status === 'LIVE' || match.status === 'COMPLETED';
+  const isCompleted = match.status === 'COMPLETED';
+  const teamAWon = isCompleted && match.scoreA > match.scoreB;
+  const teamBWon = isCompleted && match.scoreB > match.scoreA;
+  
   if (!hasScore) {
     return (
       <div className="flex flex-col items-center gap-0.5">
@@ -377,16 +512,35 @@ const ScoreBlock = ({ match }: { match: ScheduleMatch }) => {
   return (
     <div className="flex flex-col items-center gap-0.5">
       <div className="flex items-center gap-1.5">
-        <span className={'text-xl font-black font-mono tabular-nums ' + (match.status === 'LIVE' ? 'text-white' : match.scoreA > match.scoreB ? 'text-white' : 'text-white/40')}>
+        <span className={`text-xl font-black font-mono tabular-nums transition-all ${
+          match.status === 'LIVE' 
+            ? 'text-white' 
+            : teamAWon 
+              ? 'text-emerald-400 scale-110' 
+              : teamBWon 
+                ? 'text-red-400/50 scale-90' 
+                : 'text-white/40'
+        }`}>
           {match.scoreA}
         </span>
         <span className="text-white/20 text-sm font-light">&ndash;</span>
-        <span className={'text-xl font-black font-mono tabular-nums ' + (match.status === 'LIVE' ? 'text-white' : match.scoreB > match.scoreA ? 'text-white' : 'text-white/40')}>
+        <span className={`text-xl font-black font-mono tabular-nums transition-all ${
+          match.status === 'LIVE' 
+            ? 'text-white' 
+            : teamBWon 
+              ? 'text-emerald-400 scale-110' 
+              : teamAWon 
+                ? 'text-red-400/50 scale-90' 
+                : 'text-white/40'
+        }`}>
           {match.scoreB}
         </span>
       </div>
       {match.status === 'LIVE' && match.elapsed && (
         <span className="text-red-400/80 text-[10px] font-mono">{match.elapsed}</span>
+      )}
+      {isCompleted && (teamAWon || teamBWon) && (
+        <span className="text-emerald-400/60 text-[9px] font-bold tracking-wider uppercase mt-0.5">Final</span>
       )}
     </div>
   );
@@ -437,6 +591,10 @@ const EmptyState = () => (
 /* ────────────────────────────────────────────────────────── */
 const MobileMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; index: number; onClick: () => void }) => {
   const isLive = match.status === 'LIVE';
+  const isCompleted = match.status === 'COMPLETED';
+  const teamAWon = isCompleted && match.scoreA > match.scoreB;
+  const teamBWon = isCompleted && match.scoreB > match.scoreA;
+  
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -447,7 +605,9 @@ const MobileMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; inde
         'relative rounded-xl overflow-hidden border transition-all duration-300 cursor-pointer ' +
         (isLive
           ? 'bg-red-500/4 border-red-500/20 active:bg-red-500/8'
-          : 'bg-white/2 border-white/6 active:bg-white/6')
+          : isCompleted
+            ? 'bg-emerald-500/3 border-emerald-500/20 active:bg-emerald-500/6'
+            : 'bg-white/2 border-white/6 active:bg-white/6')
       }
     >
       {isLive && (
@@ -456,6 +616,9 @@ const MobileMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; inde
           animate={{ opacity: [0.5, 1, 0.5] }}
           transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
         />
+      )}
+      {isCompleted && (
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-linear-to-r from-transparent via-emerald-500 to-transparent" />
       )}
 
       <div className="p-4">
@@ -477,9 +640,15 @@ const MobileMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; inde
           )}
         </div>
 
-        {/* Team logos side by side - NEW PROMINENT DISPLAY */}
+        {/* Team logos side by side with winner/loser effects */}
         <div className="flex items-center justify-center gap-4 mb-3">
-          <div className="relative w-14 h-14 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
+          <div className={`relative w-14 h-14 rounded-xl overflow-hidden shrink-0 transition-all ${
+            teamAWon 
+              ? 'bg-emerald-500/20 border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/30 scale-105' 
+              : teamBWon 
+                ? 'bg-red-500/10 border border-red-500/30 opacity-50 grayscale-30 scale-95' 
+                : 'bg-white/5 border border-white/10'
+          }`}>
             {match.teamA.logo ? (
               <Image src={match.teamA.logo} alt={match.teamA.name} fill className="object-cover" />
             ) : (
@@ -487,9 +656,20 @@ const MobileMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; inde
                 {match.teamA.tag.slice(0, 3)}
               </div>
             )}
+            {teamAWon && (
+              <div className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center shadow-lg">
+                <Crown size={10} className="text-white" />
+              </div>
+            )}
           </div>
           <ScoreBlock match={match} />
-          <div className="relative w-14 h-14 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0">
+          <div className={`relative w-14 h-14 rounded-xl overflow-hidden shrink-0 transition-all ${
+            teamBWon 
+              ? 'bg-emerald-500/20 border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/30 scale-105' 
+              : teamAWon 
+                ? 'bg-red-500/10 border border-red-500/30 opacity-50 grayscale-30 scale-95' 
+                : 'bg-white/5 border border-white/10'
+          }`}>
             {match.teamB.logo ? (
               <Image src={match.teamB.logo} alt={match.teamB.name} fill className="object-cover" />
             ) : (
@@ -497,14 +677,29 @@ const MobileMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; inde
                 {match.teamB.tag.slice(0, 3)}
               </div>
             )}
+            {teamBWon && (
+              <div className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center shadow-lg">
+                <Crown size={10} className="text-white" />
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Team names below */}
+        {/* Team names with winner/loser styling */}
         <div className="flex items-center justify-between">
-          <p className="text-white/70 text-xs font-semibold truncate flex-1 text-center">{match.teamA.tag}</p>
+          <p className={`text-xs font-semibold truncate flex-1 text-center transition-colors ${
+            teamAWon ? 'text-emerald-400' : teamBWon ? 'text-white/30' : 'text-white/70'
+          }`}>
+            {match.teamA.tag}
+            {teamAWon && <span className="ml-1 text-[8px] text-amber-400">👑</span>}
+          </p>
           <span className="text-white/20 text-[10px] px-2">VS</span>
-          <p className="text-white/70 text-xs font-semibold truncate flex-1 text-center">{match.teamB.tag}</p>
+          <p className={`text-xs font-semibold truncate flex-1 text-center transition-colors ${
+            teamBWon ? 'text-emerald-400' : teamAWon ? 'text-white/30' : 'text-white/70'
+          }`}>
+            {teamBWon && <span className="mr-1 text-[8px] text-amber-400">👑</span>}
+            {match.teamB.tag}
+          </p>
         </div>
         
         {/* Click hint */}
@@ -519,6 +714,10 @@ const MobileMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; inde
 /* ────────────────────────────────────────────────────────── */
 const DesktopMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; index: number; onClick: () => void }) => {
   const isLive = match.status === 'LIVE';
+  const isCompleted = match.status === 'COMPLETED';
+  const teamAWon = isCompleted && match.scoreA > match.scoreB;
+  const teamBWon = isCompleted && match.scoreB > match.scoreA;
+  
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -530,7 +729,9 @@ const DesktopMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; ind
         'group relative rounded-xl overflow-hidden border cursor-pointer transition-all duration-300 ' +
         (isLive
           ? 'bg-red-500/3 border-red-500/20 hover:border-red-500/40 hover:bg-red-500/5'
-          : 'bg-white/2 border-white/6 hover:border-white/12 hover:bg-white/4')
+          : isCompleted
+            ? 'bg-emerald-500/3 border-emerald-500/20 hover:border-emerald-500/40 hover:bg-emerald-500/5'
+            : 'bg-white/2 border-white/6 hover:border-white/12 hover:bg-white/4')
       }
     >
       {isLive && (
@@ -539,6 +740,9 @@ const DesktopMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; ind
           animate={{ opacity: [0.4, 1, 0.4] }}
           transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
         />
+      )}
+      {isCompleted && (
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-linear-to-r from-transparent via-emerald-500 to-transparent" />
       )}
 
       <div className="p-5">
@@ -572,10 +776,16 @@ const DesktopMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; ind
           </div>
         </div>
 
-        {/* Team logos prominently displayed side by side */}
+        {/* Team logos prominently displayed side by side with winner/loser effects */}
         <div className="flex items-center justify-between gap-6">
-          <div className="flex items-center gap-4 flex-1 min-w-0">
-            <div className="relative w-16 h-16 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0 group-hover:border-white/20 transition-colors">
+          <div className={`flex items-center gap-4 flex-1 min-w-0 transition-all ${teamBWon ? 'opacity-50' : ''}`}>
+            <div className={`relative w-16 h-16 rounded-xl overflow-hidden shrink-0 transition-all ${
+              teamAWon 
+                ? 'bg-emerald-500/20 border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/30 scale-110' 
+                : teamBWon 
+                  ? 'bg-red-500/10 border border-red-500/30 grayscale-30 scale-90' 
+                  : 'bg-white/5 border border-white/10 group-hover:border-white/20'
+            }`}>
               {match.teamA.logo ? (
                 <Image src={match.teamA.logo} alt={match.teamA.name} fill className="object-cover" />
               ) : (
@@ -583,31 +793,67 @@ const DesktopMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; ind
                   {match.teamA.tag.slice(0, 3)}
                 </div>
               )}
+              {teamAWon && (
+                <motion.div 
+                  className="absolute -top-1 -right-1 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center shadow-lg"
+                  animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                >
+                  <Crown size={12} className="text-white" />
+                </motion.div>
+              )}
             </div>
             <div className="min-w-0">
-              <p className="text-white font-bold text-base truncate group-hover:text-white/90 transition-colors">
+              <p className={`font-bold text-base truncate transition-colors ${
+                teamAWon ? 'text-emerald-400' : teamBWon ? 'text-white/40' : 'text-white group-hover:text-white/90'
+              }`}>
                 {match.teamA.name}
+                {teamAWon && <span className="ml-2 text-amber-400 text-sm">👑</span>}
               </p>
-              <p className="text-white/30 text-[11px] font-medium">{match.teamA.tag}</p>
+              <p className="text-white/30 text-[11px] font-medium">
+                {match.teamA.tag}
+                {teamAWon && <span className="ml-2 text-emerald-400 text-[10px] font-bold">WINNER</span>}
+              </p>
             </div>
           </div>
 
           <ScoreBlock match={match} />
 
-          <div className="flex items-center gap-4 flex-1 min-w-0 justify-end">
+          <div className={`flex items-center gap-4 flex-1 min-w-0 justify-end transition-all ${teamAWon ? 'opacity-50' : ''}`}>
             <div className="min-w-0 text-right">
-              <p className="text-white font-bold text-base truncate group-hover:text-white/90 transition-colors">
+              <p className={`font-bold text-base truncate transition-colors ${
+                teamBWon ? 'text-emerald-400' : teamAWon ? 'text-white/40' : 'text-white group-hover:text-white/90'
+              }`}>
+                {teamBWon && <span className="mr-2 text-amber-400 text-sm">👑</span>}
                 {match.teamB.name}
               </p>
-              <p className="text-white/30 text-[11px] font-medium">{match.teamB.tag}</p>
+              <p className="text-white/30 text-[11px] font-medium">
+                {teamBWon && <span className="mr-2 text-emerald-400 text-[10px] font-bold">WINNER</span>}
+                {match.teamB.tag}
+              </p>
             </div>
-            <div className="relative w-16 h-16 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0 group-hover:border-white/20 transition-colors">
+            <div className={`relative w-16 h-16 rounded-xl overflow-hidden shrink-0 transition-all ${
+              teamBWon 
+                ? 'bg-emerald-500/20 border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/30 scale-110' 
+                : teamAWon 
+                  ? 'bg-red-500/10 border border-red-500/30 grayscale-30 scale-90' 
+                  : 'bg-white/5 border border-white/10 group-hover:border-white/20'
+            }`}>
               {match.teamB.logo ? (
                 <Image src={match.teamB.logo} alt={match.teamB.name} fill className="object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-white/40 font-bold">
                   {match.teamB.tag.slice(0, 3)}
                 </div>
+              )}
+              {teamBWon && (
+                <motion.div 
+                  className="absolute -top-1 -left-1 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center shadow-lg"
+                  animate={{ scale: [1, 1.1, 1], rotate: [0, -5, 5, 0] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                >
+                  <Crown size={12} className="text-white" />
+                </motion.div>
               )}
             </div>
           </div>
