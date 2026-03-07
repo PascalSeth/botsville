@@ -124,7 +124,7 @@ export async function POST(
           deaths: parseInt(deaths),
           assists: parseInt(assists),
           isMvp: Boolean(isMvp),
-          side: side as TeamSide,
+          side: side === "A" || side === "BLUE" ? TeamSide.BLUE : TeamSide.RED,
           won: Boolean(won),
         },
       });

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { requireActiveUser, apiError, apiSuccess } from "@/lib/api-utils";
+import { requireAdmin, apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
 
 function toHeroKey(value: string): string {
@@ -17,11 +17,13 @@ function isValidImageUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }
 
+// GET /api/admin/heroes - Get ALL heroes (including those without images)
 export async function GET() {
   try {
-    // Only return heroes that have images
+    await requireAdmin();
+
     const heroes = await prisma.heroCatalog.findMany({
-      where: { active: true, imageUrl: { not: null } },
+      where: { active: true },
       orderBy: [{ name: "asc" }],
       select: {
         id: true,
@@ -33,23 +35,23 @@ export async function GET() {
 
     return apiSuccess({ heroes });
   } catch (error: unknown) {
-    console.error("Hero catalog GET error:", error);
-    return apiError(error instanceof Error ? error.message : "Failed to fetch hero catalog", 500);
+    console.error("Admin hero catalog GET error:", error);
+    const message = error instanceof Error ? error.message : "Failed to fetch heroes";
+    if (message === "Unauthorized") return apiError("Unauthorized", 401);
+    if (message.includes("Forbidden")) return apiError("Forbidden", 403);
+    return apiError(message, 500);
   }
 }
 
+// POST /api/admin/heroes - Add a new hero
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireActiveUser();
-    if (!user.role) return apiError("Forbidden", 403);
+    const user = await requireAdmin();
 
     const body = await request.json();
     const { name, imageUrl, key } = body;
 
     if (!name || typeof name !== "string") return apiError("name is required");
-    if (!imageUrl || typeof imageUrl !== "string" || !isValidImageUrl(imageUrl)) {
-      return apiError("imageUrl must be a valid path or URL");
-    }
 
     const heroKey = toHeroKey(typeof key === "string" && key.trim() ? key : name);
     if (!heroKey) return apiError("A valid hero key is required");
@@ -61,7 +63,7 @@ export async function POST(request: NextRequest) {
       data: {
         key: heroKey,
         name: name.trim(),
-        imageUrl: imageUrl.trim(),
+        imageUrl: imageUrl && isValidImageUrl(imageUrl) ? imageUrl.trim() : null,
         active: true,
         createdById: user.id,
       },
@@ -79,7 +81,39 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to add hero";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
-    console.error("Hero catalog POST error:", error);
+    if (message.includes("Forbidden")) return apiError("Forbidden", 403);
+    return apiError(message, 500);
+  }
+}
+
+// PATCH /api/admin/heroes - Update hero image
+export async function PATCH(request: NextRequest) {
+  try {
+    await requireAdmin();
+
+    const body = await request.json();
+    const { id, imageUrl } = body;
+
+    if (!id || typeof id !== "string") return apiError("id is required");
+
+    const hero = await prisma.heroCatalog.update({
+      where: { id },
+      data: {
+        imageUrl: imageUrl && isValidImageUrl(imageUrl) ? imageUrl.trim() : null,
+      },
+      select: {
+        id: true,
+        key: true,
+        name: true,
+        imageUrl: true,
+      },
+    });
+
+    return apiSuccess({ message: "Hero updated", hero });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to update hero";
+    if (message === "Unauthorized") return apiError("Unauthorized", 401);
+    if (message.includes("Forbidden")) return apiError("Forbidden", 403);
     return apiError(message, 500);
   }
 }

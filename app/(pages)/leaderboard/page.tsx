@@ -27,7 +27,7 @@ interface ApiTeamStanding {
   team: { id: string; name: string; tag: string; logo: string | null; banner: string | null; color: string | null; region: string; totalPrizeMoney: number; trophies: string[] };
 }
 interface ApiPlayerRanking {
-  id: string; rank: number; mvpCount: number;
+  id: string; rank: number; mvpCount: number; kda: number; winRate: number; hero?: string | null;
   player: { id: string; ign: string; role: string; secondaryRole?: string; signatureHero?: string; photo: string | null; realName?: string; kda: number; winRate: number; mvpCount: number; user?: { id: string; ign: string; photo: string | null }; team?: { id: string; name: string; tag: string; color: string | null } };
 }
 interface ApiHeroMeta { id: string; heroName: string; role: string; pickRate: number; banRate: number; winRate: number; tier: string; }
@@ -408,7 +408,7 @@ export default function LeaderboardPage() {
           <div className="flex flex-col gap-1 overflow-x-auto">
             <div className="min-w-[560px]">
               <div className="grid grid-cols-[32px_1fr_80px_80px_60px_60px_60px] gap-3 px-3 mb-2">
-                {['#', 'Player', 'Role', 'Signature', 'KDA', 'Win%', 'MVP'].map((h) => (
+                {['#', 'Player', 'Role', 'Most Used', 'KDA', 'Win%', 'MVP'].map((h) => (
                   <p key={h} className="text-[#333] text-[9px] uppercase tracking-widest font-bold">{h}</p>
                 ))}
               </div>
@@ -416,6 +416,10 @@ export default function LeaderboardPage() {
               : playerRankings.map((p) => {
                 const roleMeta = ROLE_META[p.player.role] || ROLE_META.ROAM;
                 const photoUrl = p.player.photo || p.player.user?.photo || '/heroes/stun.png';
+                // Use season-specific stats from ranking, fallback to player's overall stats
+                const displayKda = p.kda ?? p.player.kda;
+                const displayWinRate = p.winRate ?? p.player.winRate;
+                const displayHero = p.hero || p.player.signatureHero;
                 return (
                   <div key={p.id} className="grid grid-cols-[32px_1fr_80px_80px_60px_60px_60px] gap-3 items-center px-3 py-3 mb-1 bg-[#0f0f18] border border-white/[0.05] hover:border-white/[0.12] transition-colors group cursor-pointer">
                     <span className="text-white font-black text-sm font-mono text-center">{p.rank <= 3 ? ['🥇','🥈','🥉'][p.rank-1] : p.rank}</span>
@@ -432,11 +436,11 @@ export default function LeaderboardPage() {
                       style={{ color: roleMeta.color, background: `${roleMeta.color}22`, border: `1px solid ${roleMeta.color}33` }}>
                       {roleMeta.icon} {p.player.role}
                     </span>
-                    <p className="text-[#666] text-[11px]">{p.player.signatureHero || '—'}</p>
-                    <p className="text-white font-black text-sm font-mono">{p.player.kda.toFixed(1)}</p>
+                    <p className="text-[#666] text-[11px]">{displayHero || '—'}</p>
+                    <p className="text-white font-black text-sm font-mono">{displayKda.toFixed(1)}</p>
                     <div>
-                      <p className="text-[#27ae60] font-bold text-[11px] font-mono">{Math.round(p.player.winRate * 100)}%</p>
-                      <div className="w-full h-0.5 bg-white/[0.05] mt-1"><div className="h-full bg-[#27ae60]" style={{ width: `${Math.round(p.player.winRate * 100)}%` }} /></div>
+                      <p className="text-[#27ae60] font-bold text-[11px] font-mono">{Math.round(displayWinRate * 100)}%</p>
+                      <div className="w-full h-0.5 bg-white/[0.05] mt-1"><div className="h-full bg-[#27ae60]" style={{ width: `${Math.round(displayWinRate * 100)}%` }} /></div>
                     </div>
                     <div className="flex items-center gap-1"><Crown size={9} className="text-[#e8a000]" /><p className="text-[#e8a000] font-black text-sm">{p.mvpCount}</p></div>
                   </div>

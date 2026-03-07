@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
-import { Loader2, CheckCircle, RefreshCw } from "lucide-react";
+import { Loader2, CheckCircle, RefreshCw, BarChart3 } from "lucide-react";
+import Link from "next/link";
 
 type Tournament = { id: string; name: string; status: string };
 type Match = {
@@ -194,7 +195,7 @@ export default function DashboardMatchesPage() {
                   <th className="p-3">Team B</th>
                   <th className="p-3">Status</th>
                   <th className="p-3">Scheduled</th>
-                  <th className="p-3"></th>
+                  <th className="p-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -223,7 +224,13 @@ export default function DashboardMatchesPage() {
                       <td className="p-3 text-[#666] text-sm">
                         {m.scheduledTime ? new Date(m.scheduledTime).toLocaleString() : "—"}
                       </td>
-                      <td className="p-3">
+                      <td className="p-3 flex items-center gap-2">
+                        <Link
+                          href={`/dashboard/matches/${m.id}`}
+                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 border border-white/20 text-[#aaa] hover:border-[#e8a000] hover:text-[#e8a000] transition-colors flex items-center gap-1"
+                        >
+                          <BarChart3 size={10} /> KDA
+                        </Link>
                         {(m.status === "UPCOMING" || m.status === "LIVE") && (
                           <button
                             type="button"

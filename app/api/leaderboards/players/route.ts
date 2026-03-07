@@ -32,7 +32,13 @@ export async function GET(request: NextRequest) {
     const [rankings, total] = await Promise.all([
       prisma.playerMvpRanking.findMany({
         where: { seasonId: targetSeasonId },
-        include: {
+        select: {
+          id: true,
+          rank: true,
+          mvpCount: true,
+          kda: true,
+          winRate: true,
+          hero: true,  // Most used hero for this season
           player: {
             select: {
               id: true,

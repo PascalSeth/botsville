@@ -952,6 +952,7 @@ model PlayerMvpRanking {
   kda       Float    @default(0) // computed from MatchPerformance
   winRate   Float    @default(0) // computed from MatchPerformance
   mvpCount  Int      @default(0) // computed from MatchPerformance
+  hero      String?  // Most used hero this season (computed from MatchPerformance)
   updatedAt DateTime @updatedAt
 
   player Player @relation(fields: [playerId], references: [id])
@@ -1033,7 +1034,7 @@ model HeroCatalog {
   id          String   @id @default(uuid())
   key         String   @unique
   name        String
-  imageUrl    String
+  imageUrl    String?  // nullable - only show heroes with images in catalog
   active      Boolean  @default(true)
   createdById String?
   createdAt   DateTime @default(now())
