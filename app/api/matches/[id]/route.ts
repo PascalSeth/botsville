@@ -69,6 +69,15 @@ export async function GET(
           orderBy: [{ gameNumber: "asc" }, { order: "asc" }],
         },
         dispute: true,
+        challengeRequest: {
+          select: {
+            id: true,
+            status: true,
+            challengerTeam: { select: { id: true, name: true } },
+            challengedTeam: { select: { id: true, name: true } },
+            scheduledAt: true,
+          },
+        },
       },
     });
 

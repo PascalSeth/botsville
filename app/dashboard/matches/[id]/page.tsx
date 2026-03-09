@@ -66,6 +66,7 @@ type Match = {
   winner?: Team | null;
   performances: Performance[];
   tournament?: { id: string; name: string; seasonId?: string };
+  challengeRequest?: { id?: string; status?: string; challengerTeam?: { id?: string; name?: string }; challengedTeam?: { id?: string; name?: string } } | null;
 };
 
 type PerformanceInput = {
@@ -445,6 +446,11 @@ export default function MatchDetailPage({
       {success && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300 flex items-center gap-2">
           <CheckCircle size={16} /> {success}
+        </div>
+      )}
+      {match.challengeRequest?.id && (
+        <div className="rounded-lg border border-yellow-600/20 bg-yellow-600/10 px-4 py-3 text-sm text-yellow-200">
+          This match was scheduled from a challenge and is considered a friendly — points and standings will not be updated unless an admin selects "Override points" when submitting the result.
         </div>
       )}
 

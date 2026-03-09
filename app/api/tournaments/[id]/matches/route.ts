@@ -55,6 +55,14 @@ export async function GET(
             tag: true,
           },
         },
+        challengeRequest: {
+          select: {
+            id: true,
+            status: true,
+            challengerTeamId: true,
+            challengedTeamId: true,
+          },
+        },
         _count: {
           select: {
             screenshots: true,

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Image from 'next/image';
-import { Eye, Bell, Radio, Clock, Trophy, Swords, ChevronRight, X, Users, Crown, Skull } from 'lucide-react';
+import { Eye, Bell, Radio, Clock, Trophy, Swords, ChevronRight, Users, Crown, Skull } from 'lucide-react';
 import { motion, useInView, AnimatePresence } from 'framer-motion';
 import StartingFiveModal from './StartingFiveModal';
 
@@ -30,6 +30,7 @@ type ScheduleMatch = {
   scoreA: number;
   scoreB: number;
   stage: string;
+  isChallenge?: boolean;
 };
 
 type TournamentListItem = { id: string; _count?: { matches?: number } };
@@ -45,6 +46,7 @@ type ApiMatch = {
   stage: string | null;
   teamA: { id: string; name: string; tag: string | null; logo: string | null };
   teamB: { id: string; name: string; tag: string | null; logo: string | null };
+  challengeRequest?: { id: string } | null;
 };
 
 /* ────────────────────────────────────────────────────────── */
@@ -104,6 +106,7 @@ const useRealtimeMatches = () => {
           scoreA: typeof m.scoreA === 'number' ? m.scoreA : 0,
           scoreB: typeof m.scoreB === 'number' ? m.scoreB : 0,
           stage: m.stage || 'Match',
+          isChallenge: Boolean(m.challengeRequest),
         }));
         setMatches(mapped);
       } catch {
@@ -371,7 +374,12 @@ const MobileMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; inde
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <StatusPill status={match.status} />
-            <span className="text-white/30 text-[10px] font-medium tracking-wide">{match.stage}</span>
+              <span className="text-white/30 text-[10px] font-medium tracking-wide">{match.stage}</span>
+              {match.isChallenge && (
+                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-white/4 text-white/60 border border-white/8">
+                  Friendly
+                </span>
+              )}
           </div>
           {isLive ? (
             <button onClick={(e) => { e.stopPropagation(); }} className="flex items-center gap-1 bg-red-500 hover:bg-red-400 text-white text-[10px] font-bold tracking-wide uppercase px-3 py-1.5 rounded-lg transition-colors">
@@ -495,7 +503,12 @@ const DesktopMatchCard = ({ match, index, onClick }: { match: ScheduleMatch; ind
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <StatusPill status={match.status} />
-            <span className="text-white/25 text-[11px] font-medium">{match.stage}</span>
+              <span className="text-white/25 text-[11px] font-medium">{match.stage}</span>
+              {match.isChallenge && (
+                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-white/4 text-white/60 border border-white/8">
+                  Friendly
+                </span>
+              )}
           </div>
           <div className="flex items-center gap-2">
             {isLive ? (

@@ -188,12 +188,14 @@ export async function POST(
       scoreB,
       forfeit = false,
       forfeitedTeamId,
+      overridePoints = false,
     }: {
       winnerId: string;
       scoreA: number;
       scoreB: number;
       forfeit?: boolean;
       forfeitedTeamId?: string;
+      overridePoints?: boolean;
     } = body;
 
     if (!winnerId || scoreA === undefined || scoreB === undefined) {
@@ -242,29 +244,36 @@ export async function POST(
         },
       });
 
-      // Get existing standings to determine rank for new entries
-      const existingStandings = await tx.teamStanding.findMany({
-        where: { seasonId },
-        select: { teamId: true, streak: true },
-      });
+      // determine if this match was scheduled from a challenge (friendly)
+      const challenge = await tx.matchChallenge.findUnique({ where: { scheduledMatchId: matchId } });
+      const isChallengeMatch = !!challenge;
+      const applyPoints = !isChallengeMatch || overridePoints === true;
 
-      // ─── Upsert WINNER's TeamStanding ───────────────────
-      await upsertTeamStanding(tx as Tx, { teamId: winnerId, seasonId, won: true, forfeit: false }, existingStandings);
+      if (applyPoints) {
+        // Get existing standings to determine rank for new entries
+        const existingStandings = await tx.teamStanding.findMany({
+          where: { seasonId },
+          select: { teamId: true, streak: true },
+        });
 
-      // ─── Upsert LOSER's TeamStanding ────────────────────
-      await upsertTeamStanding(tx as Tx, { teamId: loserId, seasonId, won: false, forfeit: isForfeit }, existingStandings);
+        // ─── Upsert WINNER's TeamStanding ───────────────────
+        await upsertTeamStanding(tx as Tx, { teamId: winnerId, seasonId, won: true, forfeit: false }, existingStandings);
 
-      // ─── MonthlyStanding for both teams ─────────────────
-      if (seasonId) {
-        await upsertMonthly(tx as Tx, { teamId: winnerId, seasonId, year, month, won: true, forfeit: false });
-        await upsertMonthly(tx as Tx, { teamId: loserId, seasonId, year, month, won: false, forfeit: isForfeit });
+        // ─── Upsert LOSER's TeamStanding ────────────────────
+        await upsertTeamStanding(tx as Tx, { teamId: loserId, seasonId, won: false, forfeit: isForfeit }, existingStandings);
 
-        // ─── HeadToHead ─────────────────────────────────────
-        await upsertH2H(tx as Tx, seasonId, winnerId, loserId);
+        // ─── MonthlyStanding for both teams ─────────────────
+        if (seasonId) {
+          await upsertMonthly(tx as Tx, { teamId: winnerId, seasonId, year, month, won: true, forfeit: false });
+          await upsertMonthly(tx as Tx, { teamId: loserId, seasonId, year, month, won: false, forfeit: isForfeit });
 
-        // ─── Recalculate ranks ───────────────────────────────
-        await recalculateSeasonRanks(seasonId, tx as Tx);
-        await recalculateMonthlyRanks(seasonId, year, month, tx as Tx);
+          // ─── HeadToHead ─────────────────────────────────────
+          await upsertH2H(tx as Tx, seasonId, winnerId, loserId);
+
+          // ─── Recalculate ranks ───────────────────────────────
+          await recalculateSeasonRanks(seasonId, tx as Tx);
+          await recalculateMonthlyRanks(seasonId, year, month, tx as Tx);
+        }
       }
 
       // ─── Notify both captains ────────────────────────────
@@ -294,12 +303,16 @@ export async function POST(
       }
     });
 
+    // post-transaction: check if this match is tied to a challenge (friendly)
+    const challengeRecord = await prisma.matchChallenge.findUnique({ where: { scheduledMatchId: matchId } });
+    const isChallengeMatch = !!challengeRecord;
+
     await createAuditLog(
       admin.id,
       "SUBMIT_MATCH_RESULT",
       "Match",
       matchId,
-      JSON.stringify({ winnerId, scoreA, scoreB, forfeit: isForfeit })
+      JSON.stringify({ winnerId, scoreA, scoreB, forfeit: isForfeit, overridePoints, isChallengeMatch })
     );
 
     const updatedMatch = await prisma.match.findUnique({
@@ -311,7 +324,11 @@ export async function POST(
       },
     });
 
-    return apiSuccess({ message: "Result submitted and standings updated", match: updatedMatch });
+    const message = isChallengeMatch && !overridePoints
+      ? "Result submitted (challenge/friendly — standings not updated)"
+      : "Result submitted and standings updated";
+
+    return apiSuccess({ message, match: updatedMatch });
   } catch (err) {
     if (err instanceof Error && err.message.includes("Unauthorized")) return apiError("Unauthorized", 401);
     if (err instanceof Error && err.message.includes("Forbidden")) return apiError(err.message, 403);

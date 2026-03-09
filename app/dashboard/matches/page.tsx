@@ -17,6 +17,7 @@ type Match = {
   teamA?: { id: string; name: string; tag: string } | null;
   teamB?: { id: string; name: string; tag: string } | null;
   winner?: { id: string; name: string } | null;
+  challengeRequest?: { id?: string; status?: string } | null;
 };
 
 export default function DashboardMatchesPage() {
@@ -202,7 +203,14 @@ export default function DashboardMatchesPage() {
                 {matches.map((m) => (
                   <>
                     <tr key={m.id} className="border-b border-white/5 hover:bg-white/2">
-                      <td className="p-3 text-[#aaa] text-sm">{m.stage ?? "—"}</td>
+                      <td className="p-3 text-[#aaa] text-sm">
+                        <div className="flex items-center gap-2">
+                          <span>{m.stage ?? "—"}</span>
+                          {m.challengeRequest?.id && (
+                            <span className="text-[10px] font-black uppercase tracking-wider text-[#ffdd57] bg-[#332b00] px-2 py-0.5 rounded">Challenge (friendly)</span>
+                          )}
+                        </div>
+                      </td>
                       <td className={`p-3 font-semibold ${m.winner?.id === m.teamA?.id ? "text-emerald-400" : "text-white"}`}>
                         {m.teamA?.name ?? "TBD"}
                       </td>
@@ -253,6 +261,11 @@ export default function DashboardMatchesPage() {
                             <p className="text-[10px] font-black uppercase tracking-wider text-[#e8a000] mb-2">
                               Submit Result — {m.stage ?? m.id} (BO{m.bestOf})
                             </p>
+                            {m.challengeRequest?.id && (
+                              <div className="rounded border border-yellow-600/20 bg-yellow-600/10 px-3 py-2 text-sm text-yellow-200">
+                                This match was scheduled from a challenge. It is treated as a friendly — points and standings will not be updated unless you check "Override points" below.
+                              </div>
+                            )}
                             <div className="flex flex-wrap gap-4 items-end">
                               <div>
                                 <label className="text-[10px] font-black uppercase tracking-wider text-[#666] block mb-1">

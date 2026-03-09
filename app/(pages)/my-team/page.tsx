@@ -286,8 +286,9 @@ export default function MyTeamPage() {
   }, [team]);
 
   useEffect(() => {
-    if (team?.isCaptain) fetchInvites();
-  }, [team?.isCaptain, fetchInvites]);
+    const isCaptainUser = Boolean(team?.captainId && session?.user?.id && team.captainId === session.user.id);
+    if (isCaptainUser) fetchInvites();
+  }, [team?.captainId, session?.user?.id, fetchInvites]);
 
   const respondToInvite = async (inviteId: string, action: 'accept' | 'decline', role?: string) => {
     try {
