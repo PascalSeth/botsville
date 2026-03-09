@@ -3,11 +3,15 @@
 import { SessionProvider } from 'next-auth/react';
 import { HeroProvider } from './contexts/HeroContext';
 import { Toaster } from 'sonner';
+import NotificationInitializer from './components/NotificationInitializer';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      <HeroProvider>{children}</HeroProvider>
+      <HeroProvider>
+        <NotificationInitializer />
+        {children}
+      </HeroProvider>
       <Toaster
         position="top-center"
         toastOptions={{

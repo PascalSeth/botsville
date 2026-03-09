@@ -13,6 +13,7 @@ import {
   Gamepad2, Clapperboard, Swords, MessageCircle,
   Trophy, Plus, TrendingUp, Clock, Sparkles,
   Film, Camera, Brain, Type,
+  Pencil, Trash, MoreHorizontal,
 } from 'lucide-react';
 
 /* ================================================================
@@ -222,7 +223,20 @@ function timeAgo(dateStr: string) {
 }
 
 function isVideoUrl(url: string) {
-  return /\.(mp4|webm|mov|m4v|avi)$/i.test(url) || url.includes('/video/');
+  try {
+    const parsed = new URL(url);
+    const path = (parsed.pathname || '') + (parsed.search || '');
+    // Match common video extensions in path or querystring
+    if (/\.(mp4|webm|mov|m4v|avi)(?:[?#].*)?$/i.test(path)) return true;
+    // Some storage providers return signed URLs or public urls without a trailing extension
+    // Heuristics: path segments or bucket names that imply video content
+    const lower = url.toLowerCase();
+    if (path.includes('/videos/') || path.includes('/video/') || lower.includes('/scrim-vault/') || lower.includes('bucket=videos') || lower.includes('/storage/v1/object/public')) return true;
+    return false;
+  } catch (err) {
+    // Fallback to simple check if URL constructor fails
+    return /\.(mp4|webm|mov|m4v|avi)(?:[?#].*)?/i.test(url) || url.toLowerCase().includes('/video/');
+  }
 }
 
 function isImageUrl(url: string) {
@@ -370,7 +384,9 @@ const Avatar = ({ user, size = 32 }: { user: Author; size?: number }) => (
    Post Card
    ================================================================ */
 
-const PostCard = ({ post, onReact, reactionLoadingId }: { post: Post; onReact: (postId: string, type: ReactionType) => void; reactionLoadingId: string | null }) => {
+const PostCard = ({ post, onReact, reactionLoadingId, currentUserId, editingPostId, editTitle, setEditTitle, editContent, setEditContent, startEditPost, cancelEdit, saveEditPost, deletePost, savingEditId }:
+  { post: Post; onReact: (postId: string, type: ReactionType) => void; reactionLoadingId: string | null; currentUserId: string | null; editingPostId: string | null; editTitle: string; setEditTitle: (v: string) => void; editContent: string; setEditContent: (v: string) => void; startEditPost: (p: Post) => void; cancelEdit: () => void; saveEditPost: (id: string) => void; deletePost: (id: string) => void; savingEditId: string | null;
+  }) => {
   const { data: session } = useSession();
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -378,6 +394,7 @@ const PostCard = ({ post, onReact, reactionLoadingId }: { post: Post; onReact: (
   const [commentText, setCommentText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showAllReactions, setShowAllReactions] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const badge = TYPE_BADGE[post.type];
 
   const loadComments = useCallback(async () => {
@@ -445,15 +462,52 @@ const PostCard = ({ post, onReact, reactionLoadingId }: { post: Post; onReact: (
             <span className="text-[#e8a000] text-[9px] font-bold tracking-wider uppercase">COTW</span>
           </div>
         )}
+        {/* Owner actions: three-dot menu */}
+        {post.author?.id === currentUserId && (
+          <div className="ml-2 relative">
+            <button
+              onClick={() => setMenuOpen(prev => !prev)}
+              className="p-2 rounded hover:bg-white/5"
+              aria-label="Post actions"
+            >
+              <MoreHorizontal size={18} />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-2 w-44 bg-[#0b0b10] border border-white/10 rounded shadow-lg z-40">
+                {editingPostId === post.id ? (
+                  <div className="flex flex-col py-1">
+                    <button onClick={() => { saveEditPost(post.id); setMenuOpen(false); }} className="text-left px-3 py-2 text-sm hover:bg-white/5">{savingEditId === post.id ? 'Saving...' : 'Save'}</button>
+                    <button onClick={() => { cancelEdit(); setMenuOpen(false); }} className="text-left px-3 py-2 text-sm hover:bg-white/5">Cancel</button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col py-1">
+                    <button onClick={() => { startEditPost(post); setMenuOpen(false); }} className="text-left px-3 py-2 text-sm hover:bg-white/5">Edit</button>
+                    <button onClick={() => { deletePost(post.id); setMenuOpen(false); }} className="text-left px-3 py-2 text-sm text-red-400 hover:bg-white/5">Delete</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Title */}
-      {post.title && (
-        <p className="text-white font-bold text-base px-4 mt-1 leading-tight">{post.title}</p>
+      {editingPostId === post.id ? (
+        <div className="px-4 mt-1">
+          <input value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="Title (optional)" className="w-full bg-white/5 border border-white/8 rounded px-3 py-2 text-white" />
+        </div>
+      ) : (
+        post.title && (<p className="text-white font-bold text-base px-4 mt-1 leading-tight">{post.title}</p>)
       )}
 
       {/* Content */}
-      <p className="text-zinc-300 text-sm px-4 py-2 leading-relaxed whitespace-pre-wrap">{post.content}</p>
+      {editingPostId === post.id ? (
+        <div className="px-4 py-2">
+          <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={4} className="w-full bg-white/5 border border-white/8 rounded px-3 py-2 text-white" />
+        </div>
+      ) : (
+        <p className="text-zinc-300 text-sm px-4 py-2 leading-relaxed whitespace-pre-wrap">{post.content}</p>
+      )}
 
       {/* Media */}
       {post.mediaUrl && (
@@ -463,18 +517,14 @@ const PostCard = ({ post, onReact, reactionLoadingId }: { post: Post; onReact: (
               src={post.mediaUrl}
               className="absolute inset-0 w-full h-full object-cover"
               controls
+              playsInline
+              crossOrigin="anonymous"
               preload="metadata"
             />
           ) : (
             <Image src={post.mediaUrl} alt="" fill className="object-cover" />
           )}
-          {post.type === 'CLIP' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-              <div className="w-12 h-12 rounded-full bg-white/15 backdrop-blur-md flex items-center justify-center">
-                <Film size={20} className="text-white" />
-              </div>
-            </div>
-          )}
+          {/* Removed overlay play icon to avoid blocking video controls */}
         </div>
       )}
 
@@ -1409,6 +1459,10 @@ export default function CommunityPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const skipRef = useRef(0);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [savingEditId, setSavingEditId] = useState<string | null>(null);
 
   const loadPosts = useCallback(async (reset = false) => {
     if (reset) {
@@ -1521,6 +1575,8 @@ export default function CommunityPage() {
 
   // Supabase Realtime — prepend new posts without a manual refresh
   useEffect(() => {
+    // Notification permission is handled globally by NotificationInitializer
+
     const handleNewPost = (payload: unknown) => {
       const post = payload as Post;
       if (!post?.id) return;
@@ -1557,6 +1613,62 @@ export default function CommunityPage() {
     
     return () => { unsubscribeFromChannel('community'); };
   }, [currentUserId]);
+
+  // Edit / Delete handlers (owner-only)
+  const startEditPost = (post: Post) => {
+    setEditingPostId(post.id);
+    setEditTitle(post.title ?? '');
+    setEditContent(post.content);
+  };
+
+  const cancelEdit = () => {
+    setEditingPostId(null);
+    setEditTitle('');
+    setEditContent('');
+  };
+
+  const saveEditPost = async (postId: string) => {
+    if (!editingPostId || postId !== editingPostId) return;
+    setSavingEditId(postId);
+    try {
+      const res = await fetch('/api/community/posts/' + postId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editTitle || null, content: editContent }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data?.error || 'Failed to save post', { duration: 3000 });
+        return;
+      }
+      // If server returns updated post, use it; otherwise patch fields
+      const updatedPost = data?.post ?? { title: data?.title, content: data?.content };
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, ...(updatedPost || {}) } : p));
+      toast.success('Post updated', { duration: 2000 });
+      cancelEdit();
+    } catch (err) {
+      toast.error('Failed to save post', { duration: 3000 });
+    } finally {
+      setSavingEditId(null);
+    }
+  };
+
+  const deletePost = async (postId: string) => {
+    if (!confirm('Delete this post? This action cannot be undone.')) return;
+    try {
+      const res = await fetch('/api/community/posts/' + postId, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data?.error || 'Failed to delete post', { duration: 3000 });
+        return;
+      }
+      setPosts(prev => prev.filter(p => p.id !== postId));
+      setTotalPosts(prev => Math.max(0, prev - 1));
+      toast.success('Post deleted', { duration: 2000 });
+    } catch (err) {
+      toast.error('Failed to delete post', { duration: 3000 });
+    }
+  };
 
   const handleReact = async (postId: string, type: ReactionType) => {
     if (!session) {
@@ -1847,7 +1959,23 @@ export default function CommunityPage() {
             ) : (
               <AnimatePresence mode="popLayout">
                 {sorted.map(post => (
-                  <PostCard key={post.id} post={post} onReact={handleReact} reactionLoadingId={reactionLoadingId} />
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    onReact={handleReact}
+                    reactionLoadingId={reactionLoadingId}
+                    currentUserId={currentUserId}
+                    editingPostId={editingPostId}
+                    editTitle={editTitle}
+                    setEditTitle={setEditTitle}
+                    editContent={editContent}
+                    setEditContent={setEditContent}
+                    startEditPost={startEditPost}
+                    cancelEdit={cancelEdit}
+                    saveEditPost={saveEditPost}
+                    deletePost={deletePost}
+                    savingEditId={savingEditId}
+                  />
                 ))}
               </AnimatePresence>
             )}
