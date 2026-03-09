@@ -473,7 +473,7 @@ const PostCard = ({ post, onReact, reactionLoadingId, currentUserId, editingPost
               <MoreHorizontal size={18} />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 mt-2 w-44 bg-[#0b0b10] border border-white/10 rounded shadow-lg z-40">
+              <div className="fixed right-4 top-20 sm:top-auto sm:right-0 sm:absolute mt-0 w-44 bg-[#0b0b10] border border-white/10 rounded shadow-lg z-50">
                 {editingPostId === post.id ? (
                   <div className="flex flex-col py-1">
                     <button onClick={() => { saveEditPost(post.id); setMenuOpen(false); }} className="text-left px-3 py-2 text-sm hover:bg-white/5">{savingEditId === post.id ? 'Saving...' : 'Save'}</button>
