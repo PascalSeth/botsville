@@ -174,7 +174,10 @@ export async function POST(
       },
     });
 
+    console.log('[teams][invites] Invite created', { inviteId: invite.id, teamId: id, toIGN: invite.toIGN, toUserId: invite.toUser?.id });
+
     // Create notification for target user
+    console.log('[teams][invites] Creating notification for target user', { userId: targetUser.id, inviteId: invite.id });
     await prisma.notification.create({
       data: {
         userId: targetUser.id,

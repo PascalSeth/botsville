@@ -56,8 +56,11 @@ export async function POST(
       },
     });
 
+    console.log('[my-team][apply] Invite created', { inviteId: invite.id, teamId: invite.team.id, toIGN: invite.toIGN, toUserId: invite.toUserId });
+
     // Notify captain if present — link to the captain's My Team page
     if (team.captainId) {
+      console.log('[my-team][apply] Creating notification for captain', { captainId: team.captainId, inviteId: invite.id });
       await prisma.notification.create({
         data: {
           userId: team.captainId,

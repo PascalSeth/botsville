@@ -274,10 +274,24 @@ export default function MyTeamPage() {
     if (!team) return;
     try {
       setLoadingInvites(true);
-      const res = await fetch(`/api/teams/${team.id}/invites?status=PENDING`);
-      const data = await res.json();
-      if (!res.ok) return;
-      setInvites(Array.isArray(data?.data) ? data.data : data);
+      // Fetch invites sent to the team (applications + invites)
+      const [teamRes, receivedRes] = await Promise.all([
+        fetch(`/api/teams/${team.id}/invites?status=PENDING`),
+        fetch(`/api/invites/received?status=PENDING`),
+      ]);
+
+      const teamData = teamRes.ok ? await teamRes.json() : null;
+      const receivedData = receivedRes.ok ? await receivedRes.json() : null;
+
+      const teamInvites: TeamInvite[] = teamData ? (Array.isArray(teamData) ? teamData : teamData) : [];
+      const receivedInvites: TeamInvite[] = receivedData ? (Array.isArray(receivedData) ? receivedData : receivedData) : [];
+
+      // Merge invites uniquely by id
+      const map = new Map<string, TeamInvite>();
+      for (const inv of [...teamInvites, ...receivedInvites]) {
+        if (inv && inv.id) map.set(inv.id, inv);
+      }
+      setInvites(Array.from(map.values()));
     } catch (err) {
       console.error('Error fetching invites:', err);
     } finally {
