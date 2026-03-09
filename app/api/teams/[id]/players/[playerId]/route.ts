@@ -26,6 +26,7 @@ export async function PUT(
       photo,
       realName,
       isSubstitute,
+      transferToTeamId,
     } = body;
 
     // Get player and team
@@ -124,7 +125,7 @@ export async function PUT(
     }
 
     // Handle transferring player to another team (preserve stats)
-    if (transferToTeamId !== undefined) {
+    if (typeof transferToTeamId !== 'undefined' && transferToTeamId !== null) {
       // Only team captain or admin can transfer a player
       if (player.team.captainId !== user.id && !user.role) {
         return apiError("Only the team captain can transfer players", 403);
