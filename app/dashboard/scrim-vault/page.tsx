@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
-import { Check, X, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Check, X, Loader2, Pencil, Trash2, ExternalLink } from "lucide-react";
 import { generateFilePath, STORAGE_BUCKETS, uploadImage } from "@/lib/supabase";
 
 type VideoItem = {
@@ -35,11 +35,13 @@ export default function DashboardScrimVaultPage() {
   const [title, setTitle] = useState("");
   const [matchup, setMatchup] = useState("");
   const [featured, setFeatured] = useState(false);
-  const [sourceType, setSourceType] = useState<"youtube" | "upload">("youtube");
+  const [sourceType, setSourceType] = useState<"youtube" | "upload" | "twitch">("youtube");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [popupVideo, setPopupVideo] = useState<VideoItem | null>(null);
 
   const isYouTubeUrl = (url: string) => /(?:youtube\.com|youtu\.be)/i.test(url);
+  const isTwitchUrl = (url: string) => /(?:twitch\.tv)/i.test(url);
 
   const getYouTubeEmbedUrl = (url: string) => {
     try {
@@ -52,6 +54,44 @@ export default function DashboardScrimVaultPage() {
         const id = parsed.searchParams.get("v");
         return id ? `https://www.youtube.com/embed/${id}` : null;
       }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const getTwitchEmbedUrl = (url: string, forPopup = false) => {
+    try {
+      const parsed = new URL(url);
+      const parent = typeof window !== "undefined" ? window.location.hostname : "localhost";
+      const pathParts = parsed.pathname.split("/").filter(Boolean);
+      
+      // Handle different Twitch URL formats
+      // Live channel: twitch.tv/channelname
+      // VOD: twitch.tv/videos/123456789
+      // Clip: twitch.tv/channelname/clip/ClipSlug or clips.twitch.tv/ClipSlug
+      
+      if (parsed.hostname === "clips.twitch.tv") {
+        // Clip URL format: clips.twitch.tv/ClipSlug
+        const clipSlug = pathParts[0];
+        return clipSlug ? `https://clips.twitch.tv/embed?clip=${clipSlug}&parent=${parent}` : null;
+      }
+      
+      if (pathParts[0] === "videos" && pathParts[1]) {
+        // VOD URL format: twitch.tv/videos/123456789
+        return `https://player.twitch.tv/?video=${pathParts[1]}&parent=${parent}`;
+      }
+      
+      if (pathParts[1] === "clip" && pathParts[2]) {
+        // Clip URL format: twitch.tv/channelname/clip/ClipSlug
+        return `https://clips.twitch.tv/embed?clip=${pathParts[2]}&parent=${parent}`;
+      }
+      
+      if (pathParts[0] && !pathParts[1]) {
+        // Live channel URL format: twitch.tv/channelname
+        return `https://player.twitch.tv/?channel=${pathParts[0]}&parent=${parent}`;
+      }
+      
       return null;
     } catch {
       return null;
@@ -200,6 +240,9 @@ export default function DashboardScrimVaultPage() {
     if (isYouTubeUrl(video.videoUrl)) {
       setSourceType("youtube");
       setYoutubeUrl(video.videoUrl);
+    } else if (isTwitchUrl(video.videoUrl)) {
+      setSourceType("twitch");
+      setYoutubeUrl(video.videoUrl);
     } else {
       setSourceType("upload");
       setYoutubeUrl(video.videoUrl);
@@ -263,6 +306,16 @@ export default function DashboardScrimVaultPage() {
             <input
               type="radio"
               name="sourceType"
+              checked={sourceType === "twitch"}
+              onChange={() => setSourceType("twitch")}
+              className="accent-[#9146ff]"
+            />
+            Twitch
+          </label>
+          <label className="flex items-center gap-2 text-sm text-[#aaa]">
+            <input
+              type="radio"
+              name="sourceType"
               checked={sourceType === "upload"}
               onChange={() => setSourceType("upload")}
               className="accent-[#e8a000]"
@@ -286,6 +339,14 @@ export default function DashboardScrimVaultPage() {
             onChange={(event) => setYoutubeUrl(event.target.value)}
             placeholder="https://www.youtube.com/watch?v=..."
             className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+            required
+          />
+        ) : sourceType === "twitch" ? (
+          <input
+            value={youtubeUrl}
+            onChange={(event) => setYoutubeUrl(event.target.value)}
+            placeholder="https://www.twitch.tv/channel or https://www.twitch.tv/videos/123456789"
+            className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#9146ff]/50"
             required
           />
         ) : (
@@ -354,7 +415,7 @@ export default function DashboardScrimVaultPage() {
                   <tr key={v.id} className="border-b border-white/5 hover:bg-white/2">
                     <td className="p-3 text-white font-semibold">{v.title}</td>
                     <td className="p-3">
-                      <div className="w-52 h-28 bg-black/40 border border-white/10 overflow-hidden">
+                      <div className="w-52 h-28 bg-black/40 border border-white/10 overflow-hidden relative group">
                         {isYouTubeUrl(v.videoUrl) ? (
                           (() => {
                             const embedUrl = getYouTubeEmbedUrl(v.videoUrl);
@@ -370,6 +431,24 @@ export default function DashboardScrimVaultPage() {
                               <div className="h-full w-full flex items-center justify-center text-[10px] text-[#666]">Invalid YouTube URL</div>
                             );
                           })()
+                        ) : isTwitchUrl(v.videoUrl) ? (
+                          <div className="relative w-full h-full">
+                            <div className="absolute inset-0 bg-[#9146ff]/20 flex flex-col items-center justify-center">
+                              <svg className="w-8 h-8 text-[#9146ff] mb-1" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
+                              </svg>
+                              <span className="text-[10px] text-[#9146ff] font-bold uppercase">Twitch</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setPopupVideo(v)}
+                              className="absolute inset-0 w-full h-full flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            >
+                              <span className="flex items-center gap-1 text-white text-xs font-bold uppercase">
+                                <ExternalLink size={14} /> Open Popup
+                              </span>
+                            </button>
+                          </div>
                         ) : (
                           <video src={v.videoUrl} controls preload="metadata" className="w-full h-full object-cover" />
                         )}
@@ -444,6 +523,70 @@ export default function DashboardScrimVaultPage() {
           </div>
         )}
       </div>
+
+      {/* Twitch Popup Modal */}
+      {popupVideo && isTwitchUrl(popupVideo.videoUrl) && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setPopupVideo(null)}
+        >
+          <div 
+            className="relative w-full max-w-5xl mx-4 bg-[#0a0a0f] border border-white/10 rounded-lg overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <svg className="w-6 h-6 text-[#9146ff]" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
+                </svg>
+                <div>
+                  <h3 className="text-white font-bold">{popupVideo.title}</h3>
+                  {popupVideo.matchup && (
+                    <p className="text-xs text-[#aaa]">{popupVideo.matchup}</p>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPopupVideo(null)}
+                className="p-2 text-[#aaa] hover:text-white hover:bg-white/10 rounded transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="aspect-video w-full bg-black">
+              {(() => {
+                const embedUrl = getTwitchEmbedUrl(popupVideo.videoUrl, true);
+                return embedUrl ? (
+                  <iframe
+                    src={embedUrl}
+                    title={popupVideo.title}
+                    className="w-full h-full"
+                    allowFullScreen
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center text-[#666]">
+                    Invalid Twitch URL
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="p-3 border-t border-white/10 flex items-center justify-between">
+              <span className="text-xs text-[#666]">
+                {popupVideo.submittedBy?.ign ? `Submitted by ${popupVideo.submittedBy.ign}` : ""}
+              </span>
+              <a
+                href={popupVideo.videoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[#9146ff] hover:text-[#a970ff] text-xs font-bold uppercase"
+              >
+                <ExternalLink size={12} /> Open on Twitch
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

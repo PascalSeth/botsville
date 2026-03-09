@@ -115,9 +115,9 @@ export async function POST(
       return apiError("You are already on a team");
     }
 
-    // Check team size
-    if (invite.team.players.length >= 7) {
-      return apiError("Team is full");
+    // Check team size (max 9 players — 5 starters + up to 4 substitutes)
+    if (invite.team.players.length >= 9) {
+      return apiError("Team is full (maximum 9 players)");
     }
 
     // Check if role is already taken by a starter

@@ -123,6 +123,83 @@ export async function PUT(
       updateData.isSubstitute = Boolean(isSubstitute);
     }
 
+    // Handle transferring player to another team (preserve stats)
+    if (transferToTeamId !== undefined) {
+      // Only team captain or admin can transfer a player
+      if (player.team.captainId !== user.id && !user.role) {
+        return apiError("Only the team captain can transfer players", 403);
+      }
+
+      // Validate target team
+      const targetTeam = await prisma.team.findUnique({
+        where: { id: String(transferToTeamId) },
+        include: { players: { where: { deletedAt: null } } },
+      });
+
+      if (!targetTeam || targetTeam.deletedAt) {
+        return apiError("Target team not found", 404);
+      }
+
+      // Check target team size (max 9)
+      if (targetTeam.players.length >= 9) {
+        return apiError("Target team is full (maximum 9 players)");
+      }
+
+      // Prevent transferring into same team
+      if (player.teamId === targetTeam.id) {
+        return apiError("Player is already on that team");
+      }
+
+      // Ensure IGN uniqueness in target team
+      const ignExists = targetTeam.players.find((p) => p.ign === player.ign && !p.deletedAt);
+      if (ignExists) {
+        return apiError("A player with the same IGN already exists on the target team");
+      }
+
+      // Perform transfer: update teamId while preserving stats
+      const transferred = await prisma.player.update({
+        where: { id: playerId },
+        data: { teamId: targetTeam.id },
+        include: {
+          user: { select: { id: true, ign: true, photo: true } },
+          team: { select: { id: true, name: true, tag: true } },
+        },
+      });
+
+      // Notify both captains
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: player.team.captainId!,
+            type: "PLAYER_REMOVED",
+            title: "Player Transferred",
+            message: `${player.ign} was transferred to ${targetTeam.name}`,
+            linkUrl: `/teams/${player.teamId}`,
+          },
+        });
+      } catch (e) {
+        // ignore notification errors
+      }
+
+      try {
+        if (targetTeam.captainId) {
+          await prisma.notification.create({
+            data: {
+              userId: targetTeam.captainId!,
+              type: "PLAYER_JOINED",
+              title: "Player Transferred In",
+              message: `${player.ign} was transferred into your team`,
+              linkUrl: `/teams/${targetTeam.id}`,
+            },
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      return apiSuccess({ message: "Player transferred successfully", player: transferred });
+    }
+
     if (Object.keys(updateData).length === 0) {
       return apiError("No fields to update");
     }

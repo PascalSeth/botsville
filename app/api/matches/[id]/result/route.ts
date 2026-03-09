@@ -100,6 +100,49 @@ async function upsertMonthly(
   }
 }
 
+async function upsertTeamStanding(
+  tx: Tx,
+  { teamId, seasonId, won, forfeit }: {
+    teamId: string; seasonId: string; won: boolean; forfeit: boolean;
+  },
+  existingStandings: { teamId: string; streak: string | null }[]
+) {
+  const existing = await tx.teamStanding.findUnique({
+    where: { teamId_seasonId: { teamId, seasonId } },
+  });
+
+  // Find the current max rank for new entries
+  const maxRank = existingStandings.length > 0 ? existingStandings.length : 0;
+  const currentStreak = existing?.streak ?? null;
+
+  if (existing) {
+    await tx.teamStanding.update({
+      where: { id: existing.id },
+      data: {
+        wins: { increment: won ? 1 : 0 },
+        losses: { increment: won ? 0 : 1 },
+        forfeits: { increment: forfeit && !won ? 1 : 0 },
+        points: { increment: won ? 2 : forfeit ? -1 : 0 },
+        streak: updateStreak(currentStreak, won),
+      },
+    });
+  } else {
+    // Create new team standing if it doesn't exist
+    await tx.teamStanding.create({
+      data: {
+        teamId,
+        seasonId,
+        rank: maxRank + 1, // New teams start at the bottom
+        wins: won ? 1 : 0,
+        losses: won ? 0 : 1,
+        forfeits: forfeit && !won ? 1 : 0,
+        points: won ? 2 : forfeit ? -1 : 0,
+        streak: updateStreak(null, won),
+      },
+    });
+  }
+}
+
 async function upsertH2H(tx: Tx, seasonId: string, winnerTeamId: string, loserTeamId: string) {
   // Canonical order: smaller id is always teamA
   const [teamAId, teamBId, winnerIsA] =
@@ -199,36 +242,17 @@ export async function POST(
         },
       });
 
-      // ─── Update WINNER's TeamStanding ───────────────────
-      const winnerStanding = await tx.teamStanding.findUnique({
-        where: { teamId_seasonId: { teamId: winnerId, seasonId } },
+      // Get existing standings to determine rank for new entries
+      const existingStandings = await tx.teamStanding.findMany({
+        where: { seasonId },
+        select: { teamId: true, streak: true },
       });
-      if (winnerStanding) {
-        await tx.teamStanding.update({
-          where: { id: winnerStanding.id },
-          data: {
-            wins: { increment: 1 },
-            points: { increment: 2 },
-            streak: updateStreak(winnerStanding.streak, true),
-          },
-        });
-      }
 
-      // ─── Update LOSER's TeamStanding ────────────────────
-      const loserStanding = await tx.teamStanding.findUnique({
-        where: { teamId_seasonId: { teamId: loserId, seasonId } },
-      });
-      if (loserStanding) {
-        await tx.teamStanding.update({
-          where: { id: loserStanding.id },
-          data: {
-            losses: { increment: 1 },
-            forfeits: { increment: isForfeit ? 1 : 0 },
-            points: { increment: isForfeit ? -1 : 0 },
-            streak: updateStreak(loserStanding.streak, false),
-          },
-        });
-      }
+      // ─── Upsert WINNER's TeamStanding ───────────────────
+      await upsertTeamStanding(tx as Tx, { teamId: winnerId, seasonId, won: true, forfeit: false }, existingStandings);
+
+      // ─── Upsert LOSER's TeamStanding ────────────────────
+      await upsertTeamStanding(tx as Tx, { teamId: loserId, seasonId, won: false, forfeit: isForfeit }, existingStandings);
 
       // ─── MonthlyStanding for both teams ─────────────────
       if (seasonId) {

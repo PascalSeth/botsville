@@ -1,13 +1,22 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useTransition } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import {
-  Play, ChevronRight, Trophy, Vote, CheckCircle2, Loader2, Users,
+  Play, ChevronRight, Trophy, Vote, Loader2, Users,
   Shield, Swords, Zap, Crosshair, HeartHandshake,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useSession } from 'next-auth/react';
+
+// Minimal YouTube iframe API typings used locally to avoid `any`
+type YTReadyEvent = { target: { playVideo: () => void } };
+type YTPlayerInstance = { destroy?: () => void; playVideo?: () => void };
+type YTPlayerConstructor = new (el: Element | string | HTMLDivElement, options: {
+  height?: string; width?: string; videoId: string; playerVars?: Record<string, number | string>;
+  events?: { onReady?: (e: YTReadyEvent) => void };
+}) => YTPlayerInstance;
+type YTNamespace = { Player: YTPlayerConstructor };
+interface WindowWithYT extends Window { YT?: YTNamespace; onYouTubeIframeAPIReady?: () => void }
 
 // ─── Scrim types ────────────────────────────────────────────
 type ScrimItem = {
@@ -74,6 +83,40 @@ const getYoutubeThumbnail = (url: string): string | null => {
     return null;
   }
 };
+
+// (removed unused helper) getYoutubeEmbedUrl
+
+const getYoutubeIdFromUrl = (url?: string | null): string | null => {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('youtu.be')) {
+      return parsed.pathname.slice(1) || null;
+    }
+    if (parsed.hostname.includes('youtube.com')) {
+      return parsed.searchParams.get('v') || null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const loadYouTubeApi = (() => {
+  let promise: Promise<YTNamespace | null> | null = null;
+  return () => {
+    if (promise) return promise;
+    promise = new Promise<YTNamespace | null>((resolve) => {
+      const w = window as unknown as WindowWithYT;
+      if (w.YT && w.YT.Player) return resolve(w.YT);
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.body.appendChild(tag);
+      w.onYouTubeIframeAPIReady = () => resolve(w.YT ?? null);
+    });
+    return promise;
+  };
+})();
 
 const useRealtimeScrims = () => {
   const [scrims, setScrims] = useState<ScrimItem[]>([]);
@@ -167,14 +210,25 @@ const SectionLabel = ({ children }: { children: React.ReactNode }) => (
 );
 
 // ─── Desktop Scrim Card ───────────────────────────────────────
-const DesktopScrimCard = ({ scrim }: { scrim: ScrimItem }) => (
-  <div className="group cursor-pointer flex flex-col gap-1.5">
+const DesktopScrimCard = ({ scrim, onPlay }: { scrim: ScrimItem; onPlay?: (url: string | null) => void }) => (
+  <div
+    role="button"
+    tabIndex={0}
+    onClick={() => onPlay?.(scrim.videoUrl)}
+    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPlay?.(scrim.videoUrl); }}
+    className="group cursor-pointer flex flex-col gap-1.5"
+  >
     <div className="relative w-full aspect-video overflow-hidden bg-[#111]">
       <Image src={scrim.image} alt={scrim.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500 brightness-75 group-hover:brightness-90" />
       <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/20 to-transparent" />
       {scrim.featured && <div className="absolute inset-0 border border-[#e8a000]/50 pointer-events-none" />}
       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-        <div className="w-9 h-9 bg-[#e8a000] flex items-center justify-center shadow-lg shadow-[#e8a000]/30">
+        <div
+          onClick={(e) => { e.stopPropagation(); onPlay?.(scrim.videoUrl); }}
+          className="w-9 h-9 bg-[#e8a000] flex items-center justify-center shadow-lg shadow-[#e8a000]/30"
+          role="button"
+          tabIndex={0}
+        >
           <Play size={13} fill="black" className="text-black ml-0.5" />
         </div>
       </div>
@@ -273,6 +327,60 @@ const AwardSlide = ({
 // ─── Desktop Exported Sections ────────────────────────────────
 export const ScrimVault = () => {
   const scrims = useRealtimeScrims();
+  const [videoOpen, setVideoOpen] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoYoutubeId, setVideoYoutubeId] = useState<string | null>(null);
+  const playerContainerRef = useRef<HTMLDivElement | null>(null);
+  const playerRef = useRef<YTPlayerInstance | null>(null);
+
+  const openVideo = (url: string | null) => {
+    if (!url) return;
+    setVideoUrl(url);
+    setVideoYoutubeId(getYoutubeIdFromUrl(url));
+    setVideoOpen(true);
+  };
+
+  const closeVideo = () => {
+    // destroy YT player if present
+    try {
+      if (playerRef.current && typeof playerRef.current.destroy === 'function') playerRef.current.destroy();
+    } catch {
+      // ignore
+    }
+    playerRef.current = null;
+    setVideoOpen(false);
+    setVideoUrl(null);
+    setVideoYoutubeId(null);
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    if (!videoOpen) return;
+    // if we have a YouTube id, load API and create player
+    if (videoYoutubeId && playerContainerRef.current) {
+      loadYouTubeApi().then((YT) => {
+        if (!mounted) return;
+        if (!YT) return;
+        const container = playerContainerRef.current;
+        if (!container) return;
+        // destroy existing
+        try {
+          if (playerRef.current && typeof playerRef.current.destroy === 'function') playerRef.current.destroy();
+        } catch {}
+        playerRef.current = new (YT.Player as YTPlayerConstructor)(container, {
+          height: '360',
+          width: '640',
+          videoId: videoYoutubeId,
+          playerVars: { autoplay: 1, controls: 1, rel: 0 },
+          events: {
+            onReady: (e: YTReadyEvent) => { try { e.target.playVideo(); } catch {} },
+          },
+        });
+      }).catch(() => {});
+    }
+
+    return () => { mounted = false; };
+  }, [videoOpen, videoYoutubeId]);
 
   return (
     <section className="hidden lg:block bg-[#0d0d12] py-8">
@@ -283,9 +391,23 @@ export const ScrimVault = () => {
             No scrim videos available yet.
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3">
-            {scrims.slice(0, 3).map(s => <DesktopScrimCard key={s.id} scrim={s} />)}
-          </div>
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              {scrims.slice(0, 3).map(s => <DesktopScrimCard key={s.id} scrim={s} onPlay={openVideo} />)}
+            </div>
+            {videoOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeVideo}>
+                <div className="relative w-[90%] max-w-4xl" onClick={(e) => e.stopPropagation()}>
+                  {videoYoutubeId ? (
+                    <div ref={playerContainerRef} className="w-full h-[60vh] rounded bg-black" />
+                  ) : (
+                    <video className="w-full h-auto rounded bg-black" controls autoPlay src={videoUrl || undefined} />
+                  )}
+                  <button onClick={closeVideo} className="absolute -top-3 -right-3 w-8 h-8 bg-black/80 text-white rounded-full">×</button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </section>
@@ -379,16 +501,23 @@ export const BestRoleAwards = () => {
 // MOBILE — combined Scrim Vault + Best Role Awards
 // ══════════════════════════════════════════════════════════════
 
-const MobileFeaturedScrim = ({ scrim }: { scrim: ScrimItem }) => (
+const MobileFeaturedScrim = ({ scrim, onPlay }: { scrim: ScrimItem; onPlay?: (url: string | null) => void }) => (
   <motion.div
     initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}
+    role="button"
+    tabIndex={0}
+    onClick={() => onPlay?.(scrim.videoUrl)}
+    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPlay?.(scrim.videoUrl); }}
     className="group relative cursor-pointer aspect-video overflow-hidden bg-[#111] mb-3"
   >
     <Image src={scrim.image} alt={scrim.title} fill className="object-cover brightness-75 group-hover:scale-105 transition-transform duration-500" />
     <div className="absolute inset-0 bg-linear-to-t from-black/95 via-black/30 to-transparent" />
     <div className="absolute inset-0 border border-[#e8a000]/40 pointer-events-none" />
     <div className="absolute inset-0 flex items-center justify-center">
-      <motion.div whileTap={{ scale: 0.92 }} className="w-12 h-12 bg-[#e8a000] flex items-center justify-center shadow-2xl shadow-[#e8a000]/40">
+      <motion.div whileTap={{ scale: 0.92 }} className="w-12 h-12 bg-[#e8a000] flex items-center justify-center shadow-2xl shadow-[#e8a000]/40"
+        onClick={(e) => { e.stopPropagation(); onPlay?.(scrim.videoUrl); }}
+        role="button" tabIndex={0}
+      >
         <Play size={18} fill="black" className="ml-1 text-black" />
       </motion.div>
     </div>
@@ -400,15 +529,19 @@ const MobileFeaturedScrim = ({ scrim }: { scrim: ScrimItem }) => (
   </motion.div>
 );
 
-const MobileScrimRow = ({ scrim, index }: { scrim: ScrimItem; index: number }) => (
+const MobileScrimRow = ({ scrim, index, onPlay }: { scrim: ScrimItem; index: number; onPlay?: (url: string | null) => void }) => (
   <motion.div
     initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.35, delay: index * 0.08 }}
+    role="button"
+    tabIndex={0}
+    onClick={() => onPlay?.(scrim.videoUrl)}
+    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPlay?.(scrim.videoUrl); }}
     className="group cursor-pointer flex items-center gap-3 border-b border-white/5 pb-3"
   >
-    <div className="relative w-24 aspect-video shrink-0 overflow-hidden bg-[#111]">
+      <div className="relative w-24 aspect-video shrink-0 overflow-hidden bg-[#111]">
       <Image src={scrim.image} alt={scrim.title} fill className="object-cover brightness-75 group-hover:brightness-90 transition-all duration-300" />
       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-        <div className="w-6 h-6 bg-[#e8a000] flex items-center justify-center">
+        <div className="w-6 h-6 bg-[#e8a000] flex items-center justify-center" onClick={(e) => { e.stopPropagation(); onPlay?.(scrim.videoUrl); }} role="button" tabIndex={0}>
           <Play size={9} fill="black" className="ml-0.5 text-black" />
         </div>
       </div>
@@ -560,6 +693,48 @@ const MobileAwardsSlider = ({ grouped, season }: { grouped: AwardGrouped; season
 export const MobileScrimAndAwards = () => {
   const scrims = useRealtimeScrims();
   const { season, grouped, loading } = useRoleNominees();
+  const [videoOpen, setVideoOpen] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoYoutubeId, setVideoYoutubeId] = useState<string | null>(null);
+  const playerContainerRef = useRef<HTMLDivElement | null>(null);
+  const playerRef = useRef<YTPlayerInstance | null>(null);
+
+  const openVideo = (url: string | null) => {
+    if (!url) return;
+    setVideoUrl(url);
+    setVideoYoutubeId(getYoutubeIdFromUrl(url));
+    setVideoOpen(true);
+  };
+
+  const closeVideo = () => {
+    try {
+      if (playerRef.current && typeof playerRef.current.destroy === 'function') playerRef.current.destroy();
+    } catch {}
+    playerRef.current = null;
+    setVideoOpen(false);
+    setVideoUrl(null);
+    setVideoYoutubeId(null);
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    if (!videoOpen) return;
+    if (videoYoutubeId && playerContainerRef.current) {
+      loadYouTubeApi().then((YT) => {
+        if (!mounted) return;
+        if (!YT) return;
+        const container = playerContainerRef.current;
+        if (!container) return;
+        try { if (playerRef.current && typeof playerRef.current.destroy === 'function') playerRef.current.destroy(); } catch {}
+        playerRef.current = new (YT.Player as YTPlayerConstructor)(container, {
+          height: '360', width: '640', videoId: videoYoutubeId,
+          playerVars: { autoplay: 1, controls: 1, rel: 0 },
+          events: { onReady: (e: YTReadyEvent) => { try { e.target.playVideo(); } catch {} } },
+        });
+      }).catch(() => {});
+    }
+    return () => { mounted = false; };
+  }, [videoOpen, videoYoutubeId]);
 
   const featured = scrims.find(s => s.featured) || scrims[0];
   const rest = scrims.filter(s => s.id !== featured?.id).slice(0, 3);
@@ -603,9 +778,9 @@ export const MobileScrimAndAwards = () => {
     <section className="lg:hidden bg-[#0d0d12] py-6">
       <div className="px-4 sm:px-6 mb-6">
         <SectionLabel>Scrim Vault</SectionLabel>
-        <MobileFeaturedScrim scrim={featured} />
+        <MobileFeaturedScrim scrim={featured} onPlay={openVideo} />
         <div className="flex flex-col gap-3">
-          {rest.map((s, i) => <MobileScrimRow key={s.id} scrim={s} index={i} />)}
+          {rest.map((s, i) => <MobileScrimRow key={s.id} scrim={s} index={i} onPlay={openVideo} />)}
         </div>
       </div>
 
@@ -630,6 +805,18 @@ export const MobileScrimAndAwards = () => {
           <MobileAwardsSlider grouped={grouped} season={season} />
         )}
       </div>
+      {videoOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeVideo}>
+          <div className="relative w-[95%] max-w-lg" onClick={(e) => e.stopPropagation()}>
+            {videoYoutubeId ? (
+              <div ref={playerContainerRef} className="w-full h-[50vh] rounded bg-black" />
+            ) : (
+              <video className="w-full h-auto rounded bg-black" controls autoPlay src={videoUrl || undefined} />
+            )}
+            <button onClick={closeVideo} className="absolute -top-3 -right-3 w-8 h-8 bg-black/80 text-white rounded-full">×</button>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

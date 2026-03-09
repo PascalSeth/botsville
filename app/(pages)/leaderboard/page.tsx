@@ -86,6 +86,7 @@ export default function LeaderboardPage() {
   const [heroMeta, setHeroMeta] = useState<ApiHeroMeta[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [selectedRole, setSelectedRole] = useState<string>('ALL');
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -110,8 +111,10 @@ export default function LeaderboardPage() {
       if (active) {
         const sRes = await fetch(`/api/seasons/${active.id}/standings`);
         const sData = await sRes.json();
-        setSeasonStandings(sData?.data?.cumulative ?? []);
-        const grouped: Record<string, MonthlyRow[]> = sData?.data?.monthly ?? {};
+        console.log('[LEADERBOARD] /api/seasons/[id]/standings response:', sData);
+        const payload = sData?.data ?? sData ?? {};
+        setSeasonStandings(payload?.cumulative ?? []);
+        const grouped: Record<string, MonthlyRow[]> = payload?.monthly ?? {};
         setMonthlyData(grouped);
         const keys = Object.keys(grouped).sort();
         if (keys.length) setSelectedMonthKey(keys[keys.length - 1]);
@@ -138,14 +141,32 @@ export default function LeaderboardPage() {
 
   const uniqueStandings = Array.from(new Map(standings.map((e) => [e.team.id, e])).values());
 
+  // Role-based featured slider: compute top per role and auto-advance
+  const roles = Array.from(new Set(playerRankings.map((p) => p.player.role))).filter(Boolean);
+  const roleTopList = roles.map((role) => {
+    const sorted = playerRankings.filter(p => p.player.role === role).slice().sort((a,b) => {
+      if (b.mvpCount !== a.mvpCount) return b.mvpCount - a.mvpCount;
+      if (b.kda !== a.kda) return b.kda - a.kda;
+      return b.winRate - a.winRate;
+    });
+    return { role, top: sorted[0] ?? null, runners: sorted.slice(1,3) };
+  });
+  const [activeRoleIndex, setActiveRoleIndex] = useState(0);
+  useEffect(() => {
+    if (roleTopList.length === 0) return;
+    const id = setInterval(() => setActiveRoleIndex(i => (i + 1) % roleTopList.length), 4000);
+    return () => clearInterval(id);
+  }, [playerRankings]);
+  const featuredRole = roleTopList[activeRoleIndex] ?? null;
+
   if (loading) return (
-    <main className="min-h-screen bg-[#08080d] flex items-center justify-center">
+    <main className="min-h-screen bg-[#08080d] text-white flex items-center justify-center">
       <Loader2 className="w-8 h-8 animate-spin text-[#e8a000]" />
     </main>
   );
 
   return (
-    <main className="min-h-screen bg-[#08080d]">
+    <main className="min-h-screen bg-[#08080d] text-white">
       {/* Hero header */}
       <div className="relative border-b border-white/[0.06] overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
@@ -407,45 +428,207 @@ export default function LeaderboardPage() {
         {tab === 'players' && (
           <div className="flex flex-col gap-1 overflow-x-auto">
             <div className="min-w-[560px]">
-              <div className="grid grid-cols-[32px_1fr_80px_80px_60px_60px_60px] gap-3 px-3 mb-2">
-                {['#', 'Player', 'Role', 'Most Used', 'KDA', 'Win%', 'MVP'].map((h) => (
-                  <p key={h} className="text-[#333] text-[9px] uppercase tracking-widest font-bold">{h}</p>
-                ))}
-              </div>
-              {playerRankings.length === 0 ? <p className="text-[#333] text-center py-8">No player rankings available</p>
-              : playerRankings.map((p) => {
-                const roleMeta = ROLE_META[p.player.role] || ROLE_META.ROAM;
-                const photoUrl = p.player.photo || p.player.user?.photo || '/heroes/stun.png';
-                // Use season-specific stats from ranking, fallback to player's overall stats
-                const displayKda = p.kda ?? p.player.kda;
-                const displayWinRate = p.winRate ?? p.player.winRate;
-                const displayHero = p.hero || p.player.signatureHero;
-                return (
-                  <div key={p.id} className="grid grid-cols-[32px_1fr_80px_80px_60px_60px_60px] gap-3 items-center px-3 py-3 mb-1 bg-[#0f0f18] border border-white/[0.05] hover:border-white/[0.12] transition-colors group cursor-pointer">
-                    <span className="text-white font-black text-sm font-mono text-center">{p.rank <= 3 ? ['🥇','🥈','🥉'][p.rank-1] : p.rank}</span>
-                    <div className="flex items-center gap-2">
-                      <div className="relative w-8 h-8 overflow-hidden shrink-0 border border-white/10">
-                        <Image src={photoUrl} alt={p.player.ign} fill className="object-cover grayscale group-hover:grayscale-0 transition-all" />
+              {/* Featured MVP + Roles overview */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                {/* Featured role MVP (auto-rotating) */}
+                <div className="bg-[#0f0f18] border border-white/[0.04] p-4 rounded-lg sm:col-span-2 flex gap-4 items-center">
+                  {featuredRole?.top ? (
+                    <>
+                      <div className="w-28 h-28 relative rounded-full overflow-hidden border border-white/10 flex-shrink-0">
+                        <Image src={featuredRole.top.player.photo || featuredRole.top.player.user?.photo || '/heroes/stun.png'} alt={featuredRole.top.player.ign} fill className="object-cover" />
                       </div>
-                      <div>
-                        <p className="text-white font-black text-[12px] tracking-wide group-hover:text-[#e8a000]">{p.player.ign}</p>
-                        <p className="text-[#444] text-[9px]">{p.player.team?.tag ?? '—'}</p>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-white font-black text-xl uppercase tracking-tight">{featuredRole.top.player.ign}</h3>
+                          <span className="text-[11px] font-bold uppercase" style={{ color: (ROLE_META[featuredRole.role] || ROLE_META.ROAM).color, background: `${(ROLE_META[featuredRole.role] || ROLE_META.ROAM).color}22`, padding: '4px 8px', borderRadius: 999 }}>{featuredRole.role}</span>
+                          <div className="ml-auto flex items-center gap-2">
+                            <button onClick={() => setActiveRoleIndex((i) => (i - 1 + roleTopList.length) % roleTopList.length)} className="bg-black/50 p-1 rounded hover:bg-black/70">
+                              <ChevronLeft size={14} />
+                            </button>
+                            <button onClick={() => setActiveRoleIndex((i) => (i + 1) % roleTopList.length)} className="bg-black/50 p-1 rounded hover:bg-black/70">
+                              <ChevronRight size={14} />
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[#777] mt-1">Team: {featuredRole.top.player.team?.name ?? '—'}</p>
+                        <div className="flex items-center gap-4 mt-3">
+                          <div>
+                            <p className="text-[#e8a000] font-black text-lg">{featuredRole.top.mvpCount}</p>
+                            <p className="text-[#777] text-xs">MVPs</p>
+                          </div>
+                          <div>
+                            <p className="text-white font-black text-lg">{(featuredRole.top.kda ?? featuredRole.top.player.kda).toFixed(1)}</p>
+                            <p className="text-[#777] text-xs">KDA</p>
+                          </div>
+                          <div>
+                            <p className="text-[#27ae60] font-black text-lg">{Math.round((featuredRole.top.winRate ?? featuredRole.top.player.winRate) * 100)}%</p>
+                            <p className="text-[#777] text-xs">Win%</p>
+                          </div>
+                        </div>
+                        {featuredRole.runners && featuredRole.runners.length > 0 && (
+                          <div className="flex items-center gap-3 mt-4">
+                            {featuredRole.runners.map((p, i) => (
+                              <div key={p.id} className="flex items-center gap-2">
+                                <div className="w-12 h-12 relative rounded-full overflow-hidden border border-white/10">
+                                  <Image src={p.player.photo || p.player.user?.photo || '/heroes/stun.png'} alt={p.player.ign} fill className="object-cover" />
+                                </div>
+                                <div>
+                                  <p className="text-white font-bold text-sm">{p.player.ign}</p>
+                                  <p className="text-[#777] text-[11px]">MVP {p.mvpCount}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <span className="flex items-center gap-1 text-[9px] font-black tracking-wide uppercase px-1.5 py-0.5 w-fit"
-                      style={{ color: roleMeta.color, background: `${roleMeta.color}22`, border: `1px solid ${roleMeta.color}33` }}>
-                      {roleMeta.icon} {p.player.role}
-                    </span>
-                    <p className="text-[#666] text-[11px]">{displayHero || '—'}</p>
-                    <p className="text-white font-black text-sm font-mono">{displayKda.toFixed(1)}</p>
-                    <div>
-                      <p className="text-[#27ae60] font-bold text-[11px] font-mono">{Math.round(displayWinRate * 100)}%</p>
-                      <div className="w-full h-0.5 bg-white/[0.05] mt-1"><div className="h-full bg-[#27ae60]" style={{ width: `${Math.round(displayWinRate * 100)}%` }} /></div>
-                    </div>
-                    <div className="flex items-center gap-1"><Crown size={9} className="text-[#e8a000]" /><p className="text-[#e8a000] font-black text-sm">{p.mvpCount}</p></div>
+                    </>
+                  ) : (
+                    <div className="text-[#666]">No top player data</div>
+                  )}
+                </div>
+
+                {/* Roles compact list */}
+                <div className="bg-[#0f0f18] border border-white/[0.04] p-3 rounded-lg">
+                  <h4 className="text-white font-bold text-sm mb-3">Role Leaders</h4>
+                  <div className="flex flex-col gap-2 max-h-[220px] overflow-auto">
+                    {Array.from(new Set(playerRankings.map((p) => p.player.role))).filter(Boolean).map((r) => {
+                      const meta = ROLE_META[r] || ROLE_META.ROAM;
+                      const filtered = playerRankings.filter(p => p.player.role === r).slice().sort((a,b) => {
+                        if (b.mvpCount !== a.mvpCount) return b.mvpCount - a.mvpCount;
+                        if (b.kda !== a.kda) return b.kda - a.kda;
+                        return b.winRate - a.winRate;
+                      }).slice(0,3);
+                      return (
+                        <div key={r} className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: `${meta.color}22` }}>
+                              <span style={{ color: meta.color }}>{meta.icon}</span>
+                            </div>
+                            <div>
+                              <div className="text-white font-bold text-sm">{r}</div>
+                              <div className="text-[#777] text-[11px]">{filtered.length} shown</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 overflow-x-auto">
+                              {filtered.map((p, i) => (
+                                <div key={p.id} className="w-9 h-9 relative rounded-full overflow-hidden border border-white/10">
+                                  <Image src={p.player.photo || p.player.user?.photo || '/heroes/stun.png'} alt={p.player.ign} fill className="object-cover" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              </div>
+
+              {/* Role filter tabs */}
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <button onClick={() => setSelectedRole('ALL')} className={`px-3 py-1 text-[11px] font-bold rounded-full ${selectedRole === 'ALL' ? 'bg-[#e8a000]/12 text-[#e8a000] border border-[#e8a000]/20' : 'text-[#777] hover:text-white border border-transparent'}`}>All</button>
+                {Array.from(new Set(playerRankings.map((p) => p.player.role))).filter(Boolean).map((r) => {
+                  const meta = ROLE_META[r] || ROLE_META.ROAM;
+                  return (
+                    <button key={r} onClick={() => setSelectedRole(r)} className={`px-3 py-1 text-[11px] font-bold rounded-full flex items-center gap-2 ${selectedRole === r ? 'bg-[#e8a000]/12 text-[#e8a000] border border-[#e8a000]/20' : 'text-[#777] hover:text-white border border-white/[0.03]'}`}>
+                      <span style={{ color: meta.color }}>{meta.icon}</span>
+                      <span className="uppercase">{r}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[#666] text-sm">Showing {selectedRole === 'ALL' ? playerRankings.length : playerRankings.filter(p => p.player.role === selectedRole).length} players{selectedRole === 'ALL' ? '' : ` · ${selectedRole}`}</p>
+                <p className="text-[#444] text-[11px]">Sorted: MVP → KDA → Win%</p>
+              </div>
+              <div className="hidden sm:block">
+                <div className="grid grid-cols-[32px_1fr_80px_80px_60px_60px_60px] gap-3 px-3 mb-2">
+                  {['#', 'Player', 'Role', 'Most Used', 'KDA', 'Win%', 'MVP'].map((h) => (
+                    <p key={h} className="text-[#333] text-[9px] uppercase tracking-widest font-bold">{h}</p>
+                  ))}
+                </div>
+                {playerRankings.length === 0 ? <p className="text-[#333] text-center py-8">No player rankings available</p>
+                : (() => {
+                  const filtered = selectedRole === 'ALL' ? playerRankings : playerRankings.filter(p => p.player.role === selectedRole);
+                  const sorted = filtered.slice().sort((a, b) => {
+                    if (b.mvpCount !== a.mvpCount) return b.mvpCount - a.mvpCount;
+                    if (b.kda !== a.kda) return b.kda - a.kda;
+                    return b.winRate - a.winRate;
+                  });
+                  return sorted.map((p) => {
+                    const roleMeta = ROLE_META[p.player.role] || ROLE_META.ROAM;
+                    const photoUrl = p.player.photo || p.player.user?.photo || '/heroes/stun.png';
+                    // Use season-specific stats from ranking, fallback to player's overall stats
+                    const displayKda = p.kda ?? p.player.kda;
+                    const displayWinRate = p.winRate ?? p.player.winRate;
+                    const displayHero = p.hero || p.player.signatureHero;
+                    return (
+                      <div key={p.id} className="grid grid-cols-[32px_1fr_80px_80px_60px_60px_60px] gap-3 items-center px-3 py-3 mb-1 bg-[#0f0f18] border border-white/[0.05] hover:border-white/[0.12] transition-colors group cursor-pointer">
+                        <span className="text-white font-black text-sm font-mono text-center">{p.rank <= 3 ? ['🥇','🥈','🥉'][p.rank-1] : p.rank}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="relative w-8 h-8 overflow-hidden shrink-0 border border-white/10">
+                            <Image src={photoUrl} alt={p.player.ign} fill className="object-cover grayscale group-hover:grayscale-0 transition-all" />
+                          </div>
+                          <div>
+                            <p className="text-white font-black text-[12px] tracking-wide group-hover:text-[#e8a000]">{p.player.ign}</p>
+                            <p className="text-[#444] text-[9px]">{p.player.team?.tag ?? '—'}</p>
+                          </div>
+                        </div>
+                        <span className="flex items-center gap-1 text-[9px] font-black tracking-wide uppercase px-1.5 py-0.5 w-fit"
+                          style={{ color: roleMeta.color, background: `${roleMeta.color}22`, border: `1px solid ${roleMeta.color}33` }}>
+                          {roleMeta.icon} {p.player.role}
+                        </span>
+                        <p className="text-[#666] text-[11px]">{displayHero || '—'}</p>
+                        <p className="text-white font-black text-sm font-mono">{displayKda.toFixed(1)}</p>
+                        <div>
+                          <p className="text-[#27ae60] font-bold text-[11px] font-mono">{Math.round(displayWinRate * 100)}%</p>
+                          <div className="w-full h-0.5 bg-white/[0.05] mt-1"><div className="h-full bg-[#27ae60]" style={{ width: `${Math.round(displayWinRate * 100)}%` }} /></div>
+                        </div>
+                        <div className="flex items-center gap-1"><Crown size={9} className="text-[#e8a000]" /><p className="text-[#e8a000] font-black text-sm">{p.mvpCount}</p></div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+
+              {/* Mobile list */}
+              <div className="sm:hidden">
+                {playerRankings.length === 0 ? <p className="text-[#333] text-center py-8">No player rankings available</p>
+                : (() => {
+                  const filtered = selectedRole === 'ALL' ? playerRankings : playerRankings.filter(p => p.player.role === selectedRole);
+                  const sorted = filtered.slice().sort((a, b) => {
+                    if (b.mvpCount !== a.mvpCount) return b.mvpCount - a.mvpCount;
+                    if (b.kda !== a.kda) return b.kda - a.kda;
+                    return b.winRate - a.winRate;
+                  });
+                  return sorted.map((p) => {
+                    const roleMeta = ROLE_META[p.player.role] || ROLE_META.ROAM;
+                    const photoUrl = p.player.photo || p.player.user?.photo || '/heroes/stun.png';
+                    const displayKda = p.kda ?? p.player.kda;
+                    const displayWinRate = p.winRate ?? p.player.winRate;
+                    const displayHero = p.hero || p.player.signatureHero;
+                    return (
+                      <div key={p.id} className="flex items-center justify-between px-3 py-3 mb-2 bg-[#0f0f18] border border-white/[0.05] rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="relative w-12 h-12 rounded-full overflow-hidden border border-white/10">
+                            <Image src={photoUrl} alt={p.player.ign} fill className="object-cover" />
+                          </div>
+                          <div>
+                            <p className="text-white font-black text-sm">{p.player.ign} <span className="text-[#777] text-[11px]">· #{p.rank}</span></p>
+                            <p className="text-[#666] text-[11px]">{displayHero || '—'} · <span className="uppercase font-bold" style={{ color: roleMeta.color }}>{p.player.role}</span></p>
+                          </div>
+                        </div>
+                        <div className="text-right ml-2">
+                          <p className="text-white font-black">{displayKda.toFixed(1)}</p>
+                          <p className="text-[#27ae60] text-[11px]">{Math.round(displayWinRate * 100)}%</p>
+                          <p className="text-[#e8a000] font-black">{p.mvpCount} MVP</p>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
             </div>
           </div>
         )}

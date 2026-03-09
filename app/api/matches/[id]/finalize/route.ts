@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api-utils";
+import { MatchStatus } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
 // POST /api/matches/[id]/finalize - Finalize match and update all player stats and leaderboards
@@ -45,6 +46,46 @@ export async function POST(
 
     // Get unique player IDs from performances
     const playerIds = [...new Set(match.performances.map((p) => p.playerId))];
+
+    // Compute per-game winners from performances (each performance has .won boolean)
+    const winsByTeam: Record<string, number> = {};
+    const games = [...new Set(match.performances.map((p) => p.gameNumber))];
+    for (const g of games) {
+      const perfs = match.performances.filter((p) => p.gameNumber === g);
+      // Determine which team won this game by counting 'won' occurrences per player's team
+      const teamWinCounts: Record<string, number> = {};
+      for (const p of perfs) {
+        // use player.teamId if available
+        const tid = (p.player && (p.player as any).teamId) || (p.player && (p.player as any).team?.id) || null;
+        if (p.won && tid) {
+          teamWinCounts[tid] = (teamWinCounts[tid] || 0) + 1;
+        }
+      }
+      const winnerTeamId = Object.keys(teamWinCounts).sort((a, b) => (teamWinCounts[b] || 0) - (teamWinCounts[a] || 0))[0];
+      if (winnerTeamId) winsByTeam[winnerTeamId] = (winsByTeam[winnerTeamId] || 0) + 1;
+    }
+
+    // If we have computed wins, update match score and winner accordingly
+    if (Object.keys(winsByTeam).length > 0) {
+      const scoreA = winsByTeam[match.teamA?.id || ''] || 0;
+      const scoreB = winsByTeam[match.teamB?.id || ''] || 0;
+      let winnerId: string | null = null;
+      if (scoreA > scoreB) winnerId = match.teamA?.id ?? null;
+      if (scoreB > scoreA) winnerId = match.teamB?.id ?? null;
+
+      // Update match record if not already completed
+      if (match.status !== MatchStatus.COMPLETED && match.status !== MatchStatus.FORFEITED) {
+        await prisma.match.update({
+          where: { id: matchId },
+          data: {
+            scoreA,
+            scoreB,
+            status: MatchStatus.COMPLETED,
+            ...(winnerId ? { winner: { connect: { id: winnerId } } } : {}),
+          },
+        });
+      }
+    }
 
     // Update each player's stats
     for (const playerId of playerIds) {
@@ -104,10 +145,17 @@ async function updatePlayerStats(playerId: string, seasonId?: string | null) {
   const mostUsedHero = Object.entries(heroCounts)
     .sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
-  // Calculate KDA (kills + assists) / deaths, with deaths = 1 if 0
-  const kda = totalDeaths === 0 
-    ? totalKills + totalAssists 
-    : (totalKills + totalAssists) / totalDeaths;
+  // Calculate smoothed, weighted KDA:
+  // Use assist weight, death-floor per-game, and small Bayesian prior to reduce volatility for few games.
+  const ASSIST_WEIGHT = 0.5;
+  const PRIOR_NUM = 2; // small prior added to numerator
+  const PRIOR_DEN = 1; // small prior added to denominator
+
+  // Use death-floor per game for denominator accumulation
+  const totalDeathsAdjusted = performances.reduce((sum, p) => sum + Math.max(1, p.deaths), 0);
+  const numerator = totalKills + totalAssists * ASSIST_WEIGHT + PRIOR_NUM;
+  const denominator = totalDeathsAdjusted + PRIOR_DEN;
+  const kda = numerator / denominator;
   
   // Calculate win rate as decimal (0-1) for UI compatibility
   const winRate = totalGames > 0 ? wins / totalGames : 0;
@@ -163,9 +211,8 @@ async function updatePlayerStats(playerId: string, seasonId?: string | null) {
       const seasonMostUsedHero = Object.entries(seasonHeroCounts)
         .sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
-      const seasonKda = seasonDeaths === 0
-        ? seasonKills + seasonAssists
-        : (seasonKills + seasonAssists) / seasonDeaths;
+      const seasonDeathsAdjusted = seasonPerformances.reduce((s, p) => s + Math.max(1, p.deaths), 0);
+      const seasonKda = (seasonKills + seasonAssists * ASSIST_WEIGHT + PRIOR_NUM) / (seasonDeathsAdjusted + PRIOR_DEN);
       const seasonWinRate = seasonGames > 0 ? seasonWins / seasonGames : 0;
 
       // Upsert PlayerMvpRanking

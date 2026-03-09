@@ -1,47 +1,13 @@
 [build]
   command = "npx prisma generate && npm run build"
-  publish = ".next"
+  # Do NOT set publish - the @netlify/plugin-nextjs handles this automatically
 
 # Next.js on Netlify requires the Next.js runtime
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# Ensure correct MIME types for static assets - use ** for recursive matching
-[[headers]]
-  for = "/*.js"
-  [headers.values]
-    Content-Type = "application/javascript; charset=utf-8"
-
-[[headers]]
-  for = "/*.css"
-  [headers.values]
-    Content-Type = "text/css; charset=utf-8"
-
+# Cache static assets
 [[headers]]
   for = "/_next/static/**"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
-
-[[headers]]
-  for = "/_next/static/**/*.js"
-  [headers.values]
-    Content-Type = "application/javascript; charset=utf-8"
-    Cache-Control = "public, max-age=31536000, immutable"
-
-[[headers]]
-  for = "/_next/static/**/*.css"
-  [headers.values]
-    Content-Type = "text/css; charset=utf-8"
-    Cache-Control = "public, max-age=31536000, immutable"
-
-# Handle all JS files in _next directory
-[[headers]]
-  for = "/_next/**/*.js"
-  [headers.values]
-    Content-Type = "application/javascript; charset=utf-8"
-
-# Handle all CSS files in _next directory  
-[[headers]]
-  for = "/_next/**/*.css"
-  [headers.values]
-    Content-Type = "text/css; charset=utf-8"

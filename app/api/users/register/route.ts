@@ -76,8 +76,8 @@ export async function POST(request: NextRequest) {
         where: { teamId: teamToJoin.id, deletedAt: null },
       });
 
-      if (activePlayerCount >= 7) {
-        return apiError("This team is already full");
+      if (activePlayerCount >= 9) {
+        return apiError("This team is already full (maximum 9 players)");
       }
     }
 

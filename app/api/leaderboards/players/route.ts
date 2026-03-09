@@ -29,16 +29,19 @@ export async function GET(request: NextRequest) {
       targetSeasonId = activeSeason.id;
     }
 
-    const [rankings, total] = await Promise.all([
+    // Fetch rankings ordered by computed metrics (mvp, kda, winRate) instead of relying solely on stored rank.
+    // This avoids showing rank=0 (uninitialized) entries at the top.
+    const [rows, total] = await Promise.all([
       prisma.playerMvpRanking.findMany({
         where: { seasonId: targetSeasonId },
         select: {
           id: true,
+          // keep stored rank for reference but compute display rank below
           rank: true,
           mvpCount: true,
           kda: true,
           winRate: true,
-          hero: true,  // Most used hero for this season
+          hero: true,
           player: {
             select: {
               id: true,
@@ -70,17 +73,22 @@ export async function GET(request: NextRequest) {
           },
         },
         orderBy: [
-          { rank: "asc" },
           { mvpCount: "desc" },
+          { kda: "desc" },
+          { winRate: "desc" },
         ],
-        take: limit,
-        skip,
       }),
       prisma.playerMvpRanking.count({ where: { seasonId: targetSeasonId } }),
     ]);
 
+    // Apply pagination in-memory (safer when sorting by computed fields)
+    const paged = rows.slice(skip, skip + limit).map((r, idx) => ({
+      ...r,
+      rank: skip + idx + 1, // compute display rank based on ordering
+    }));
+
     return apiSuccess({
-      rankings,
+      rankings: paged,
       pagination: {
         total,
         limit,

@@ -311,6 +311,57 @@ export default function MatchDetailPage({
     await loadMatch();
   };
 
+  const clearGamePerformance = (gameNum: number) => {
+    // Remove server-saved performances for this game (if any) then reset the performance inputs to fresh starters-only defaults
+    (async () => {
+      try {
+        // attempt server deletion; ignore errors (may not be permitted for non-referees)
+        await dashboardFetch(`/api/matches/${matchId}/performance`, {
+          method: 'DELETE',
+          body: JSON.stringify({ gameNumber: gameNum }),
+        });
+      } catch (e) {
+        // ignore
+      }
+    })();
+
+    // Reset the performance inputs for a game to fresh starters-only defaults
+    const perfs: PerformanceInput[] = [];
+    for (const p of teamAPlayers.filter((x) => !x.isSubstitute).slice(0, 5)) {
+      perfs.push({
+        playerId: p.id,
+        playerName: p.ign,
+        teamId: match?.teamA?.id || "",
+        hero: "",
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        isMvp: false,
+      });
+    }
+    for (const p of teamBPlayers.filter((x) => !x.isSubstitute).slice(0, 5)) {
+      perfs.push({
+        playerId: p.id,
+        playerName: p.ign,
+        teamId: match?.teamB?.id || "",
+        hero: "",
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        isMvp: false,
+      });
+    }
+
+    setGamePerformances((prev) => ({ ...prev, [gameNum]: perfs }));
+    setGameWinner((prev) => {
+      const copy = { ...prev } as Record<number, string>;
+      delete copy[gameNum];
+      return copy;
+    });
+    setError(null);
+    setSuccess(null);
+  };
+
   const finalizeMatch = async () => {
     if (!match) return;
     
@@ -336,6 +387,7 @@ export default function MatchDetailPage({
 
   const totalGames = match?.bestOf || 3;
   const isCompleted = match?.status === "COMPLETED" || match?.status === "FORFEITED";
+  const selectedGameWinnerId = gameWinner[selectedGame] || null;
 
   if (loading) {
     return (
@@ -414,6 +466,11 @@ export default function MatchDetailPage({
                   <Crown size={12} className="text-white" />
                 </div>
               )}
+              {selectedGameWinnerId === match.teamA?.id && (
+                <div className="absolute top-0 right-0 translate-x-1 -translate-y-1 w-6 h-6 bg-[#4a90d9] rounded-full flex items-center justify-center text-[10px] font-bold text-white">
+                  G{selectedGame}
+                </div>
+              )}
             </div>
             <div>
               <p className={`font-bold text-xl ${match.winner?.id === match.teamA?.id ? "text-emerald-400" : "text-white"}`}>
@@ -462,6 +519,11 @@ export default function MatchDetailPage({
                   <Crown size={12} className="text-white" />
                 </div>
               )}
+              {selectedGameWinnerId === match.teamB?.id && (
+                <div className="absolute top-0 left-0 -translate-x-1 -translate-y-1 w-6 h-6 bg-[#4a90d9] rounded-full flex items-center justify-center text-[10px] font-bold text-white">
+                  G{selectedGame}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -471,6 +533,7 @@ export default function MatchDetailPage({
       <div className="flex gap-2">
         {Array.from({ length: totalGames }, (_, i) => i + 1).map((gameNum) => {
           const hasPerf = gamePerformances[gameNum]?.some((p) => p.hero);
+          const gw = gameWinner[gameNum];
           return (
             <button
               key={gameNum}
@@ -488,6 +551,7 @@ export default function MatchDetailPage({
             >
               Game {gameNum}
               {hasPerf && <CheckCircle size={12} className="inline ml-1" />}
+              {gw && <span className="inline-block ml-2 w-3 h-3 bg-emerald-400 rounded-full" />}
             </button>
           );
         })}
@@ -505,7 +569,19 @@ export default function MatchDetailPage({
             </label>
             <select
               value={gameWinner[selectedGame] || ""}
-              onChange={(e) => setGameWinner((prev) => ({ ...prev, [selectedGame]: e.target.value }))}
+              onChange={async (e) => {
+                const winnerId = e.target.value;
+                setGameWinner((prev) => ({ ...prev, [selectedGame]: winnerId }));
+                try {
+                  const { error: err } = await dashboardFetch(`/api/matches/${matchId}/game-winner`, {
+                    method: 'POST',
+                    body: JSON.stringify({ gameNumber: selectedGame, winnerId }),
+                  });
+                  if (err) setError(err);
+                } catch (err) {
+                  console.error('Failed to persist game winner', err);
+                }
+              }}
               className="bg-[#0d0d14] border border-white/10 text-white px-3 py-1.5 text-sm outline-none focus:border-[#e8a000]/50"
             >
               <option value="">Select Winner</option>
@@ -593,6 +669,14 @@ export default function MatchDetailPage({
             {submittingPerf ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
             Save Game {selectedGame}
           </button>
+          <button
+            type="button"
+            onClick={() => clearGamePerformance(selectedGame)}
+            disabled={submittingPerf}
+            className="flex items-center gap-2 px-3 py-2 border border-white/10 text-white text-xs font-black uppercase tracking-wider hover:border-[#e8a000]/40 disabled:opacity-50"
+          >
+            Clear
+          </button>
         </div>
       </div>
 
@@ -656,7 +740,9 @@ export default function MatchDetailPage({
               </thead>
               <tbody>
                 {match.performances.map((p) => {
-                  const kda = p.deaths === 0 ? (p.kills + p.assists) : ((p.kills + p.assists) / p.deaths).toFixed(2);
+                  const ASSIST_WEIGHT_UI = 0.5;
+                  const kdaVal = (p.kills + ASSIST_WEIGHT_UI * p.assists) / Math.max(1, p.deaths);
+                  const kda = kdaVal.toFixed(2);
                   return (
                     <tr key={p.id} className="border-b border-white/5 hover:bg-white/2">
                       <td className="py-2 text-white/60 text-sm">G{p.gameNumber}</td>
@@ -877,35 +963,108 @@ function PerformanceRow({
 
       {/* KDA Inputs */}
       <div className="flex items-center gap-2">
-        <div className="flex flex-col items-center">
-          <label className="text-[8px] font-bold text-emerald-400 mb-0.5">K</label>
-          <input
-            type="number"
-            min={0}
-            value={perf.kills}
-            onChange={(e) => onUpdate("kills", parseInt(e.target.value) || 0)}
-            className="w-12 bg-[#0a0a0f] border border-emerald-500/30 text-emerald-400 px-2 py-1 text-sm text-center outline-none focus:border-emerald-500"
-          />
-        </div>
-        <div className="flex flex-col items-center">
-          <label className="text-[8px] font-bold text-red-400 mb-0.5">D</label>
-          <input
-            type="number"
-            min={0}
-            value={perf.deaths}
-            onChange={(e) => onUpdate("deaths", parseInt(e.target.value) || 0)}
-            className="w-12 bg-[#0a0a0f] border border-red-500/30 text-red-400 px-2 py-1 text-sm text-center outline-none focus:border-red-500"
-          />
-        </div>
-        <div className="flex flex-col items-center">
-          <label className="text-[8px] font-bold text-[#e8a000] mb-0.5">A</label>
-          <input
-            type="number"
-            min={0}
-            value={perf.assists}
-            onChange={(e) => onUpdate("assists", parseInt(e.target.value) || 0)}
-            className="w-12 bg-[#0a0a0f] border border-[#e8a000]/30 text-[#e8a000] px-2 py-1 text-sm text-center outline-none focus:border-[#e8a000]"
-          />
+        <div className="flex items-center gap-2">
+          {/** Kills */}
+          <div className="flex flex-col items-center">
+            <label className="text-[8px] font-bold text-emerald-400 mb-0.5">K</label>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onUpdate("kills", Math.max(0, perf.kills - 1))}
+                className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
+                title="Decrement kills"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={0}
+                value={perf.kills}
+                onChange={(e) => onUpdate("kills", parseInt(e.target.value) || 0)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp") onUpdate("kills", perf.kills + 1);
+                  if (e.key === "ArrowDown") onUpdate("kills", Math.max(0, perf.kills - 1));
+                }}
+                className="w-12 bg-[#0a0a0f] border border-emerald-500/30 text-emerald-400 px-2 py-1 text-sm text-center outline-none focus:border-emerald-500"
+              />
+              <button
+                type="button"
+                onClick={() => onUpdate("kills", perf.kills + 1)}
+                className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
+                title="Increment kills"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/** Deaths */}
+          <div className="flex flex-col items-center">
+            <label className="text-[8px] font-bold text-red-400 mb-0.5">D</label>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onUpdate("deaths", Math.max(0, perf.deaths - 1))}
+                className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
+                title="Decrement deaths"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={0}
+                value={perf.deaths}
+                onChange={(e) => onUpdate("deaths", parseInt(e.target.value) || 0)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp") onUpdate("deaths", perf.deaths + 1);
+                  if (e.key === "ArrowDown") onUpdate("deaths", Math.max(0, perf.deaths - 1));
+                }}
+                className="w-12 bg-[#0a0a0f] border border-red-500/30 text-red-400 px-2 py-1 text-sm text-center outline-none focus:border-red-500"
+              />
+              <button
+                type="button"
+                onClick={() => onUpdate("deaths", perf.deaths + 1)}
+                className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
+                title="Increment deaths"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/** Assists */}
+          <div className="flex flex-col items-center">
+            <label className="text-[8px] font-bold text-[#e8a000] mb-0.5">A</label>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onUpdate("assists", Math.max(0, perf.assists - 1))}
+                className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
+                title="Decrement assists"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={0}
+                value={perf.assists}
+                onChange={(e) => onUpdate("assists", parseInt(e.target.value) || 0)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp") onUpdate("assists", perf.assists + 1);
+                  if (e.key === "ArrowDown") onUpdate("assists", Math.max(0, perf.assists - 1));
+                }}
+                className="w-12 bg-[#0a0a0f] border border-[#e8a000]/30 text-[#e8a000] px-2 py-1 text-sm text-center outline-none focus:border-[#e8a000]"
+              />
+              <button
+                type="button"
+                onClick={() => onUpdate("assists", perf.assists + 1)}
+                className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
+                title="Increment assists"
+              >
+                +
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

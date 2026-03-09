@@ -92,9 +92,9 @@ export async function POST(
       return apiError("Only team captain can send invites", 403);
     }
 
-    // Check team size
-    if (team.players.length >= 7) {
-      return apiError("Team is full");
+    // Check team size (max 9 players — 5 starters + up to 4 substitutes)
+    if (team.players.length >= 9) {
+      return apiError("Team is full (maximum 9 players)");
     }
 
     // Find target user by IGN

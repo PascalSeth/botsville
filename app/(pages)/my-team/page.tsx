@@ -170,6 +170,11 @@ export default function MyTeamPage() {
   // ── Roster management state ───────────────────────────────
   const [togglingSubPlayerId, setTogglingSubPlayerId] = useState<string | null>(null);
   const [transferringCaptain, setTransferringCaptain] = useState(false);
+  const [transferPlayerId, setTransferPlayerId] = useState<string | null>(null);
+  const [transferTargetTeamId, setTransferTargetTeamId] = useState<string | null>(null);
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
   const [manageError, setManageError] = useState<string | null>(null);
   const [manageSuccess, setManageSuccess] = useState<string | null>(null);
 
@@ -420,6 +425,47 @@ export default function MyTeamPage() {
     }
   };
 
+  const openTransferModal = (playerId: string) => {
+    setTransferPlayerId(playerId);
+    setTransferError(null);
+    setTransferSuccess(null);
+    if (teamOptions.length > 0) setTransferTargetTeamId(teamOptions[0].id);
+  };
+
+  const closeTransferModal = () => {
+    setTransferPlayerId(null);
+    setTransferError(null);
+    setTransferSuccess(null);
+  };
+
+  const confirmTransfer = async () => {
+    if (!team || !transferPlayerId || !transferTargetTeamId) return;
+    if (!confirm('Are you sure you want to transfer this player to the selected team?')) return;
+    setTransferLoading(true);
+    setTransferError(null);
+    setTransferSuccess(null);
+    try {
+      const res = await fetch(`/api/teams/${team.id}/players/${transferPlayerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transferToTeamId: transferTargetTeamId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTransferError(data?.error ?? 'Failed to transfer player');
+        return;
+      }
+      setTransferSuccess('Player transferred successfully');
+      fetchMyTeam();
+    } catch (err) {
+      console.error('Transfer error:', err);
+      setTransferError('Failed to transfer player');
+    } finally {
+      setTransferLoading(false);
+      setTimeout(() => closeTransferModal(), 1200);
+    }
+  };
+
   const handleEditPhotoChange = async (file: File) => {
     setEditPhotoUploading(true);
     try {
@@ -602,6 +648,9 @@ export default function MyTeamPage() {
       setTeamOptions(items);
       if (!challengeTeamId && items.length > 0) {
         setChallengeTeamId(items[0].id);
+      }
+      if (!transferTargetTeamId && items.length > 0) {
+        setTransferTargetTeamId(items[0].id);
       }
     } catch (err) {
       console.error('Error fetching team options:', err);
@@ -833,6 +882,61 @@ export default function MyTeamPage() {
                 </button>
               )}
             </div>
+
+            {/* Transfer Player Modal */}
+            <AnimatePresence>
+              {transferPlayerId && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                  onClick={() => closeTransferModal()}
+                >
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.95, opacity: 0 }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-[#0c0c12] border border-white/10 p-6 max-w-sm w-full"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-black tracking-wider uppercase">Transfer Player</h3>
+                      <button onClick={() => closeTransferModal()} className="text-[#666] hover:text-white">
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    {transferError && <div className="mb-3 p-2 bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{transferError}</div>}
+                    {transferSuccess && <div className="mb-3 p-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">{transferSuccess}</div>}
+
+                    <div className="mb-3">
+                      <label className="text-xs text-[#888] uppercase tracking-wider">Select target team</label>
+                      <select
+                        value={transferTargetTeamId ?? ''}
+                        onChange={(e) => setTransferTargetTeamId(e.target.value)}
+                        className="w-full mt-2 bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none"
+                      >
+                        {teamOptions.map((opt) => (
+                          <option key={opt.id} value={opt.id}>{opt.name} [{opt.tag}]</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => confirmTransfer()}
+                        disabled={transferLoading}
+                        className="flex-1 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-xs font-black tracking-widest uppercase hover:bg-[#e8a000]/20 disabled:opacity-50"
+                      >
+                        {transferLoading ? 'Transferring...' : 'Confirm Transfer'}
+                      </button>
+                      <button onClick={() => closeTransferModal()} className="px-4 py-2 border border-white/10 text-[#666] text-xs font-black tracking-widest uppercase hover:text-white">Cancel</button>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div className="flex items-center gap-3 mt-1">
               <span className="text-[#e8a000]/70 text-sm tracking-widest">[{team.tag}]</span>
               {team.teamCode && (
@@ -1500,6 +1604,16 @@ export default function MyTeamPage() {
                                 title="Make captain"
                               >
                                 {transferringCaptain ? <Loader2 size={14} className="animate-spin" /> : <Crown size={14} />}
+                              </button>
+                            )}
+                            {/* Transfer player to another team */}
+                            {team.isCaptain && (
+                              <button
+                                onClick={() => openTransferModal(player.id)}
+                                className="text-[#555] hover:text-[#4a90d9] transition-colors p-1"
+                                title="Transfer player"
+                              >
+                                <ArrowUpDown size={14} />
                               </button>
                             )}
                             {/* Edit player */}

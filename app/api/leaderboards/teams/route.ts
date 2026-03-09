@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
 
     const paginated = dedupedMerged.slice(skip, skip + limit);
 
-    return apiSuccess({
+    const response = {
       standings: paginated,
       season,
       pagination: {
@@ -116,7 +116,9 @@ export async function GET(request: NextRequest) {
         limit,
         skip,
       },
-    });
+    };
+    console.log("[LEADERBOARD API RESPONSE]", JSON.stringify(response, null, 2));
+    return apiSuccess(response);
   } catch (error: unknown) {
     console.error("Get team leaderboard error:", error);
     return apiError(error instanceof Error ? error.message : "Failed to fetch leaderboard", 500);
