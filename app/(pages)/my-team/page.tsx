@@ -75,6 +75,21 @@ interface TeamOption {
   tag: string;
 }
 
+interface TeamInvite {
+  id: string;
+  createdAt?: string | null;
+  fromUser?: {
+    id: string;
+    ign: string;
+    photo?: string | null;
+    player?: { role?: string } | null;
+    mainRole?: string | null;
+  } | null;
+  toIGN?: string | null;
+  role?: string | null;
+  team?: { id?: string; name?: string } | null;
+}
+
 interface WeeklyScrimPing {
   weekStart: string;
   scrimDate: string;
@@ -139,6 +154,9 @@ export default function MyTeamPage() {
   const [challengeTeamId, setChallengeTeamId] = useState('');
   const [challengeWeekStart, setChallengeWeekStart] = useState('');
   const [teamOptions, setTeamOptions] = useState<TeamOption[]>([]);
+  const [invites, setInvites] = useState<TeamInvite[]>([]);
+  const [loadingInvites, setLoadingInvites] = useState(false);
+  const [inviteActionError, setInviteActionError] = useState<string | null>(null);
   const [challengeError, setChallengeError] = useState<string | null>(null);
   const [challengeSuccess, setChallengeSuccess] = useState<string | null>(null);
   const [weeklyPing, setWeeklyPing] = useState<WeeklyScrimPing | null>(null);
@@ -185,6 +203,8 @@ export default function MyTeamPage() {
       fetchHeroCatalog();
     }
   }, [status]);
+
+  
 
   useEffect(() => {
     setProfileForm((prev) => {
@@ -247,6 +267,47 @@ export default function MyTeamPage() {
       setHeroOptions(Array.isArray(data?.heroes) ? data.heroes : []);
     } catch (err) {
       console.error('Error fetching heroes catalog:', err);
+    }
+  };
+
+  const fetchInvites = useCallback(async () => {
+    if (!team) return;
+    try {
+      setLoadingInvites(true);
+      const res = await fetch(`/api/teams/${team.id}/invites?status=PENDING`);
+      const data = await res.json();
+      if (!res.ok) return;
+      setInvites(Array.isArray(data?.data) ? data.data : data);
+    } catch (err) {
+      console.error('Error fetching invites:', err);
+    } finally {
+      setLoadingInvites(false);
+    }
+  }, [team]);
+
+  useEffect(() => {
+    if (team?.isCaptain) fetchInvites();
+  }, [team?.isCaptain, fetchInvites]);
+
+  const respondToInvite = async (inviteId: string, action: 'accept' | 'decline', role?: string) => {
+    try {
+      const body: { action: 'accept' | 'decline'; role?: string } = { action };
+      if (role) body.role = role;
+      const res = await fetch(`/api/invites/${inviteId}/respond`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) {
+        const errMsg = data?.error || 'Failed to respond to invite';
+        console.error('Invite respond error:', errMsg);
+        setInviteActionError(errMsg);
+        return;
+      }
+      // Clear any previous error and refresh team and invites
+      setInviteActionError(null);
+      fetchMyTeam();
+      fetchInvites();
+    } catch (err) {
+      console.error('Error responding to invite:', err);
+      setInviteActionError('Failed to respond to invite');
     }
   };
 
@@ -655,7 +716,7 @@ export default function MyTeamPage() {
     } catch (err) {
       console.error('Error fetching team options:', err);
     }
-  }, [team, challengeTeamId]);
+  }, [team, challengeTeamId, transferTargetTeamId]);
 
   const submitChallenge = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -966,6 +1027,63 @@ export default function MyTeamPage() {
 
       {team.isCaptain && (
         <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-6 space-y-4">
+          {/* Applications / Incoming requests (minimal) */}
+          <div className="bg-[#0c0c12] border border-white/[0.07] p-4 sm:p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">Applications</h3>
+              <span className="text-xs text-[#666]">{loadingInvites ? 'Loading…' : `${invites.length} pending`}</span>
+            </div>
+
+            {inviteActionError && (
+              <div className="mt-3 p-2 bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{inviteActionError}</div>
+            )}
+
+            {loadingInvites ? (
+              <p className="text-[#666] text-sm">Loading applications…</p>
+            ) : invites.length === 0 ? (
+              <p className="text-[#666] text-sm">No pending applications.</p>
+            ) : (
+              <div className="space-y-2">
+                {invites.map((inv) => {
+                  const applicantRole = inv.fromUser?.player?.role ?? inv.fromUser?.mainRole ?? inv.role ?? 'EXP';
+                  return (
+                    <div key={inv.id} className="border border-white/10 bg-[#0d0d14] p-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={inv.fromUser?.photo || '/favicon.ico'}
+                          alt={inv.fromUser?.ign ?? 'Applicant'}
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/favicon.ico'; }}
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                        <div>
+                          <div className="text-sm font-semibold">{inv.fromUser?.ign ?? inv.toIGN ?? 'Unknown'}</div>
+                          <div className="text-xs text-[#777]">Applied: {inv.createdAt ? new Date(inv.createdAt).toLocaleString() : '—'}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm text-[#ccc] px-2 py-1 bg-[#0b0b10] border border-white/5">{applicantRole}</div>
+
+                        <button
+                          onClick={() => respondToInvite(inv.id, 'accept', applicantRole)}
+                          className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
+                        >
+                          Accept
+                        </button>
+
+                        <button
+                          onClick={() => respondToInvite(inv.id, 'decline')}
+                          className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-red-500/10 border border-red-500/30 text-red-400"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-[#0c0c12] border border-white/[0.07] p-4 sm:p-5 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

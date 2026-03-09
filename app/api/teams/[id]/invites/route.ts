@@ -40,12 +40,12 @@ export async function GET(
       where,
       include: {
         toUser: {
-          select: {
-            id: true,
-            ign: true,
-            photo: true,
-          },
+          select: { id: true, ign: true, photo: true },
         },
+        fromUser: {
+          select: { id: true, ign: true, photo: true },
+        },
+        team: { select: { id: true, name: true, tag: true } },
       },
       orderBy: { sentAt: "desc" },
     });
