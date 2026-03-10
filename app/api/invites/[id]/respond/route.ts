@@ -124,6 +124,36 @@ export async function POST(
       const roleTaken = invite.team.players.find((p) => p.role === acceptRole && !p.isSubstitute);
       const isSubstitute = Boolean(roleTaken);
 
+      // If a placeholder player with same IGN already exists on the team (created by captain),
+      // attach the user to that player instead of creating a new row (avoids unique ign error).
+      const placeholder = await prisma.player.findFirst({
+        where: {
+          teamId: invite.teamId,
+          ign: targetIgn,
+          deletedAt: null,
+        },
+      });
+
+      if (placeholder) {
+        if (placeholder.userId) {
+          // Shouldn't normally happen, but guard against it
+          throw new Error('IGN already associated with a user on this team');
+        }
+
+        const player = await prisma.player.update({
+          where: { id: placeholder.id },
+          data: {
+            userId: targetUserId,
+            role: acceptRole,
+            secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
+            isSubstitute,
+            updatedAt: new Date(),
+          },
+        });
+
+        return { player, isSubstitute };
+      }
+
       const player = await prisma.player.create({
         data: {
           teamId: invite.teamId,
@@ -134,6 +164,7 @@ export async function POST(
           isSubstitute,
         },
       });
+
       return { player, isSubstitute };
     };
 
@@ -204,6 +235,16 @@ export async function POST(
         const { player, isSubstitute } = await createPlayerForUser(applicantId!, applicantUser?.ign ?? invite.toIGN ?? '');
 
         await prisma.teamInvite.update({ where: { id }, data: { status: InviteStatus.ACCEPTED, respondedAt: new Date() } });
+
+        // Cancel other pending invites for this user (they've now joined a team)
+        await prisma.teamInvite.updateMany({
+          where: {
+            toUserId: applicantId,
+            status: InviteStatus.PENDING,
+            id: { not: id },
+          },
+          data: { status: InviteStatus.CANCELLED, respondedAt: new Date() },
+        });
 
         // Notify applicant (use existing notification type)
         await prisma.notification.create({
