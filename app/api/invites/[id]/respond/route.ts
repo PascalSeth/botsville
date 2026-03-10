@@ -125,7 +125,7 @@ export async function POST(
       const isSubstitute = Boolean(roleTaken);
 
       // If a placeholder player with same IGN already exists on the team (created by captain),
-      // attach the user to that player instead of creating a new row (avoids unique ign error).
+      // attach the user to that player instead of creating a new row (allows same IGN on different teams).
       const placeholder = await prisma.player.findFirst({
         where: {
           teamId: invite.teamId,
@@ -152,6 +152,35 @@ export async function POST(
         });
 
         return { player, isSubstitute };
+      }
+
+      // Check if IGN exists in the database
+      // If it's a placeholder (userId is null), delete it first to allow the new player
+      const existingIgn = await prisma.player.findUnique({
+        where: { ign: targetIgn },
+        include: { team: { select: { name: true } } }
+      });
+      if (existingIgn) {
+        if (existingIgn.userId !== null) {
+          // There's an active player with this IGN - block it
+          console.log('IGN already taken by active player:', { 
+            ign: targetIgn, 
+            existingPlayerId: existingIgn.id, 
+            existingUserId: existingIgn.userId, 
+            existingTeamId: existingIgn.teamId,
+            existingTeamName: existingIgn.team?.name
+          });
+          throw new Error('IGN is already taken by another player');
+        } else {
+          // It's just a placeholder - delete it and allow the new player
+          console.log('Deleting placeholder IGN on other team:', { 
+            ign: targetIgn, 
+            existingPlayerId: existingIgn.id, 
+            existingTeamId: existingIgn.teamId,
+            existingTeamName: existingIgn.team?.name
+          });
+          await prisma.player.delete({ where: { id: existingIgn.id } });
+        }
       }
 
       const player = await prisma.player.create({
