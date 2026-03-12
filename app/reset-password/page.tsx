@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -179,8 +179,8 @@ const SuccessMessage = ({ message }: { message: string }) => (
   </div>
 );
 
-// ── Main Component ──────────────────────────────────────────────────────
-export default function ResetPasswordPage() {
+// ── Main Component with useSearchParams ──────────────────────────────────────────
+const ResetPasswordForm = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
@@ -473,5 +473,14 @@ export default function ResetPasswordPage() {
         </div>
       </main>
     </>
+  );
+}
+
+// ── Main Page with Suspense Boundary ──────────────────────────────────────────
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center" style={{ background: '#07070d' }}><div className="w-8 h-8 border-2 border-[#e8a000] border-t-transparent rounded-full animate-spin" /></div>}>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }
