@@ -117,7 +117,6 @@ export async function GET(request: NextRequest) {
         skip,
       },
     };
-    console.log("[LEADERBOARD API RESPONSE]", JSON.stringify(response, null, 2));
     return apiSuccess(response);
   } catch (error: unknown) {
     console.error("Get team leaderboard error:", error);

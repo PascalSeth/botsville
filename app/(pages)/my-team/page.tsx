@@ -155,6 +155,7 @@ export default function MyTeamPage() {
   const [challengeWeekStart, setChallengeWeekStart] = useState('');
   const [teamOptions, setTeamOptions] = useState<TeamOption[]>([]);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
+  const [inviteStatuses, setInviteStatuses] = useState<Record<string, 'pending' | 'loading-accept' | 'loading-decline' | 'accepted' | 'declined'>>({});
   const [loadingInvites, setLoadingInvites] = useState(false);
   const [inviteActionError, setInviteActionError] = useState<string | null>(null);
   const [challengeError, setChallengeError] = useState<string | null>(null);
@@ -291,7 +292,12 @@ export default function MyTeamPage() {
       for (const inv of [...teamInvites, ...receivedInvites]) {
         if (inv && inv.id) map.set(inv.id, inv);
       }
-      setInvites(Array.from(map.values()));
+      const merged = Array.from(map.values());
+      setInvites(merged);
+      // initialize statuses for the current invites
+      const statuses: Record<string, 'pending' | 'loading-accept' | 'loading-decline' | 'accepted' | 'declined'> = {};
+      for (const inv of merged) statuses[inv.id] = 'pending';
+      setInviteStatuses(statuses as Record<string, 'pending' | 'loading-accept' | 'loading-decline' | 'accepted' | 'declined'>);
     } catch (err) {
       console.error('Error fetching invites:', err);
     } finally {
@@ -306,6 +312,9 @@ export default function MyTeamPage() {
 
   const respondToInvite = async (inviteId: string, action: 'accept' | 'decline', role?: string) => {
     try {
+      // set loading state per action
+      setInviteStatuses((prev) => ({ ...prev, [inviteId]: action === 'accept' ? 'loading-accept' : 'loading-decline' }));
+
       const body: { action: 'accept' | 'decline'; role?: string } = { action };
       if (role) body.role = role;
       const res = await fetch(`/api/invites/${inviteId}/respond`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -314,15 +323,31 @@ export default function MyTeamPage() {
         const errMsg = data?.error || 'Failed to respond to invite';
         console.error('Invite respond error:', errMsg);
         setInviteActionError(errMsg);
+        // revert status
+        setInviteStatuses((prev) => ({ ...prev, [inviteId]: 'pending' }));
         return;
       }
-      // Clear any previous error and refresh team and invites
+
+      // success: set final state and remove from list after a short delay
+      const finalState = action === 'accept' ? 'accepted' : 'declined';
+      setInviteStatuses((prev) => ({ ...prev, [inviteId]: finalState }));
       setInviteActionError(null);
       fetchMyTeam();
+      // remove invite from UI after a brief confirmation so user sees the state
+      setTimeout(() => {
+        setInvites((prev) => prev.filter((i) => i.id !== inviteId));
+        setInviteStatuses((prev) => {
+          const copy = { ...prev };
+          delete copy[inviteId];
+          return copy;
+        });
+      }, 900);
+      // refresh invites in background
       fetchInvites();
     } catch (err) {
       console.error('Error responding to invite:', err);
       setInviteActionError('Failed to respond to invite');
+      setInviteStatuses((prev) => ({ ...prev, [inviteId]: 'pending' }));
     }
   };
 
@@ -1061,6 +1086,12 @@ export default function MyTeamPage() {
               <div className="space-y-2">
                 {invites.map((inv) => {
                   const applicantRole = inv.fromUser?.player?.role ?? inv.fromUser?.mainRole ?? inv.role ?? 'EXP';
+                  const status = inviteStatuses[inv.id] ?? 'pending';
+                  const isLoadingAccept = status === 'loading-accept';
+                  const isLoadingDecline = status === 'loading-decline';
+                  const isAccepted = status === 'accepted';
+                  const isDeclined = status === 'declined';
+
                   return (
                     <div key={inv.id} className="border border-white/10 bg-[#0d0d14] p-3 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
@@ -1079,19 +1110,41 @@ export default function MyTeamPage() {
                       <div className="flex items-center gap-2">
                         <div className="text-sm text-[#ccc] px-2 py-1 bg-[#0b0b10] border border-white/5">{applicantRole}</div>
 
-                        <button
-                          onClick={() => respondToInvite(inv.id, 'accept', applicantRole)}
-                          className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
-                        >
-                          Accept
-                        </button>
+                        {isAccepted ? (
+                          <span className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center gap-2">
+                            <Check size={14} /> Accepted
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => respondToInvite(inv.id, 'accept', applicantRole)}
+                            disabled={isLoadingAccept || isLoadingDecline || isDeclined}
+                            className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 disabled:opacity-50"
+                          >
+                            {isLoadingAccept ? (
+                              <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Accepting...</span>
+                            ) : (
+                              'Accept'
+                            )}
+                          </button>
+                        )}
 
-                        <button
-                          onClick={() => respondToInvite(inv.id, 'decline')}
-                          className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-red-500/10 border border-red-500/30 text-red-400"
-                        >
-                          Decline
-                        </button>
+                        {isAccepted ? null : isDeclined ? (
+                          <span className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-red-500/10 border border-red-500/30 text-red-400 flex items-center gap-2">
+                            <X size={14} /> Rejected
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => respondToInvite(inv.id, 'decline')}
+                            disabled={isLoadingAccept || isLoadingDecline || isAccepted}
+                            className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-red-500/10 border border-red-500/30 text-red-400 disabled:opacity-50"
+                          >
+                            {isLoadingDecline ? (
+                              <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Rejecting...</span>
+                            ) : (
+                              'Decline'
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );

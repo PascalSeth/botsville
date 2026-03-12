@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { signIn, useSession } from 'next-auth/react';
+import { signIn, signOut, useSession } from 'next-auth/react';
 import { Eye, EyeOff, ChevronRight, AlertCircle } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────
@@ -369,6 +369,8 @@ const LoginForm = ({ setMode }: { setMode: (mode: Mode) => void }) => {
     setError(null);
     setLoading(true);
     try {
+      // Ensure any existing session/cookie is cleared before signing in
+      await signOut({ redirect: false });
       const result = await signIn('credentials', { emailOrIgn, password, redirect: false });
       if (result?.error) { setError(decodeAuthError(result.error)); setLoading(false); return; }
       if (result?.ok) { router.push('/'); router.refresh(); }
@@ -574,6 +576,8 @@ const RegisterForm = () => {
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Registration failed'); setLoading(false); return; }
       setSuccess('Account created! Logging you in...');
+      // Clear any previous session before logging in the new user
+      await signOut({ redirect: false });
       const login = await signIn('credentials', { emailOrIgn: email, password, redirect: false });
       if (login?.error) { setError('Account created but login failed. Please log in manually.'); setLoading(false); return; }
       if (login?.ok) { router.push('/'); router.refresh(); }

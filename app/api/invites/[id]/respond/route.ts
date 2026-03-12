@@ -172,13 +172,28 @@ export async function POST(
           });
           throw new Error('IGN is already taken by another player');
         } else {
-          // It's just a placeholder - delete it and allow the new player
+          // It's just a placeholder - need to delete it first due to unique constraint on IGN
+          // Since placeholder is on a different team, we delete its stats and then the player
           console.log('Deleting placeholder IGN on other team:', { 
             ign: targetIgn, 
             existingPlayerId: existingIgn.id, 
             existingTeamId: existingIgn.teamId,
             existingTeamName: existingIgn.team?.name
           });
+          
+          // Delete all related records first to avoid foreign key constraint violations
+          // (these are from a different team so we don't transfer them)
+          await prisma.playerMvpRanking.deleteMany({
+            where: { playerId: existingIgn.id }
+          });
+          await prisma.bestRoleAward.deleteMany({
+            where: { playerId: existingIgn.id }
+          });
+          await prisma.roleVote.deleteMany({
+            where: { playerId: existingIgn.id }
+          });
+          
+          // Delete the placeholder player
           await prisma.player.delete({ where: { id: existingIgn.id } });
         }
       }
