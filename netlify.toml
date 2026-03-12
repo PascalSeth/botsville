@@ -1,6 +1,12 @@
+# Prevent caching issues by disabling build cache for _next
+# This ensures fresh builds every time
 [build]
   command = "npx prisma generate && npm run build"
   # Do NOT set publish - the @netlify/plugin-nextjs handles this automatically
+
+# Disable build cache to prevent stale chunk issues
+[build.environment]
+  NEXT_TELEMETRY_DISABLED = "1"
 
 # Next.js on Netlify requires the Next.js runtime
 [[plugins]]
@@ -49,3 +55,11 @@
   for = "/*.svg"
   [headers.values]
     Content-Type = "image/svg+xml"
+
+# Disable HTML caching to prevent stale content
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
