@@ -8,7 +8,7 @@ import { signIn, useSession } from 'next-auth/react';
 import { Eye, EyeOff, ChevronRight, AlertCircle } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────
-type Mode = 'login' | 'register';
+type Mode = 'login' | 'register' | 'reset-request';
 
 // ── Roles ──────────────────────────────────────────────────
 const ROLES = ['EXP', 'ROAM', 'GOLD', 'JUNGLE', 'MID'] as const;
@@ -351,7 +351,7 @@ function decodeAuthError(code: string | null): string | null {
   return `Authentication error. Please try again.`;
 }
 
-const LoginForm = () => {
+const LoginForm = ({ setMode }: { setMode: (mode: Mode) => void }) => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [emailOrIgn, setEmailOrIgn] = useState('');
@@ -396,9 +396,88 @@ const LoginForm = () => {
           <input type="checkbox" className="accent-[#e8a000] w-3 h-3" />
           <span className="text-[10px] tracking-widest uppercase" style={{ color: 'rgba(255,255,255,0.75)' }}>Remember me</span>
         </label>
-        <a href="#" className="text-[10px] tracking-widest uppercase transition-colors hover:text-[#e8a000]" style={{ color: 'rgba(255,255,255,0.75)' }}>Forgot?</a>
+        <a 
+          href="#" 
+          onClick={(e) => { e.preventDefault(); setMode('reset-request'); }}
+          className="text-[10px] tracking-widest uppercase transition-colors hover:text-[#e8a000] cursor-pointer"
+          style={{ color: 'rgba(255,255,255,0.75)' }}
+        >Forgot?</a>
       </div>
       <SubmitBtn label="Enter the Arena" loading={loading} />
+    </form>
+  );
+};
+
+// ── Password Reset Request Form ─────────────────────────────────────────────
+const ResetRequestForm = ({ onBack }: { onBack: () => void }) => {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<boolean>(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!email) return setError('Email is required');
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/reset/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to process request');
+        setLoading(false);
+        return;
+      }
+      // Always show success to not reveal if email exists
+      setSuccess(true);
+      setLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to process request');
+      setLoading(false);
+    }
+  };
+
+  if (success) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SuccessMessage message="Check your email for the password reset link. The link will expire in 1 hour." />
+        <button
+          onClick={onBack}
+          className="text-[10px] tracking-widest uppercase transition-colors hover:text-[#e8a000] cursor-pointer"
+          style={{ color: 'rgba(255,255,255,0.75)' }}
+        >
+          ← Back to login
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      {error && <ErrorMessage message={error} />}
+      <Field 
+        label="Email" 
+        type="email" 
+        placeholder="your@email.com" 
+        value={email} 
+        onChange={setEmail} 
+      />
+      <p className="text-[10px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
+        Enter your email address and we will send you a link to reset your password.
+      </p>
+      <SubmitBtn label="Send Reset Link" loading={loading} />
+      <button
+        type="button"
+        onClick={onBack}
+        className="text-[10px] tracking-widest uppercase transition-colors hover:text-[#e8a000] cursor-pointer"
+        style={{ color: 'rgba(255,255,255,0.75)' }}
+      >
+        ← Back to login
+      </button>
     </form>
   );
 };
@@ -781,12 +860,14 @@ export default function AuthPage() {
                   className="text-white font-black text-3xl uppercase"
                   style={{ fontFamily: '"Orbitron", sans-serif', letterSpacing: '-0.01em' }}
                 >
-                  {mode === 'login' ? 'Sign In' : 'Create Account'}
+                  {mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Reset Password'}
                 </h1>
                 <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: '#3a3a4a' }}>
                   {mode === 'login'
                     ? 'Enter your credentials to access your dashboard.'
-                    : 'Fill in your details to join the Ghana MLBB community.'}
+                    : mode === 'register'
+                    ? 'Fill in your details to join the Ghana MLBB community.'
+                    : 'Enter your email to receive a password reset link.'}
                 </p>
               </div>
 
@@ -795,10 +876,12 @@ export default function AuthPage() {
                 {mode === 'login' ? (
                   <Suspense fallback={<div className="h-64 animate-pulse rounded" style={{ background: 'rgba(255,255,255,0.02)' }} />}>
                     <AuthRedirect />
-                    <LoginForm />
+                    <LoginForm setMode={setMode} />
                   </Suspense>
-                ) : (
+                ) : mode === 'register' ? (
                   <RegisterForm />
+                ) : (
+                  <ResetRequestForm onBack={() => setMode('login')} />
                 )}
               </div>
 
