@@ -90,14 +90,20 @@ const TeamSpotlight: React.FC<TeamSpotlightProps> = ({
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     if (autoPlay && starting.length > 1) {
-      timerRef.current = setInterval(next, 3500);
+      timerRef.current = setInterval(() => {
+        setDirection(1);
+        setActiveIdx(a => (a + 1) % starting.length);
+      }, 3500);
     }
   }, [autoPlay, starting.length, next]);
 
   useEffect(() => {
     if (!autoPlay || starting.length <= 1 || loading) return;
     const t = setTimeout(() => {
-      timerRef.current = setInterval(next, 3500);
+      timerRef.current = setInterval(() => {
+        setDirection(1);
+        setActiveIdx(a => (a + 1) % starting.length);
+      }, 3500);
     }, autoPlayDelay);
     return () => {
       clearTimeout(t);
@@ -640,7 +646,7 @@ export const StartingFiveModal: React.FC<{
               <span className="hidden sm:block text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.18)' }}>{match.time}</span>
               <button
                 onClick={onClose}
-                className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150"
+                className="hidden sm:inline-flex w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150"
                 style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
@@ -764,12 +770,20 @@ const MobileLayout: React.FC<{
   }, [activeIdx, allPlayers.length, go]);
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (allPlayers.length > 1) timerRef.current = setInterval(next, 3500);
+    if (allPlayers.length > 1) {
+      timerRef.current = setInterval(() => {
+        setDirection(1);
+        setActiveIdx(a => (a + 1) % allPlayers.length);
+      }, 3500);
+    }
   }, [allPlayers.length, next]);
 
   useEffect(() => {
     if (allPlayers.length <= 1 || loading) return;
-    timerRef.current = setInterval(next, 3500);
+    timerRef.current = setInterval(() => {
+      setDirection(1);
+      setActiveIdx(a => (a + 1) % allPlayers.length);
+    }, 3500);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, allPlayers.length]);
