@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
-import { Loader2, CheckCircle, RefreshCw, BarChart3 } from "lucide-react";
+import { Loader2, CheckCircle, RefreshCw, BarChart3, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 type Tournament = { id: string; name: string; status: string };
@@ -34,6 +34,7 @@ export default function DashboardMatchesPage() {
   const [resultForfeit, setResultForfeit] = useState(false);
   const [submittingResult, setSubmittingResult] = useState(false);
   const [resultSuccess, setResultSuccess] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -111,6 +112,17 @@ export default function DashboardMatchesPage() {
     if (err) { setError(err); return; }
     setResultSuccess(data?.message ?? "Result submitted");
     setResultMatchId(null);
+    await loadMatches();
+  };
+
+  const handleDeleteMatch = async (match: Match) => {
+    if (!confirm(`Delete match ${match.id}? This cannot be undone.`)) return;
+    setDeletingId(match.id);
+    setError(null);
+    const { error: err } = await dashboardFetch(`/api/matches/${match.id}`, { method: "DELETE" });
+    setDeletingId(null);
+    if (err) { setError(err); return; }
+    // refresh list
     await loadMatches();
   };
 
@@ -252,6 +264,15 @@ export default function DashboardMatchesPage() {
                             {resultMatchId === m.id ? "Cancel" : "Enter Result"}
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMatch(m)}
+                          disabled={deletingId === m.id}
+                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 border border-white/20 text-[#aaa] hover:border-red-400 hover:text-red-400 transition-colors flex items-center gap-1"
+                        >
+                          {deletingId === m.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={10} />}
+                          Delete
+                        </button>
                       </td>
                     </tr>
                     {resultMatchId === m.id && (
@@ -263,7 +284,7 @@ export default function DashboardMatchesPage() {
                             </p>
                             {m.challengeRequest?.id && (
                               <div className="rounded border border-yellow-600/20 bg-yellow-600/10 px-3 py-2 text-sm text-yellow-200">
-                                This match was scheduled from a challenge. It is treated as a friendly — points and standings will not be updated unless you check "Override points" below.
+                                This match was scheduled from a challenge. It is treated as a friendly — points and standings will not be updated unless you check &quot;Override points&quot; below.
                               </div>
                             )}
                             <div className="flex flex-wrap gap-4 items-end">

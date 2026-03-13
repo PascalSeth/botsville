@@ -207,4 +207,39 @@ export async function PUT(
 }
 
 
+// DELETE - remove a match and related artifacts (performances, screenshots, drafts, dispute)
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await requireActiveUser();
+    const { id } = await context.params;
+
+    const match = await prisma.match.findUnique({ where: { id } });
+    if (!match) return apiError("Match not found", 404);
+
+    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
+    if (!isReferee) return apiError('Only referees and admins can delete matches', 403);
+
+    // Remove related child records first, clear any scheduledMatchId on challenges, then delete the match
+    await prisma.$transaction([
+      prisma.matchDraft.deleteMany({ where: { matchId: id } }),
+      prisma.matchPerformance.deleteMany({ where: { matchId: id } }),
+      prisma.matchScreenshot.deleteMany({ where: { matchId: id } }),
+      prisma.matchDispute.deleteMany({ where: { matchId: id } }),
+      prisma.matchChallenge.updateMany({ where: { scheduledMatchId: id }, data: { scheduledMatchId: null, status: 'SCHEDULED' } }),
+      prisma.match.delete({ where: { id } }),
+    ]);
+
+    return apiSuccess({ message: 'Match deleted successfully' });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to delete match';
+    if (message === 'Unauthorized') return apiError('Unauthorized', 401);
+    console.error('Delete match error:', error);
+    return apiError(message, 500);
+  }
+}
+
+
 

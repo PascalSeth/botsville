@@ -163,6 +163,27 @@ export default function DashboardScrimsPage() {
   const [pairBo, setPairBo] = useState(3);
   const [pairing, setPairing] = useState(false);
 
+  // ── Auto-generator state
+  const [firstMatchDateTime, setFirstMatchDateTime] = useState(""); // datetime-local for first slot
+  const [matchesPerDay, setMatchesPerDay] = useState(2);
+  const [daysCount, setDaysCount] = useState(3);
+  const [spacingMinutes, setSpacingMinutes] = useState(60);
+  const [autoBestOf, setAutoBestOf] = useState(3);
+  const [autoDrafts, setAutoDrafts] = useState<
+    Array<{
+      id: string;
+      teamAId: string;
+      teamAName?: string;
+      teamBId: string;
+      teamBName?: string;
+      scheduledTime: string; // ISO
+      bestOf: number;
+    }>
+  >([]);
+  const [generating, setGenerating] = useState(false);
+  const [schedulingAuto, setSchedulingAuto] = useState(false);
+  const [avoidRematches, setAvoidRematches] = useState(true);
+
   // ── General
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -350,6 +371,197 @@ export default function DashboardScrimsPage() {
     setPairing(false);
     if (err) { setError(err); return; }
     setSuccess("Match scheduled directly between available teams.");
+    await Promise.all([loadChallenges(), loadAvailability(pingWeekStart || undefined)]);
+  };
+
+  // ── Auto-generator helpers
+  type LeaderboardRow = { team?: { id: string; name?: string }; rank?: number };
+  type TeamEntry = { id: string; name: string; rank: number };
+  const fetchStandings = async (): Promise<LeaderboardRow[]> => {
+    const res = await fetch(`/api/leaderboards/teams?limit=200`);
+    if (!res.ok) return [] as LeaderboardRow[];
+    const json = (await res.json()) as { standings?: LeaderboardRow[] } | LeaderboardRow[] | null;
+    if (!json) return [];
+    if (Array.isArray(json)) return json as LeaderboardRow[];
+    return json.standings ?? [];
+  };
+
+  const generateMatchups = async () => {
+    if (!firstMatchDateTime) { setError("Set first match date/time"); return; }
+    setGenerating(true);
+    setError(null);
+    try {
+      // use availableTeams from state; require at least 2
+      const pool = availableTeams.filter((t) => t.isAvailable && t.teamId);
+    if (pool.length < 2) { setError("Need at least 2 available teams to generate matches"); setGenerating(false); return; }
+
+    // fetch standings to derive buckets
+    const standings = await fetchStandings();
+    const standingByTeam = new Map<string, number>();
+    let maxRank = 0;
+    for (const s of standings) {
+      if (s.team?.id) {
+        standingByTeam.set(s.team.id, s.rank ?? 9999);
+        maxRank = Math.max(maxRank, s.rank ?? 0);
+      }
+    }
+
+    // Prepare team objects and shuffle so every team appears at most once
+    const teams = pool.map((p) => ({ id: p.teamId, name: p.team?.name ?? p.teamId, rank: standingByTeam.get(p.teamId) ?? (maxRank + 1) }));
+
+    // shuffle teams but keep some ordering by rank bias: sort by rank then do Fisher-Yates within small windows
+    teams.sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999));
+    // simple shuffle to mix teams while preserving relative rank order roughly
+    for (let i = teams.length - 1; i > 0; i--) {
+      const j = Math.max(0, i - Math.floor(Math.random() * Math.min(3, teams.length)));
+      const tmp = teams[i];
+      teams[i] = teams[j];
+      teams[j] = tmp;
+    }
+
+    // Pair sequentially so each team appears only once
+    const pairCount = Math.floor(teams.length / 2);
+    const drafts: typeof autoDrafts = [];
+    const firstDate = new Date(firstMatchDateTime);
+
+    // Build set of previous pairs from server endpoint (preferred) or fall back to in-memory challenges
+    const previousPairs = new Set<string>();
+    if (avoidRematches) {
+      try {
+        const since = pingWeekStart ? new Date(pingWeekStart).toISOString() : undefined;
+        const q = since ? `?since=${encodeURIComponent(since)}` : "";
+        const res = await fetch(`/api/matches/prior-opponents${q}`);
+        if (res.ok) {
+          const json = await res.json();
+          for (const p of json.pairs ?? []) {
+            const ida = p.teamAId;
+            const idb = p.teamBId;
+            if (!ida || !idb) continue;
+            const key = ida < idb ? `${ida}|${idb}` : `${idb}|${ida}`;
+            previousPairs.add(key);
+          }
+        } else {
+          // fallback to using loaded challenges
+          for (const c of challenges) {
+            const ida = c.challengerTeam?.id;
+            const idb = c.challengedTeam?.id;
+            if (ida && idb) {
+              const key = ida < idb ? `${ida}|${idb}` : `${idb}|${ida}`;
+              previousPairs.add(key);
+            }
+          }
+        }
+      } catch (e) {
+        for (const c of challenges) {
+          const ida = c.challengerTeam?.id;
+          const idb = c.challengedTeam?.id;
+          if (ida && idb) {
+            const key = ida < idb ? `${ida}|${idb}` : `${idb}|${ida}`;
+            previousPairs.add(key);
+          }
+        }
+      }
+    }
+
+    const makePairsFromOrder = (order: TeamEntry[]) => {
+      const res: { a: TeamEntry; b: TeamEntry }[] = [];
+      for (let i = 0; i < pairCount; i++) {
+        const a = order[i * 2];
+        const b = order[i * 2 + 1];
+        if (!a || !b) return null;
+        res.push({ a, b });
+      }
+      return res;
+    };
+
+    let finalPairs: { a: TeamEntry; b: TeamEntry }[] | null = null;
+
+    if (avoidRematches && previousPairs.size > 0) {
+      // Try several shuffles to find an order without previous pairs
+      const maxAttempts = 60;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        // shuffle teams array copy
+        const copy = teams.slice();
+        for (let i = copy.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const tmp = copy[i];
+          copy[i] = copy[j];
+          copy[j] = tmp;
+        }
+        const pairs = makePairsFromOrder(copy);
+        if (!pairs) continue;
+        let ok = true;
+        for (const p of pairs) {
+          const ida = p.a.id;
+          const idb = p.b.id;
+          const key = ida < idb ? `${ida}|${idb}` : `${idb}|${ida}`;
+          if (previousPairs.has(key)) { ok = false; break; }
+        }
+        if (ok) { finalPairs = pairs; break; }
+      }
+    }
+
+    // fallback: use current ordering or first possible pairing
+    if (!finalPairs) {
+      const defaultPairs = makePairsFromOrder(teams);
+      finalPairs = defaultPairs ?? [];
+    }
+
+    for (let i = 0; i < finalPairs.length; i++) {
+      const a = finalPairs[i].a;
+      const b = finalPairs[i].b;
+      const idx = i; // pair index
+      const dayIndex = Math.floor(idx / matchesPerDay);
+      const slotInDay = idx % matchesPerDay;
+      const scheduled = new Date(firstDate.getTime() + dayIndex * 24 * 60 * 60 * 1000 + slotInDay * spacingMinutes * 60000);
+
+      drafts.push({
+        id: `draft-${i}-${Date.now()}`,
+        teamAId: a.id,
+        teamAName: a.name,
+        teamBId: b.id,
+        teamBName: b.name,
+        scheduledTime: scheduled.toISOString(),
+        bestOf: autoBestOf,
+      });
+    }
+
+    setAutoDrafts(drafts);
+    setGenerating(false);
+    } catch (err) {
+      console.error('generateMatchups error', err);
+      setError(typeof err === 'string' ? err : (err as Error)?.message ?? 'Failed to generate matchups');
+      setGenerating(false);
+    }
+  };
+
+  const scheduleAutoMatches = async () => {
+    if (autoDrafts.length === 0) { setError("No generated matches to schedule"); return; }
+    setSchedulingAuto(true);
+    setError(null);
+
+    for (const d of autoDrafts) {
+      const body: Record<string, string | number> = {
+        teamAId: d.teamAId,
+        teamBId: d.teamBId,
+        scheduledTime: new Date(d.scheduledTime).toISOString(),
+        bestOf: d.bestOf,
+      };
+      if (pingWeekStart) body.weekStart = pingWeekStart;
+      const { error: err } = await dashboardFetch("/api/matches/challenges/admin-schedule", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (err) {
+        setError(err);
+        setSchedulingAuto(false);
+        return;
+      }
+    }
+
+    setSchedulingAuto(false);
+    setSuccess(`Scheduled ${autoDrafts.length} auto-generated matches.`);
+    setAutoDrafts([]);
     await Promise.all([loadChallenges(), loadAvailability(pingWeekStart || undefined)]);
   };
 
@@ -571,6 +783,134 @@ export default function DashboardScrimsPage() {
             <p className="text-[#555] text-[10px] pt-2">
               All scheduled scrims will be added as matches under this tournament for easier tracking and leaderboard integration.
             </p>
+          </div>
+        )}
+      </Section>
+
+      {/* ── Step 3c: Auto-generate matchups ── */}
+      <Section title="Step 3c — Auto-generate matchups" icon={<RefreshCw size={14} /> }>
+        <p className="text-[#666] text-xs mb-3">Generate a balanced set of matchups from available teams. Edit drafts before scheduling.</p>
+
+        <div className="grid sm:grid-cols-3 gap-2 items-end">
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">First match (date & time)</label>
+            <input
+              type="datetime-local"
+              value={firstMatchDateTime}
+              onChange={(e) => setFirstMatchDateTime(e.target.value)}
+              className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Matches / day</label>
+            <input
+              type="number"
+              min={1}
+              value={matchesPerDay}
+              onChange={(e) => setMatchesPerDay(Math.max(1, parseInt(e.target.value || '1', 10)))}
+              className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Days</label>
+            <input
+              type="number"
+              min={1}
+              value={daysCount}
+              onChange={(e) => setDaysCount(Math.max(1, parseInt(e.target.value || '1', 10)))}
+              className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Spacing (mins)</label>
+            <input
+              type="number"
+              min={5}
+              value={spacingMinutes}
+              onChange={(e) => setSpacingMinutes(Math.max(5, parseInt(e.target.value || '60', 10)))}
+              className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Format</label>
+            <select
+              value={autoBestOf}
+              onChange={(e) => setAutoBestOf(parseInt(e.target.value, 10))}
+              className="bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+            >
+              <option value={1}>BO1</option>
+              <option value={3}>BO3</option>
+              <option value={5}>BO5</option>
+            </select>
+          </div>
+          <div className="sm:col-span-3">
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-[#bbb]">
+                <input
+                  type="checkbox"
+                  checked={avoidRematches}
+                  onChange={(e) => setAvoidRematches(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span className="text-[10px] font-black uppercase tracking-[0.12em]">Avoid rematches</span>
+              </label>
+              <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={generating}
+                onClick={generateMatchups}
+                className="px-4 py-2 bg-[#e8a000] text-black text-[10px] font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50"
+              >
+                {generating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                Generate
+              </button>
+              <button
+                type="button"
+                disabled={schedulingAuto || autoDrafts.length === 0}
+                onClick={scheduleAutoMatches}
+                className="px-4 py-2 border border-white/10 text-white text-[10px] font-black uppercase tracking-wider hover:border-[#e8a000]/50 disabled:opacity-50"
+              >
+                {schedulingAuto ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                Schedule All
+              </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {autoDrafts.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {autoDrafts.map((d) => (
+              <div key={d.id} className="flex items-center gap-2 border border-white/5 bg-white/[0.02] rounded px-3 py-2">
+                <div className="flex-1">
+                  <p className="text-white font-semibold text-sm">{d.teamAName} vs {d.teamBName}</p>
+                  <div className="flex gap-2 items-center mt-1">
+                    <input
+                      type="datetime-local"
+                      value={new Date(d.scheduledTime).toISOString().slice(0,16)}
+                      onChange={(e) => setAutoDrafts((prev) => prev.map((p) => p.id === d.id ? { ...p, scheduledTime: new Date(e.target.value).toISOString() } : p))}
+                      className="bg-[#0d0d14] border border-white/10 text-white px-2 py-1 text-xs outline-none focus:border-[#e8a000]/50"
+                    />
+                    <select
+                      value={d.bestOf}
+                      onChange={(e) => setAutoDrafts((prev) => prev.map((p) => p.id === d.id ? { ...p, bestOf: parseInt(e.target.value, 10) } : p))}
+                      className="bg-[#0d0d14] border border-white/10 text-white px-2 py-1 text-xs outline-none focus:border-[#e8a000]/50"
+                    >
+                      <option value={1}>BO1</option>
+                      <option value={3}>BO3</option>
+                      <option value={5}>BO5</option>
+                    </select>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAutoDrafts((prev) => prev.filter((p) => p.id !== d.id))}
+                  className="text-red-400 text-[10px] font-black uppercase tracking-wider"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </Section>

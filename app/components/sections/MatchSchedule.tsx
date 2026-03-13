@@ -23,6 +23,7 @@ type PlayerData = {
 type ScheduleMatch = {
   id: string;
   time: string;
+  scheduledAt: string; // ISO datetime
   elapsed: string | null;
   teamA: MatchTeam;
   teamB: MatchTeam;
@@ -96,9 +97,23 @@ const useRealtimeMatches = () => {
         const mData: ApiMatch[] = await mRes.json();
         if (!mounted) return;
 
-        const mapped: ScheduleMatch[] = (Array.isArray(mData) ? mData : []).slice(0, 8).map((m) => ({
+        // Only include upcoming/live matches and recently completed matches (within last 3 days)
+        const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
+        const all = Array.isArray(mData) ? mData : [];
+        const filteredMatches = all.filter((m) => {
+          if (m.status === 'LIVE' || m.status === 'UPCOMING') return true;
+          if (m.status === 'COMPLETED') {
+            const t = new Date(m.scheduledTime).getTime();
+            if (Number.isNaN(t)) return false;
+            return t >= threeDaysAgo;
+          }
+          return false;
+        });
+
+        const mapped: ScheduleMatch[] = filteredMatches.slice(0, 8).map((m) => ({
           id: m.id,
           time: formatMatchTime(m.scheduledTime),
+          scheduledAt: m.scheduledTime,
           elapsed: m.elapsed,
           teamA: { id: m.teamA?.id, name: m.teamA?.name || 'Team A', tag: buildTeamTag(m.teamA?.name || 'Team A', m.teamA?.tag), logo: m.teamA?.logo || null },
           teamB: { id: m.teamB?.id, name: m.teamB?.name || 'Team B', tag: buildTeamTag(m.teamB?.name || 'Team B', m.teamB?.tag), logo: m.teamB?.logo || null },
@@ -255,6 +270,12 @@ const ScoreBlock = ({ match }: { match: ScheduleMatch }) => {
       <div className="flex flex-col items-center gap-0.5">
         <span className="text-white/20 text-[10px] font-bold tracking-widest uppercase">VS</span>
         <span className="text-white/30 text-[10px] font-mono">{match.time}</span>
+        {(() => {
+          const meta = getDayMeta(match.scheduledAt);
+          return meta.label ? (
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold mt-1 ${meta.cls}`}>{meta.label}</span>
+          ) : null;
+        })()}
       </div>
     );
   }
@@ -288,11 +309,33 @@ const ScoreBlock = ({ match }: { match: ScheduleMatch }) => {
       {match.status === 'LIVE' && match.elapsed && (
         <span className="text-red-400/80 text-[10px] font-mono">{match.elapsed}</span>
       )}
+      {(() => {
+        const meta = getDayMeta(match.scheduledAt);
+        return meta.label ? (
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold mt-1 ${meta.cls}`}>{meta.label}</span>
+        ) : null;
+      })()}
       {isCompleted && (teamAWon || teamBWon) && (
         <span className="text-emerald-400/60 text-[9px] font-bold tracking-wider uppercase mt-0.5">Final</span>
       )}
     </div>
   );
+};
+
+// Helper: returns label and CSS classes for relative day (used to draw attention)
+const getDayMeta = (iso?: string) => {
+  if (!iso) return { label: '', cls: '' };
+  const scheduled = new Date(iso);
+  if (Number.isNaN(scheduled.getTime())) return { label: '', cls: '' };
+  const now = new Date();
+  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOf(scheduled) - startOf(now)) / (24 * 60 * 60 * 1000));
+  if (diffDays === 0) return { label: 'Today', cls: 'bg-amber-500 text-black' };
+  if (diffDays === 1) return { label: 'Tomorrow', cls: 'bg-emerald-400 text-black' };
+  if (diffDays === -1) return { label: 'Yesterday', cls: 'bg-zinc-600 text-white' };
+  if (diffDays === 2) return { label: 'In 2 days', cls: 'bg-white/10 text-white' };
+  if (diffDays > 2) return { label: `In ${diffDays} days`, cls: 'bg-white/10 text-white' };
+  return { label: '', cls: '' };
 };
 
 /* ────────────────────────────────────────────────────────── */
