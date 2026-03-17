@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { dashboardFetch } from "../../lib/api";
-import { Loader2 } from "lucide-react";
+import { Loader2, X, Plus } from "lucide-react";
 
 type Tournament = {
   id: string;
@@ -52,6 +52,15 @@ export default function TournamentDetailPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [savingImage, setSavingImage] = useState(false);
   const [imageMessage, setImageMessage] = useState<string | null>(null);
+  const [showBulkRegisterModal, setShowBulkRegisterModal] = useState(false);
+  const [bulkTeamIds, setBulkTeamIds] = useState<string>("");
+  const [bulkAutoApprove, setBulkAutoApprove] = useState(true);
+  const [bulkSeed, setBulkSeed] = useState<string>("");
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  const [availableTeams, setAvailableTeams] = useState<any[]>([]);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
+  const [loadingAvailableTeams, setLoadingAvailableTeams] = useState(false);
 
   const fileToDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -103,6 +112,110 @@ export default function TournamentDetailPage() {
     if (!registrationsError && Array.isArray(registrationsData)) {
       setRegistrations(registrationsData);
     }
+  };
+
+  const fetchAvailableTeams = async () => {
+    setLoadingAvailableTeams(true);
+    setAvailableTeams([]);
+
+    try {
+      // First, refresh registrations to get the latest data
+      const { data: registrationsData, error: registrationsError } = await dashboardFetch<TournamentRegistration[]>(`/api/tournaments/${id}/registrations`);
+      
+      let currentRegistrations = registrations;
+      if (!registrationsError && Array.isArray(registrationsData)) {
+        currentRegistrations = registrationsData;
+        setRegistrations(registrationsData);
+      }
+
+      // Get registered team IDs (include PENDING and APPROVED, exclude REJECTED)
+      const registeredTeamIds = new Set(
+        currentRegistrations
+          .filter((r: any) => r.status !== "REJECTED")
+          .map((r) => r.team.id)
+      );
+      console.log("Registered teams:", registeredTeamIds);
+
+      const response = await fetch("/api/teams?limit=1000&status=ACTIVE");
+      const result = await response.json();
+
+      console.log("Teams response:", result);
+
+      if (Array.isArray(result.teams)) {
+        // Filter out already registered teams (including pending)
+        const unregisteredTeams = result.teams.filter((team: any) => !registeredTeamIds.has(team.id));
+        
+        console.log("Total ACTIVE teams:", result.teams.length);
+        console.log("Registered team count:", registeredTeamIds.size);
+        console.log("Unregistered teams:", unregisteredTeams.length);
+        console.log("Unregistered teams list:", unregisteredTeams.map((t: any) => ({ id: t.id, name: t.name })));
+
+        setAvailableTeams(unregisteredTeams);
+      } else {
+        console.error("Invalid teams response format:", result);
+      }
+    } catch (error) {
+      console.error("Failed to fetch teams:", error);
+      setAvailableTeams([]);
+    } finally {
+      setLoadingAvailableTeams(false);
+    }
+  };
+
+  const handleOpenBulkRegisterModal = async () => {
+    setShowBulkRegisterModal(true);
+    setSelectedTeamIds(new Set());
+    await fetchAvailableTeams();
+  };
+
+  const handleBulkRegisterTeams = async () => {
+    if (selectedTeamIds.size === 0) {
+      setBulkMessage("Please select at least one team");
+      return;
+    }
+
+    setBulkLoading(true);
+    setBulkMessage(null);
+
+    const teamIds = Array.from(selectedTeamIds);
+
+    const { data, error: bulkError } = await dashboardFetch<{ message?: string; results?: any[] }>(`/api/tournaments/${id}/registrations`, {
+      method: "POST",
+      body: JSON.stringify({
+        teamIds,
+        autoApprove: bulkAutoApprove,
+        seed: bulkSeed ? parseInt(bulkSeed) : undefined,
+      }),
+    });
+
+    setBulkLoading(false);
+
+    if (bulkError) {
+      setBulkMessage(`Error: ${bulkError}`);
+      return;
+    }
+
+    if (data?.results) {
+      const successful = data.results.filter((r: any) => r.success).length;
+      const failed = data.results.filter((r: any) => !r.success).length;
+      setBulkMessage(`✓ Complete: ${successful} registered successfully, ${failed} failed`);
+    } else {
+      setBulkMessage(data?.message || "Teams registered successfully!");
+    }
+
+    // Reset form
+    setBulkTeamIds("");
+    setBulkSeed("");
+    setSelectedTeamIds(new Set());
+
+    // Refresh registrations
+    await refreshRegistrations();
+
+    // Close modal after 2 seconds
+    setTimeout(() => {
+      setShowBulkRegisterModal(false);
+      setBulkMessage(null);
+    }, 2000);
   };
 
   const handleRegistrationAction = async (registrationId: string, action: "approve" | "reject") => {
@@ -308,10 +421,141 @@ export default function TournamentDetailPage() {
         )}
       </div>
 
+      {/* Bulk Register Modal */}
+      {showBulkRegisterModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-[#0a0a0f] border border-white/10 rounded-lg p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="text-white font-black text-lg uppercase tracking-wider">Register Teams</h2>
+              <button
+                onClick={() => {
+                  setShowBulkRegisterModal(false);
+                  setBulkMessage(null);
+                }}
+                className="text-[#999] hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-[#666] mb-2">
+                  Available Teams ({selectedTeamIds.size} selected)
+                </label>
+                
+                {loadingAvailableTeams ? (
+                  <div className="text-center py-4 text-[#888]">
+                    <Loader2 size={16} className="animate-spin inline-block" />
+                    <p className="text-xs mt-2">Loading teams...</p>
+                  </div>
+                ) : availableTeams.length === 0 ? (
+                  <div className="bg-[#0d0d14] border border-white/10 rounded px-3 py-4 text-center text-[#666] text-sm">
+                    No teams available to register
+                  </div>
+                ) : (
+                  <div className="bg-[#0d0d14] border border-white/10 rounded max-h-64 overflow-y-auto">
+                    {availableTeams.map((team) => (
+                      <div
+                        key={team.id}
+                        className="flex items-center gap-2 px-3 py-2 border-b border-white/5 hover:bg-white/5 cursor-pointer"
+                        onClick={() => {
+                          const newSelected = new Set(selectedTeamIds);
+                          if (newSelected.has(team.id)) {
+                            newSelected.delete(team.id);
+                          } else {
+                            newSelected.add(team.id);
+                          }
+                          setSelectedTeamIds(newSelected);
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTeamIds.has(team.id)}
+                          onChange={() => {}}
+                          className="w-4 h-4 accent-[#e8a000] cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-semibold text-sm truncate">{team.name}</p>
+                          <p className="text-[#666] text-xs">{team.tag || "—"}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="autoApprove"
+                  checked={bulkAutoApprove}
+                  onChange={(e) => setBulkAutoApprove(e.target.checked)}
+                  className="w-4 h-4 accent-[#e8a000]"
+                />
+                <label htmlFor="autoApprove" className="text-sm text-[#ccc] cursor-pointer">
+                  Auto-approve registrations
+                </label>
+              </div>
+
+              {bulkAutoApprove && (
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-[#666] mb-2">
+                    Starting Seed (optional)
+                  </label>
+                  <input
+                    type="number"
+                    value={bulkSeed}
+                    onChange={(e) => setBulkSeed(e.target.value)}
+                    placeholder="1"
+                    className="w-full bg-[#0d0d14] border border-white/10 rounded px-3 py-2 text-sm text-white placeholder-[#555] focus:outline-none focus:border-[#e8a000]/50"
+                  />
+                </div>
+              )}
+
+              {bulkMessage && (
+                <div className={`rounded px-3 py-2 text-sm ${bulkMessage.startsWith("✓") ? "bg-[#27ae60]/10 text-[#27ae60] border border-[#27ae60]/30" : "bg-red-500/10 text-red-300 border border-red-500/30"}`}>
+                  {bulkMessage}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  onClick={handleBulkRegisterTeams}
+                  disabled={bulkLoading || selectedTeamIds.size === 0}
+                  className="flex-1 px-4 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50 inline-flex items-center justify-center gap-2 rounded"
+                >
+                  {bulkLoading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                  {bulkLoading ? "Registering..." : "Register Teams"}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowBulkRegisterModal(false);
+                    setBulkMessage(null);
+                  }}
+                  className="px-4 py-2 border border-white/20 text-[#aaa] text-xs font-bold uppercase tracking-wider hover:bg-white/5 rounded"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 p-6 space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Registered teams</p>
-          <p className="text-[10px] text-[#888] uppercase tracking-wider">{registrations.length} total</p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenBulkRegisterModal}
+              className="px-3 py-1.5 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] inline-flex items-center gap-1 rounded"
+            >
+              <Plus size={14} />
+              Add Teams
+            </button>
+            <p className="text-[10px] text-[#888] uppercase tracking-wider">{registrations.length} total</p>
+          </div>
         </div>
 
         {actionError ? (

@@ -694,11 +694,28 @@ model Match {
   drafts       MatchDraft[]
   dispute      MatchDispute?
   challengeRequest MatchChallenge? @relation("ChallengeScheduledMatch")
+  gameResults  MatchGameResult[]
 
   @@index([tournamentId])
   @@index([status])
   @@index([scheduledTime])
   @@map("matches")
+}
+
+// Per-game winner results - normalized approach
+model MatchGameResult {
+  id          String   @id @default(uuid())
+  matchId     String
+  gameNumber  Int      // game 1, 2, 3 within the series
+  winnerTeamId String
+  createdAt   DateTime @default(now())
+
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, gameNumber])
+  @@index([matchId])
+  @@index([winnerTeamId])
+  @@map("match_game_results")
 }
 
 model MatchChallenge {

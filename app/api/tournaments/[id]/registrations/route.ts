@@ -207,5 +207,153 @@ export async function PUT(
   }
 }
 
+// POST - Manually register team(s) to tournament (Admin only)
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
+    const { id } = await context.params;
+    const body = await request.json();
+    const { teamIds, autoApprove, seed } = body;
+
+    if (!Array.isArray(teamIds) || teamIds.length === 0) {
+      return apiError("teamIds must be a non-empty array");
+    }
+
+    const tournament = await prisma.tournament.findUnique({
+      where: { id },
+    });
+
+    if (!tournament || tournament.deletedAt) {
+      return apiError("Tournament not found", 404);
+    }
+
+    const results = [];
+
+    for (const teamId of teamIds) {
+      try {
+        // Check if team exists
+        const team = await prisma.team.findUnique({
+          where: { id: teamId },
+          include: {
+            captain: {
+              select: { id: true, ign: true },
+            },
+          },
+        });
+
+        if (!team) {
+          results.push({
+            teamId,
+            success: false,
+            message: "Team not found",
+          });
+          continue;
+        }
+
+        // Check if already registered
+        const existingReg = await prisma.tournamentRegistration.findUnique({
+          where: {
+            tournamentId_teamId: {
+              tournamentId: id,
+              teamId,
+            },
+          },
+        });
+
+        if (existingReg) {
+          results.push({
+            teamId,
+            success: false,
+            message: "Team already registered",
+            existingStatus: existingReg.status,
+          });
+          continue;
+        }
+
+        // Create registration
+        const newRegistration = await prisma.tournamentRegistration.create({
+          data: {
+            tournamentId: id,
+            teamId,
+            status: autoApprove ? RegistrationStatus.APPROVED : RegistrationStatus.PENDING,
+            seed: autoApprove && seed ? seed : undefined,
+          },
+        });
+
+        // Update tournament filled count if auto-approved
+        if (autoApprove) {
+          await prisma.tournament.update({
+            where: { id },
+            data: { filled: { increment: 1 } },
+          });
+
+          // Notify team captain
+          if (team.captain) {
+            await prisma.notification.create({
+              data: {
+                userId: team.captain.id,
+                type: "TOURNAMENT_REGISTRATION_APPROVED",
+                title: "Added to Tournament",
+                message: `Your team ${team.name} has been added to ${tournament.name} by an admin.`,
+                linkUrl: `/tournaments/${id}`,
+              },
+            });
+          }
+        } else {
+          // Notify team captain if pending
+          if (team.captain) {
+            await prisma.notification.create({
+              data: {
+                userId: team.captain.id,
+                type: "TOURNAMENT_REGISTRATION_PENDING",
+                title: "Tournament Registration Pending",
+                message: `Your team ${team.name} has been registered for ${tournament.name}. Awaiting admin approval.`,
+                linkUrl: `/tournaments/${id}`,
+              },
+            });
+          }
+        }
+
+        // Create audit log
+        await createAuditLog(
+          admin.id,
+          "ADMIN_REGISTER_TEAM",
+          "TournamentRegistration",
+          newRegistration.id,
+          JSON.stringify({ teamId, autoApprove })
+        );
+
+        results.push({
+          teamId,
+          success: true,
+          message: autoApprove ? "Team registered and approved" : "Team registered (pending approval)",
+          registrationId: newRegistration.id,
+          status: newRegistration.status,
+        });
+      } catch (error) {
+        results.push({
+          teamId,
+          success: false,
+          message: error instanceof Error ? error.message : "Failed to register team",
+        });
+      }
+    }
+
+    return apiSuccess({
+      message: "Team registration complete",
+      results,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to register teams";
+    if (message === "Unauthorized") return apiError("Unauthorized", 401);
+    if (message.includes("Forbidden")) return apiError(message, 403);
+    console.error("Admin register teams error:", error);
+    return apiError(message, 500);
+  }
+}
+
 
 

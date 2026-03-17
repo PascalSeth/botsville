@@ -50,6 +50,13 @@ export async function GET(
             tag: true,
           },
         },
+        gameResults: {
+          select: {
+            id: true,
+            gameNumber: true,
+            winnerTeamId: true,
+          },
+        },
         screenshots: {
           orderBy: [{ gameNumber: "asc" }, { uploadedAt: "asc" }],
         },

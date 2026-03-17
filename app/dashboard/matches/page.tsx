@@ -35,6 +35,8 @@ export default function DashboardMatchesPage() {
   const [submittingResult, setSubmittingResult] = useState(false);
   const [resultSuccess, setResultSuccess] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Per-game winners: map game number (1, 2, 3...) to winner team ID
+  const [gameWinners, setGameWinners] = useState<Record<number, string>>({});
 
   useEffect(() => {
     (async () => {
@@ -86,25 +88,56 @@ export default function DashboardMatchesPage() {
     setResultForfeit(false);
     setResultSuccess(null);
     setError(null);
+    // Reset per-game winners
+    setGameWinners({});
   };
 
   const submitResult = async (match: Match) => {
-    if (!resultWinnerId) { setError("Select a winner"); return; }
+    // Calculate scores from game winners if provided
+    let finalScoreA = resultScoreA;
+    let finalScoreB = resultScoreB;
+    let finalWinnerId = resultWinnerId;
+    const gameWinnerEntries = Object.entries(gameWinners);
+    
+    // If per-game winners are specified, calculate scores from them
+    if (gameWinnerEntries.length > 0) {
+      finalScoreA = gameWinnerEntries.filter(([game, winnerId]) => winnerId === match.teamA?.id).length;
+      finalScoreB = gameWinnerEntries.filter(([game, winnerId]) => winnerId === match.teamB?.id).length;
+      
+      // Determine overall winner based on scores
+      if (finalScoreA > finalScoreB) {
+        finalWinnerId = match.teamA?.id ?? "";
+      } else if (finalScoreB > finalScoreA) {
+        finalWinnerId = match.teamB?.id ?? "";
+      }
+    }
+    
+    if (!finalWinnerId) { setError("Select a winner"); return; }
     setSubmittingResult(true);
     setError(null);
     setResultSuccess(null);
+    
+    // Convert gameWinners object to array format
+    const gameWinnersArray = gameWinnerEntries.length > 0 
+      ? gameWinnerEntries.map(([gameNum, winnerId]) => ({
+          gameNumber: parseInt(gameNum),
+          winnerTeamId: winnerId,
+        }))
+      : undefined;
+    
     const { data, error: err } = await dashboardFetch<{ message: string }>(
       `/api/matches/${match.id}/result`,
       {
         method: "POST",
         body: JSON.stringify({
-          winnerId: resultWinnerId,
-          scoreA: resultScoreA,
-          scoreB: resultScoreB,
+          winnerId: finalWinnerId,
+          scoreA: finalScoreA,
+          scoreB: finalScoreB,
           forfeit: resultForfeit,
           forfeitedTeamId: resultForfeit
-            ? (resultWinnerId === match.teamA?.id ? match.teamB?.id : match.teamA?.id)
+            ? (finalWinnerId === match.teamA?.id ? match.teamB?.id : match.teamA?.id)
             : undefined,
+          gameWinners: gameWinnersArray,
         }),
       }
     );
@@ -113,6 +146,18 @@ export default function DashboardMatchesPage() {
     setResultSuccess(data?.message ?? "Result submitted");
     setResultMatchId(null);
     await loadMatches();
+  };
+
+  const handleGameWinnerChange = (gameNumber: number, winnerId: string) => {
+    setGameWinners(prev => {
+      const updated = { ...prev };
+      if (winnerId === "") {
+        delete updated[gameNumber];
+      } else {
+        updated[gameNumber] = winnerId;
+      }
+      return updated;
+    });
   };
 
   const handleDeleteMatch = async (match: Match) => {
@@ -341,7 +386,7 @@ export default function DashboardMatchesPage() {
                               </label>
                               <button
                                 type="button"
-                                disabled={submittingResult || !resultWinnerId}
+                                disabled={submittingResult || (!resultWinnerId && Object.keys(gameWinners).length === 0)}
                                 onClick={() => submitResult(m)}
                                 className="flex items-center gap-2 px-4 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50"
                               >
@@ -349,6 +394,37 @@ export default function DashboardMatchesPage() {
                                 Confirm Result
                               </button>
                             </div>
+                            {/* Per-game winners section */}
+                            {m.bestOf > 1 && (
+                              <div className="mt-4 pt-4 border-t border-white/10">
+                                <p className="text-[10px] font-black uppercase tracking-wider text-[#666] mb-3">
+                                  Per-Game Winners (optional — select winner for each game)
+                                </p>
+                                <div className="flex flex-wrap gap-3">
+                                  {Array.from({ length: m.bestOf }, (_, i) => i + 1).map((gameNum) => (
+                                    <div key={gameNum} className="flex items-center gap-2">
+                                      <span className="text-[10px] font-bold text-[#888] w-12">
+                                        Game {gameNum}
+                                      </span>
+                                      <select
+                                        value={gameWinners[gameNum] || ""}
+                                        onChange={(e) => handleGameWinnerChange(gameNum, e.target.value)}
+                                        className="bg-[#0a0a0f] border border-white/10 text-white px-2 py-1 text-xs outline-none focus:border-[#e8a000]/50 w-32"
+                                      >
+                                        <option value="">— select —</option>
+                                        {m.teamA && <option value={m.teamA.id}>{m.teamA.tag || m.teamA.name}</option>}
+                                        {m.teamB && <option value={m.teamB.id}>{m.teamB.tag || m.teamB.name}</option>}
+                                      </select>
+                                    </div>
+                                  ))}
+                                </div>
+                                {Object.keys(gameWinners).length > 0 && (
+                                  <p className="mt-2 text-[10px] text-[#888]">
+                                    Calculated result: {m.teamA?.tag || "Team A"} {Object.values(gameWinners).filter(w => w === m.teamA?.id).length} - {Object.values(gameWinners).filter(w => w === m.teamB?.id).length} {m.teamB?.tag || "Team B"}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>

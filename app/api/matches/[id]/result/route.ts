@@ -189,6 +189,7 @@ export async function POST(
       forfeit = false,
       forfeitedTeamId,
       overridePoints = false,
+      gameWinners,
     }: {
       winnerId: string;
       scoreA: number;
@@ -196,6 +197,7 @@ export async function POST(
       forfeit?: boolean;
       forfeitedTeamId?: string;
       overridePoints?: boolean;
+      gameWinners?: { gameNumber: number; winnerTeamId: string }[];
     } = body;
 
     if (!winnerId || scoreA === undefined || scoreB === undefined) {
@@ -243,6 +245,23 @@ export async function POST(
           forfeitedById: actualForfeitedId,
         },
       });
+
+      // 2. Create MatchGameResult records for each game winner
+      if (gameWinners && gameWinners.length > 0) {
+        // Delete any existing game results first
+        await tx.matchGameResult.deleteMany({ where: { matchId } });
+        
+        // Create new game results
+        for (const gw of gameWinners) {
+          await tx.matchGameResult.create({
+            data: {
+              matchId,
+              gameNumber: gw.gameNumber,
+              winnerTeamId: gw.winnerTeamId,
+            },
+          });
+        }
+      }
 
       // determine if this match was scheduled from a challenge (friendly)
       const challenge = await tx.matchChallenge.findUnique({ where: { scheduledMatchId: matchId } });

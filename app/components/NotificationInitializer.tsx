@@ -5,6 +5,13 @@ import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 import { subscribeToCommunityPosts, unsubscribeFromChannel } from '@/lib/socket-client';
 
+type CommunityPost = {
+  id: string;
+  title?: string;
+  content?: string;
+  author?: { id: string; ign: string };
+};
+
 export default function NotificationInitializer() {
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? null;
@@ -21,50 +28,55 @@ export default function NotificationInitializer() {
 
     try {
       const maybePromise = Notification.requestPermission((perm) => {
-        setPermission(perm as any);
+        setPermission(perm as NotificationPermission);
         if (perm === 'granted') toast.success('Notifications enabled', { duration: 3000 });
         else if (perm === 'denied') toast.error('Notifications blocked', { duration: 3000 });
       });
 
       // Handle Promise-based implementations
-      if (maybePromise && typeof (maybePromise as any).then === 'function') {
+      if (maybePromise && typeof maybePromise === 'object' && 'then' in maybePromise) {
         (maybePromise as Promise<NotificationPermission>).then((perm) => {
-          setPermission(perm as any);
+          setPermission(perm as NotificationPermission);
           if (perm === 'granted') toast.success('Notifications enabled', { duration: 3000 });
           else if (perm === 'denied') toast.error('Notifications blocked', { duration: 3000 });
         }).catch(() => {});
       }
-    } catch (err) {
+    } catch {
       // Fallback: try promise form
       try {
         Notification.requestPermission().then((perm) => {
-          setPermission(perm as any);
+          setPermission(perm as NotificationPermission);
           if (perm === 'granted') toast.success('Notifications enabled', { duration: 3000 });
           else if (perm === 'denied') toast.error('Notifications blocked', { duration: 3000 });
         }).catch(() => {});
-      } catch (e) {
+      } catch {
         toast.error('Unable to request notification permission', { duration: 3000 });
       }
     }
   };
 
+  // Initialize permission on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     // Prompt for permission if needed
     if ('Notification' in window && session) {
-      setPermission(Notification.permission as any);
       if (Notification.permission === 'default') {
         Notification.requestPermission().then((perm) => {
-          setPermission(perm as any);
+          setPermission(perm as NotificationPermission);
           if (perm === 'granted') toast.success('Notifications enabled', { duration: 3000 });
           else if (perm === 'denied') toast.error('Notifications blocked', { duration: 3000 });
         }).catch(() => {});
       }
     }
+  }, [session]);
+
+  // Subscribe to community posts
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
 
     const handleNewPost = (payload: unknown) => {
-      const post = payload as any;
+      const post = payload as CommunityPost;
       if (!post?.id) return;
 
       if (
@@ -76,9 +88,9 @@ export default function NotificationInitializer() {
         const authorName = post.author?.ign ?? 'Someone';
         const body = post.title
           ? post.title
-          : post.content?.length > 80
+          : post.content && post.content.length > 80
             ? post.content.slice(0, 80) + '…'
-            : post.content;
+            : post.content ?? '';
 
         const notif = new Notification(`${authorName} posted in Community`, {
           body,
@@ -94,7 +106,7 @@ export default function NotificationInitializer() {
     subscribeToCommunityPosts(handleNewPost);
 
     return () => { unsubscribeFromChannel('community'); };
-  }, [currentUserId, session]);
+  }, [currentUserId]);
 
   // In-app prompt to help users re-enable notifications if they previously denied them
   if (permission === 'denied' && session && !dismissed) {

@@ -108,8 +108,8 @@ export async function POST(
       return apiError("Tournament not found", 404);
     }
 
-    // Verify teams are registered
-    const teamAReg = await prisma.tournamentRegistration.findUnique({
+    // Auto-register teams if not already registered
+    let teamAReg = await prisma.tournamentRegistration.findUnique({
       where: {
         tournamentId_teamId: {
           tournamentId: id,
@@ -118,7 +118,29 @@ export async function POST(
       },
     });
 
-    const teamBReg = await prisma.tournamentRegistration.findUnique({
+    if (!teamAReg) {
+      // Team A not registered, create registration with APPROVED status
+      teamAReg = await prisma.tournamentRegistration.create({
+        data: {
+          tournamentId: id,
+          teamId: teamAId,
+          status: "APPROVED",
+        },
+      });
+    } else if (teamAReg.status !== "APPROVED") {
+      // Team A registered but not approved, update to APPROVED
+      teamAReg = await prisma.tournamentRegistration.update({
+        where: {
+          tournamentId_teamId: {
+            tournamentId: id,
+            teamId: teamAId,
+          },
+        },
+        data: { status: "APPROVED" },
+      });
+    }
+
+    let teamBReg = await prisma.tournamentRegistration.findUnique({
       where: {
         tournamentId_teamId: {
           tournamentId: id,
@@ -127,12 +149,26 @@ export async function POST(
       },
     });
 
-    if (!teamAReg || teamAReg.status !== "APPROVED") {
-      return apiError("Team A is not registered or approved");
-    }
-
-    if (!teamBReg || teamBReg.status !== "APPROVED") {
-      return apiError("Team B is not registered or approved");
+    if (!teamBReg) {
+      // Team B not registered, create registration with APPROVED status
+      teamBReg = await prisma.tournamentRegistration.create({
+        data: {
+          tournamentId: id,
+          teamId: teamBId,
+          status: "APPROVED",
+        },
+      });
+    } else if (teamBReg.status !== "APPROVED") {
+      // Team B registered but not approved, update to APPROVED
+      teamBReg = await prisma.tournamentRegistration.update({
+        where: {
+          tournamentId_teamId: {
+            tournamentId: id,
+            teamId: teamBId,
+          },
+        },
+        data: { status: "APPROVED" },
+      });
     }
 
     const scheduled = new Date(scheduledTime);

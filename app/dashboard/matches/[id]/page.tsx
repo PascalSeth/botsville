@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, use } from "react";
+import React, { useState, useEffect, useCallback, use, useRef } from "react";
 import { dashboardFetch } from "../../lib/api";
 import Link from "next/link";
 import Image from "next/image";
@@ -64,6 +64,7 @@ type Match = {
   teamA: Team | null;
   teamB: Team | null;
   winner?: Team | null;
+  gameResults?: { id: string; gameNumber: number; winnerTeamId: string }[];
   performances: Performance[];
   tournament?: { id: string; name: string; seasonId?: string };
   challengeRequest?: { id?: string; status?: string; challengerTeam?: { id?: string; name?: string }; challengedTeam?: { id?: string; name?: string } } | null;
@@ -116,6 +117,9 @@ export default function MatchDetailPage({
   const [gameWinner, setGameWinner] = useState<Record<number, string>>({});
   const [submittingPerf, setSubmittingPerf] = useState(false);
   const [finalizingStats, setFinalizingStats] = useState(false);
+  
+  // Refs for tab flow navigation
+  const performanceRefs = useRef<Record<string, { kills: React.RefObject<HTMLInputElement>; deaths: React.RefObject<HTMLInputElement>; assists: React.RefObject<HTMLInputElement> }>>({});
 
   const loadMatch = useCallback(async () => {
     setLoading(true);
@@ -178,7 +182,26 @@ export default function MatchDetailPage({
         }
       }
       setGamePerformances(perfByGame);
-      setGameWinner(winnerByGame);
+      
+      // Merge gameResults from match data with winnerByGame from performances
+      const mergedWinners = { ...winnerByGame };
+      if (data?.gameResults) {
+        for (const gr of data.gameResults) {
+          if (!mergedWinners[gr.gameNumber]) {
+            mergedWinners[gr.gameNumber] = gr.winnerTeamId;
+          }
+        }
+      }
+      setGameWinner(mergedWinners);
+    } else {
+      // No performances yet - use gameResults from match data if available
+      if (data?.gameResults && data.gameResults.length > 0) {
+        const winnersFromResults: Record<number, string> = {};
+        for (const gr of data.gameResults) {
+          winnersFromResults[gr.gameNumber] = gr.winnerTeamId;
+        }
+        setGameWinner(winnersFromResults);
+      }
     }
 
     setLoading(false);
@@ -259,6 +282,33 @@ export default function MatchDetailPage({
     }));
   };
 
+  const handleTabFromAssists = (gameNum: number, currentPlayerId: string) => {
+    // Find current player index in current game
+    const perfs = gamePerformances[gameNum] || [];
+    const currentIndex = perfs.findIndex((p) => p.playerId === currentPlayerId);
+    
+    if (currentIndex >= 0 && currentIndex < perfs.length - 1) {
+      // Move to next player's kills field
+      const nextPlayerId = perfs[currentIndex + 1].playerId;
+      const refKey = `${gameNum}-${nextPlayerId}`;
+      setTimeout(() => {
+        performanceRefs.current[refKey]?.kills?.current?.focus();
+      }, 0);
+    }
+  };
+
+  const getOrCreateRefs = (playerId: string, gameNum: number) => {
+    const refKey = `${gameNum}-${playerId}`;
+    if (!performanceRefs.current[refKey]) {
+      performanceRefs.current[refKey] = {
+        kills: { current: null } as unknown as React.RefObject<HTMLInputElement>,
+        deaths: { current: null } as unknown as React.RefObject<HTMLInputElement>,
+        assists: { current: null } as unknown as React.RefObject<HTMLInputElement>,
+      };
+    }
+    return performanceRefs.current[refKey];
+  };
+
   const submitGamePerformance = async (gameNum: number) => {
     if (!match) return;
     const perfs = gamePerformances[gameNum];
@@ -321,7 +371,7 @@ export default function MatchDetailPage({
           method: 'DELETE',
           body: JSON.stringify({ gameNumber: gameNum }),
         });
-      } catch (e) {
+      } catch {
         // ignore
       }
     })();
@@ -450,7 +500,7 @@ export default function MatchDetailPage({
       )}
       {match.challengeRequest?.id && (
         <div className="rounded-lg border border-yellow-600/20 bg-yellow-600/10 px-4 py-3 text-sm text-yellow-200">
-          This match was scheduled from a challenge and is considered a friendly — points and standings will not be updated unless an admin selects "Override points" when submitting the result.
+          This match was scheduled from a challenge and is considered a friendly — points and standings will not be updated unless an admin selects &quot;Override points&quot; when submitting the result.
         </div>
       )}
 
@@ -566,7 +616,7 @@ export default function MatchDetailPage({
       {/* Performance Entry */}
       <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 overflow-hidden">
         <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-          <span className="text-sm font-black uppercase tracking-[0.1em] text-[#e8a000]">
+          <span className="text-sm font-black uppercase tracking-widest text-[#e8a000]">
             Game {selectedGame} Performance
           </span>
           <div className="flex items-center gap-3">
@@ -625,6 +675,8 @@ export default function MatchDetailPage({
                       onUpdate={(field, value) => updatePerformance(selectedGame, perf.playerId, field, value)}
                       onSetMvp={() => setMvp(selectedGame, perf.playerId)}
                       onReplace={(newId, newName) => replacePlayer(selectedGame, perf.playerId, newId, newName)}
+                      inputRefs={getOrCreateRefs(perf.playerId, selectedGame)}
+                      onTabFromAssists={() => handleTabFromAssists(selectedGame, perf.playerId)}
                     />
                   );
                 })}
@@ -658,6 +710,8 @@ export default function MatchDetailPage({
                       onUpdate={(field, value) => updatePerformance(selectedGame, perf.playerId, field, value)}
                       onSetMvp={() => setMvp(selectedGame, perf.playerId)}
                       onReplace={(newId, newName) => replacePlayer(selectedGame, perf.playerId, newId, newName)}
+                      inputRefs={getOrCreateRefs(perf.playerId, selectedGame)}
+                      onTabFromAssists={() => handleTabFromAssists(selectedGame, perf.playerId)}
                     />
                   );
                 })}
@@ -726,7 +780,7 @@ export default function MatchDetailPage({
       {match.performances?.length > 0 && (
         <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 overflow-hidden">
           <div className="px-4 py-3 border-b border-white/10">
-            <span className="text-sm font-black uppercase tracking-[0.1em] text-white/70">
+            <span className="text-sm font-black uppercase tracking-widest text-white/70">
               Recorded Performance Summary
             </span>
           </div>
@@ -896,6 +950,8 @@ function PerformanceRow({
   teamPlayers,
   currentLineupIds,
   onReplace,
+  inputRefs,
+  onTabFromAssists,
 }: {
   perf: PerformanceInput;
   heroes: HeroCatalogItem[];
@@ -906,6 +962,8 @@ function PerformanceRow({
   teamPlayers: Player[];
   currentLineupIds: string[];
   onReplace: (newPlayerId: string, newPlayerName: string) => void;
+  inputRefs?: { kills: React.RefObject<HTMLInputElement>; deaths: React.RefObject<HTMLInputElement>; assists: React.RefObject<HTMLInputElement> };
+  onTabFromAssists?: () => void;
 }) {
   const [showSwap, setShowSwap] = useState(false);
   
@@ -937,7 +995,7 @@ function PerformanceRow({
         
         {/* Swap Dropdown */}
         {showSwap && (
-          <div className="absolute top-full left-0 mt-1 z-50 bg-[#1a1a2e] border border-white/10 rounded-lg shadow-xl min-w-[160px]">
+          <div className="absolute top-full left-0 mt-1 z-50 bg-[#1a1a2e] border border-white/10 rounded-lg shadow-xl min-w-40">
             <div className="text-[10px] font-bold text-white/40 px-3 py-1.5 border-b border-white/10">
               Select Substitute
             </div>
@@ -959,7 +1017,7 @@ function PerformanceRow({
       </div>
 
       {/* Hero */}
-      <div className="flex-1 min-w-[140px]">
+      <div className="flex-1 min-w-36">
         <HeroSearchSelect
           value={perf.hero}
           heroes={heroes}
@@ -983,6 +1041,7 @@ function PerformanceRow({
                 −
               </button>
               <input
+                ref={inputRefs?.kills}
                 type="number"
                 min={0}
                 value={perf.kills}
@@ -990,6 +1049,10 @@ function PerformanceRow({
                 onKeyDown={(e) => {
                   if (e.key === "ArrowUp") onUpdate("kills", perf.kills + 1);
                   if (e.key === "ArrowDown") onUpdate("kills", Math.max(0, perf.kills - 1));
+                  if (e.key === "Tab" && !e.shiftKey) {
+                    e.preventDefault();
+                    inputRefs?.deaths?.current?.focus();
+                  }
                 }}
                 className="w-12 bg-[#0a0a0f] border border-emerald-500/30 text-emerald-400 px-2 py-1 text-sm text-center outline-none focus:border-emerald-500"
               />
@@ -1017,6 +1080,7 @@ function PerformanceRow({
                 −
               </button>
               <input
+                ref={inputRefs?.deaths}
                 type="number"
                 min={0}
                 value={perf.deaths}
@@ -1024,6 +1088,10 @@ function PerformanceRow({
                 onKeyDown={(e) => {
                   if (e.key === "ArrowUp") onUpdate("deaths", perf.deaths + 1);
                   if (e.key === "ArrowDown") onUpdate("deaths", Math.max(0, perf.deaths - 1));
+                  if (e.key === "Tab" && !e.shiftKey) {
+                    e.preventDefault();
+                    inputRefs?.assists?.current?.focus();
+                  }
                 }}
                 className="w-12 bg-[#0a0a0f] border border-red-500/30 text-red-400 px-2 py-1 text-sm text-center outline-none focus:border-red-500"
               />
@@ -1051,6 +1119,7 @@ function PerformanceRow({
                 −
               </button>
               <input
+                ref={inputRefs?.assists}
                 type="number"
                 min={0}
                 value={perf.assists}
@@ -1058,6 +1127,10 @@ function PerformanceRow({
                 onKeyDown={(e) => {
                   if (e.key === "ArrowUp") onUpdate("assists", perf.assists + 1);
                   if (e.key === "ArrowDown") onUpdate("assists", Math.max(0, perf.assists - 1));
+                  if ((e.key === "Tab" || e.key === "Enter") && !e.shiftKey) {
+                    e.preventDefault();
+                    onTabFromAssists?.();
+                  }
                 }}
                 className="w-12 bg-[#0a0a0f] border border-[#e8a000]/30 text-[#e8a000] px-2 py-1 text-sm text-center outline-none focus:border-[#e8a000]"
               />
