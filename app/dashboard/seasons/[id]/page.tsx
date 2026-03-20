@@ -9,6 +9,7 @@ import {
   Calendar, ChevronLeft, Loader2, Plus, Trophy, Zap,
   RefreshCw, CheckCircle, AlertTriangle,
 } from "lucide-react";
+import { TournamentAwardsDashboard } from "@/app/components/sections/TournamentAwardsDashboard";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -48,6 +49,37 @@ type Standing = {
   tier: string;
   team: { id: string; name: string; tag: string; logo: string | null; color: string | null };
 };
+
+type SeasonAwards = {
+  seasonId: string;
+  seasonName: string;
+  championTeam: { id: string; name: string; tag: string; logo: string | null } | null;
+  runnerUpTeam: { id: string; name: string; tag: string; logo: string | null } | null;
+  thirdPlaceTeam: { id: string; name: string; tag: string; logo: string | null } | null;
+  seasonMvp: { id: string; ign: string; photo: string | null; role: string; team: { id: string; name: string; tag: string; logo: string | null } } | null;
+  bestOffender: { id: string; ign: string; photo: string | null; role: string; team: { id: string; name: string; tag: string; logo: string | null } } | null;
+  bestDefender: { id: string; ign: string; photo: string | null; role: string; team: { id: string; name: string; tag: string; logo: string | null } } | null;
+  awardedAt: string;
+};
+
+type TournamentMvp = {
+  id: string;
+  playerId: string;
+  playerIgn: string;
+  playerPhoto: string | null;
+  playerRole: string;
+  teamId: string;
+  teamName: string;
+  teamTag: string;
+  teamLogo: string | null;
+  mvpCount: number;
+  totalKills: number;
+  totalAssists: number;
+  totalDeaths: number;
+  winRate: number;
+  ranking: number;
+};
+
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -95,17 +127,33 @@ export default function SeasonDetailPage() {
   const [showPlayoffsForm, setShowPlayoffsForm] = useState(false);
   const [playoffsStartDate, setPlayoffsStartDate] = useState("");
   const [initializingPlayoffs, setInitializingPlayoffs] = useState(false);
+  // Awards dashboard
+  const [seasonAwards, setSeasonAwards] = useState<SeasonAwards | null>(null);
+  const [tournamentMvps, setTournamentMvps] = useState<TournamentMvp[]>([]);
+  const [loadingAwards, setLoadingAwards] = useState(false);
 
   const hasLeague = tournaments.some((t) => t.phase === "LEAGUE");
   const hasPlayoffs = tournaments.some((t) => t.phase === "PLAYOFFS");
 
+  const loadTournamentMvps = useCallback(async (sId: string) => {
+    setLoadingAwards(true);
+    const { data, error: err } = await dashboardFetch<{ mvps: TournamentMvp[] }>(
+      `/api/seasons/${sId}/mvps`
+    );
+    setLoadingAwards(false);
+    if (!err && data) {
+      setTournamentMvps(data.mvps ?? (Array.isArray(data) ? data : []));
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const [seasonRes, tourneysRes, standingsRes, teamsRes] = await Promise.all([
+    const [seasonRes, tourneysRes, standingsRes, teamsRes, awardsRes] = await Promise.all([
       dashboardFetch<Season>(`/api/seasons/${seasonId}`),
       dashboardFetch<{ tournaments: Tournament[] }>(`/api/tournaments?seasonId=${seasonId}&limit=20`),
       dashboardFetch<{ cumulative: Standing[] }>(`/api/seasons/${seasonId}/standings`),
       dashboardFetch<{ teams: TeamOption[] }>("/api/teams?status=ACTIVE&limit=100"),
+      dashboardFetch<{ data: SeasonAwards | null }>(`/api/seasons/${seasonId}/awards`),
     ]);
     setLoading(false);
 
@@ -118,7 +166,18 @@ export default function SeasonDetailPage() {
         ? (teamsRes.data as unknown as TeamOption[])
         : (teamsRes.data?.teams ?? [])
     );
-  }, [seasonId]);
+    
+    // Load awards
+    if (awardsRes.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setSeasonAwards((awardsRes.data as any).data || (awardsRes.data as any) || null);
+    }
+    
+    // Load tournament MVPs
+    if (seasonId) {
+      void loadTournamentMvps(seasonId);
+    }
+  }, [seasonId, loadTournamentMvps]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -561,6 +620,20 @@ export default function SeasonDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Awards Dashboard */}
+      {season && (
+        <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 p-6">
+          <TournamentAwardsDashboard
+            seasonAwards={seasonAwards}
+            tournamentMvps={tournamentMvps}
+            isLoading={loadingAwards}
+            onViewMore={() => {
+              // Optional: Add action to view full MVP list
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

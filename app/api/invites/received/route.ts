@@ -15,10 +15,18 @@ export async function GET(request: NextRequest) {
       OR: [{ toUserId: user.id }, { toIGN: user.ign }],
     };
 
+    // Always show only PENDING and non-expired invites by default
     if (status && Object.values(InviteStatus).includes(status as InviteStatus)) {
-      where.status = status as InviteStatus;
+      if (status === InviteStatus.PENDING) {
+        // Only show pending invites that haven't expired
+        where.status = InviteStatus.PENDING;
+        where.expiresAt = { gt: new Date() };
+      } else {
+        // Show other statuses but exclude expired ones unless explicitly asking for expired
+        where.status = status as InviteStatus;
+      }
     } else {
-      // Default to pending invites
+      // Default: only non-expired pending invites
       where.status = InviteStatus.PENDING;
       where.expiresAt = { gt: new Date() };
     }
@@ -47,7 +55,14 @@ export async function GET(request: NextRequest) {
       orderBy: { sentAt: "desc" },
     });
 
-    return apiSuccess(invites);
+    // Filter out any that somehow slipped through (belt and suspenders)
+    const filtered = invites.filter(inv => {
+      if (inv.status !== InviteStatus.PENDING) return false;
+      if (inv.expiresAt && inv.expiresAt < new Date()) return false;
+      return true;
+    });
+
+    return apiSuccess(filtered);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to fetch invites";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);

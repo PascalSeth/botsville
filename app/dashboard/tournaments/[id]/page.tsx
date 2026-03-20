@@ -61,6 +61,8 @@ export default function TournamentDetailPage() {
   const [availableTeams, setAvailableTeams] = useState<any[]>([]);
   const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
   const [loadingAvailableTeams, setLoadingAvailableTeams] = useState(false);
+  const [recalculatingPoints, setRecalculatingPoints] = useState(false);
+  const [pointsMessage, setPointsMessage] = useState<string | null>(null);
 
   const fileToDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -298,6 +300,47 @@ export default function TournamentDetailPage() {
     }
   };
 
+  const handleRecalculatePoints = async () => {
+    if (!id || !tournament) return;
+
+    setPointsMessage(null);
+    setRecalculatingPoints(true);
+
+    try {
+      const res = await fetch(`/api/tournaments/${id}/migrate-to-mlbb-points`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to recalculate points");
+      }
+
+      const result = await res.json();
+      const teamCount = result.teamsAffected || 0;
+      const matchCount = result.matchesProcessed || 0;
+      
+      // Create success message with details
+      const message = `✓ Standings updated: ${teamCount} teams recalculated from ${matchCount} completed matches (MLBB 3/2/1/0)`;
+      setPointsMessage(message);
+      
+      // Refresh tournament data
+      const tournamentRes = await fetch(`/api/tournaments/${id}`);
+      if (tournamentRes.ok) {
+        const updatedTournament = await tournamentRes.json();
+        setTournament(updatedTournament);
+      }
+
+      // Keep message longer so user can see results
+      setTimeout(() => setPointsMessage(null), 5000);
+    } catch (err) {
+      setPointsMessage(err instanceof Error ? err.message : "Failed to recalculate points");
+    } finally {
+      setRecalculatingPoints(false);
+    }
+  };
+
   if (!id) {
     return (
       <div className="space-y-6">
@@ -418,6 +461,61 @@ export default function TournamentDetailPage() {
           </ul>
         ) : (
           <p className="text-sm text-[#777]">No rules set for this tournament.</p>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Points System - MLBB 3/2/1/0</p>
+            <p className="text-xs text-[#888] mt-1">Recalculate all team standings from completed match results</p>
+          </div>
+          <button
+            onClick={handleRecalculatePoints}
+            disabled={recalculatingPoints || !tournament._count?.matches}
+            className="shrink-0 px-4 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50 inline-flex items-center justify-center gap-2 rounded transition"
+          >
+            {recalculatingPoints ? <Loader2 size={14} className="animate-spin" /> : null}
+            {recalculatingPoints ? "Recalculating..." : "Recalculate Points"}
+          </button>
+        </div>
+
+        {/* Points System Breakdown */}
+        <div className="grid grid-cols-2 gap-2 bg-[#000]/30 rounded p-3">
+          <div className="text-[11px]">
+            <span className="text-[#e8a000] font-bold">2-0 Win:</span>
+            <span className="text-[#ccc] ml-1">+3 pts</span>
+          </div>
+          <div className="text-[11px]">
+            <span className="text-[#e8a000] font-bold">2-1 Win:</span>
+            <span className="text-[#ccc] ml-1">+2 pts</span>
+          </div>
+          <div className="text-[11px]">
+            <span className="text-[#e8a000] font-bold">1-2 Loss:</span>
+            <span className="text-[#ccc] ml-1">+1 pt</span>
+          </div>
+          <div className="text-[11px]">
+            <span className="text-[#e8a000] font-bold">0-2 Loss:</span>
+            <span className="text-[#ccc] ml-1">+0 pts</span>
+          </div>
+        </div>
+
+        {pointsMessage && (
+          <div className={`rounded px-3 py-2 text-sm font-semibold ${pointsMessage.startsWith("✓") ? "bg-[#27ae60]/10 text-[#27ae60] border border-[#27ae60]/30" : "bg-red-500/10 text-red-300 border border-red-500/30"}`}>
+            {pointsMessage}
+          </div>
+        )}
+        
+        {!pointsMessage && tournament._count?.matches && (
+          <p className="text-xs text-[#666]">
+            Ready to recalculate. Found <strong>{tournament._count?.matches}</strong> matches.
+          </p>
+        )}
+        
+        {!tournament._count?.matches && (
+          <p className="text-xs text-[#999] bg-[#333]/30 rounded px-2 py-1.5">
+            ⚠️ No matches yet. Add completed matches before recalculating standings.
+          </p>
         )}
       </div>
 

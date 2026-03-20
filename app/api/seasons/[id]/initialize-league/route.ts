@@ -29,7 +29,7 @@ function generateRoundRobin(teamIds: string[]): Array<Array<[string, string]>> {
 
 // POST /api/seasons/[id]/initialize-league
 // Creates the LEAGUE tournament + all round-robin Match records.
-// Body: { teamIds: string[], leagueStartDate?: string (ISO), leagueName?: string }
+// Body: { teamIds: string[], leagueStartDate?: string (ISO), leagueName?: string, bestOf?: 1|3|5|7 }
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -42,7 +42,13 @@ export async function POST(
       teamIds,
       leagueStartDate,
       leagueName,
-    }: { teamIds: string[]; leagueStartDate?: string; leagueName?: string } = body;
+      bestOf = 3,
+    }: { teamIds: string[]; leagueStartDate?: string; leagueName?: string; bestOf?: number } = body;
+
+    // Validate bestOf
+    if (![1, 3, 5, 7].includes(bestOf)) {
+      return apiError("bestOf must be 1, 3, 5, or 7");
+    }
 
     if (!Array.isArray(teamIds) || teamIds.length < 2) {
       return apiError("At least 2 teams are required to generate a round-robin schedule");
@@ -88,7 +94,7 @@ export async function POST(
         round: roundIdx + 1,
         scheduledTime: new Date(roundDate.getTime() + matchIdx * 60 * 60 * 1000), // 1hr apart
         status: MatchStatus.UPCOMING as MatchStatus,
-        bestOf: 3,
+        bestOf: bestOf,
         stage: `Week ${roundIdx + 1}`,
       }));
     });
@@ -109,7 +115,7 @@ export async function POST(
           filled: teamIds.length,
           status: TournamentStatus.OPEN,
           rules: [
-            "Best of 3 (BO3) per match",
+            `Best of ${bestOf} (BO${bestOf}) per match`,
             "Win = 2 points, Loss = 0 points",
             "Forfeit = -1 point to forfeiting team, +2 to opponent",
             "Tiebreaker: Head-to-Head record",

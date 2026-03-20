@@ -163,20 +163,64 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         role: token.role,
         status: token.status,
       });
+
       if (session.user) {
-        session.user.id = token.id;
-        session.user.ign = token.ign;
-        session.user.role = token.role;
-        session.user.status = token.status;
-        session.user.mainRole = token.mainRole ?? null;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (session.user as any).emailVerified = token.emailVerified;
-        console.log("[AUTH-SESSION] Session user populated:", {
-          id: session.user.id,
-          ign: session.user.ign,
-          role: session.user.role,
-          status: session.user.status,
-        });
+        // Refetch user data from database to get latest values (including updated IGN)
+        try {
+          const freshUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: {
+              id: true,
+              email: true,
+              ign: true,
+              photo: true,
+              status: true,
+              emailVerified: true,
+              mainRole: true,
+              adminRole: {
+                select: { role: true },
+              },
+            },
+          });
+
+          if (freshUser) {
+            session.user.id = freshUser.id;
+            session.user.email = freshUser.email;
+            session.user.ign = freshUser.ign;
+            session.user.name = freshUser.ign; // Use IGN as display name
+            session.user.image = freshUser.photo || undefined;
+            session.user.role = freshUser.adminRole?.role || null;
+            session.user.status = freshUser.status;
+            session.user.mainRole = freshUser.mainRole ?? null;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (session.user as any).emailVerified = freshUser.emailVerified;
+            console.log("[AUTH-SESSION] Session user populated with fresh DB data:", {
+              id: session.user.id,
+              ign: session.user.ign,
+              role: session.user.role,
+              status: session.user.status,
+            });
+          } else {
+            // Fallback to token data if user not found
+            session.user.id = token.id;
+            session.user.ign = token.ign;
+            session.user.role = token.role;
+            session.user.status = token.status;
+            session.user.mainRole = token.mainRole ?? null;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (session.user as any).emailVerified = token.emailVerified;
+          }
+        } catch (error) {
+          console.error("[AUTH-SESSION] Error refetching user data:", error);
+          // Fallback to token data on error
+          session.user.id = token.id;
+          session.user.ign = token.ign;
+          session.user.role = token.role;
+          session.user.status = token.status;
+          session.user.mainRole = token.mainRole ?? null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (session.user as any).emailVerified = token.emailVerified;
+        }
       }
       return session;
     },

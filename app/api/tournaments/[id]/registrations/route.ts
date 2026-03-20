@@ -308,8 +308,8 @@ export async function POST(
             await prisma.notification.create({
               data: {
                 userId: team.captain.id,
-                type: "TOURNAMENT_REGISTRATION_PENDING",
-                title: "Tournament Registration Pending",
+                type: "TOURNAMENT_REGISTRATION_APPROVED",
+                title: "Tournament Registration Accepted",
                 message: `Your team ${team.name} has been registered for ${tournament.name}. Awaiting admin approval.`,
                 linkUrl: `/tournaments/${id}`,
               },

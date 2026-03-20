@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 // GET /api/seasons/[id]/standings
 // Returns cumulative TeamStanding + per-month MonthlyStanding for the season.
-// Query params: ?month=1 (filter monthly to a specific month), ?year=2026
+// Query params: ?month=1 (filter monthly to a specific month), ?year=2026, ?tournamentStatus=OPEN,UPCOMING,LIVE,ONGOING
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -14,13 +14,18 @@ export async function GET(
     const { searchParams } = new URL(_request.url);
     const monthFilter = searchParams.get("month") ? parseInt(searchParams.get("month")!) : null;
     const yearFilter = searchParams.get("year") ? parseInt(searchParams.get("year")!) : null;
+    const tournamentStatus = searchParams.get("tournamentStatus")?.split(",") || [];
 
     const season = await prisma.season.findUnique({ where: { id: seasonId } });
     if (!season) return apiError("Season not found", 404);
 
+// Build where clause
+    const standingWhere: Record<string, unknown> = { seasonId };
+    const monthlyWhere: Record<string, unknown> = { seasonId, ...(monthFilter ? { month: monthFilter } : {}), ...(yearFilter ? { year: yearFilter } : {}) };
+
     const [cumulative, monthly] = await Promise.all([
       prisma.teamStanding.findMany({
-        where: { seasonId },
+        where: standingWhere,
         orderBy: { rank: "asc" },
         include: {
           team: {
@@ -36,11 +41,7 @@ export async function GET(
         },
       }),
       prisma.monthlyStanding.findMany({
-        where: {
-          seasonId,
-          ...(monthFilter ? { month: monthFilter } : {}),
-          ...(yearFilter ? { year: yearFilter } : {}),
-        },
+        where: monthlyWhere,
         orderBy: [{ year: "asc" }, { month: "asc" }, { rank: "asc" }],
         include: {
           team: {

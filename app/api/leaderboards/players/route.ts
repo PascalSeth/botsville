@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const seasonId = searchParams.get("seasonId");
+    const tournamentStatus = searchParams.get("tournamentStatus")?.split(",") || [];
     const limit = parseInt(searchParams.get("limit") || "50");
     const skip = parseInt(searchParams.get("skip") || "0");
 
@@ -29,11 +30,14 @@ export async function GET(request: NextRequest) {
       targetSeasonId = activeSeason.id;
     }
 
+    // Build where clause (tournament status filter not applicable to aggregated rankings)
+    const rankingWhere: Record<string, unknown> = { seasonId: targetSeasonId };
+
     // Fetch rankings ordered by computed metrics (mvp, kda, winRate) instead of relying solely on stored rank.
     // This avoids showing rank=0 (uninitialized) entries at the top.
     const [rows, total] = await Promise.all([
       prisma.playerMvpRanking.findMany({
-        where: { seasonId: targetSeasonId },
+        where: rankingWhere,
         select: {
           id: true,
           // keep stored rank for reference but compute display rank below
@@ -78,7 +82,7 @@ export async function GET(request: NextRequest) {
           { winRate: "desc" },
         ],
       }),
-      prisma.playerMvpRanking.count({ where: { seasonId: targetSeasonId } }),
+      prisma.playerMvpRanking.count({ where: rankingWhere }),
     ]);
 
     // Apply pagination in-memory (safer when sorting by computed fields)

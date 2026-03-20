@@ -97,6 +97,12 @@ export async function POST(
       await updateSeasonPlayerRankings(seasonId);
     }
 
+    // Mark match as stats finalized
+    await prisma.match.update({
+      where: { id: matchId },
+      data: { statsFinalized: true },
+    });
+
     return NextResponse.json({
       message: "Match finalized! Player stats and leaderboards updated successfully.",
       updatedPlayers: playerIds.length,

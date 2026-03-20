@@ -289,7 +289,7 @@ export default function LeaderboardPage() {
                           );
                         })}
                         <p className="text-[#2a2a2a] text-[9px] mt-4 text-center uppercase tracking-widest">
-                          Win +2 pts · Loss 0 pts · Forfeit -1 pt · Tiebreaker: Head-to-Head
+                          MLBB System: 2-0 Win +3 pts · 2-1 Win +2 pts · 1-2 Loss +1 pt · 0-2 Loss 0 pts · Tiebreaker: Points → Wins → H2H
                         </p>
                       </div>
                     </div>

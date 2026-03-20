@@ -35,6 +35,7 @@ const SIDEBAR_NAV: { label: string; href: string; icon: React.ReactNode; roles?:
   { label: "Users", href: "/dashboard/users", icon: <Users size={18} /> },
   { label: "Seasons", href: "/dashboard/seasons", icon: <Calendar size={18} /> },
   { label: "Teams", href: "/dashboard/teams", icon: <UsersRound size={18} /> },
+  { label: "Setup Tournament", href: "/dashboard/tournaments/setup", icon: <Trophy size={18} />, roles: ["SUPER_ADMIN", "TOURNAMENT_ADMIN"] },
   { label: "Tournaments", href: "/dashboard/tournaments", icon: <Trophy size={18} /> },
   { label: "Matches", href: "/dashboard/matches", icon: <Swords size={18} /> },
   { label: "Weekly Scrims", href: "/dashboard/scrims", icon: <Megaphone size={18} />, roles: ["SUPER_ADMIN", "TOURNAMENT_ADMIN"] },

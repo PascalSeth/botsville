@@ -375,7 +375,7 @@ export default function DashboardScrimsPage() {
   };
 
   // ── Auto-generator helpers
-  type LeaderboardRow = { team?: { id: string; name?: string }; rank?: number };
+  type LeaderboardRow = { team?: { id: string; name?: string }; rank?: number; points?: number; wins?: number; losses?: number; tier?: string };
   type TeamEntry = { id: string; name: string; rank: number };
   const fetchStandings = async (): Promise<LeaderboardRow[]> => {
     const res = await fetch(`/api/leaderboards/teams?limit=200`);
@@ -395,36 +395,44 @@ export default function DashboardScrimsPage() {
       const pool = availableTeams.filter((t) => t.isAvailable && t.teamId);
     if (pool.length < 2) { setError("Need at least 2 available teams to generate matches"); setGenerating(false); return; }
 
-    // fetch standings to derive buckets
+    // fetch standings with points to derive team strength
     const standings = await fetchStandings();
-    const standingByTeam = new Map<string, number>();
-    let maxRank = 0;
+    const standingByTeam = new Map<string, { rank: number; points: number; wins: number; losses: number; tier: string }>();
     for (const s of standings) {
       if (s.team?.id) {
-        standingByTeam.set(s.team.id, s.rank ?? 9999);
-        maxRank = Math.max(maxRank, s.rank ?? 0);
+        standingByTeam.set(s.team.id, {
+          rank: s.rank ?? 9999,
+          points: s.points ?? 0,
+          wins: s.wins ?? 0,
+          losses: s.losses ?? 0,
+          tier: s.tier ?? "C",
+        });
       }
     }
 
-    // Prepare team objects and shuffle so every team appears at most once
-    const teams = pool.map((p) => ({ id: p.teamId, name: p.team?.name ?? p.teamId, rank: standingByTeam.get(p.teamId) ?? (maxRank + 1) }));
-
-    // shuffle teams but keep some ordering by rank bias: sort by rank then do Fisher-Yates within small windows
-    teams.sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999));
-    // simple shuffle to mix teams while preserving relative rank order roughly
-    for (let i = teams.length - 1; i > 0; i--) {
-      const j = Math.max(0, i - Math.floor(Math.random() * Math.min(3, teams.length)));
-      const tmp = teams[i];
-      teams[i] = teams[j];
-      teams[j] = tmp;
+    // Prepare team objects with strength metrics
+    interface TeamWithStrength extends TeamEntry {
+      points: number;
+      rank: number;
     }
+    const teams: TeamWithStrength[] = pool.map((p) => {
+      const standing = standingByTeam.get(p.teamId) || { points: 0, rank: 9999, wins: 0, losses: 0 };
+      return {
+        id: p.teamId,
+        name: p.team?.name ?? p.teamId,
+        rank: standing.rank,
+        points: standing.points,
+      };
+    });
 
-    // Pair sequentially so each team appears only once
-    const pairCount = Math.floor(teams.length / 2);
-    const drafts: typeof autoDrafts = [];
-    const firstDate = new Date(firstMatchDateTime);
+    // Sort teams by points (primary) then rank to establish strength order - avoids ties
+    teams.sort((a, b) => {
+      const pointDiff = (b.points ?? 0) - (a.points ?? 0);
+      if (pointDiff !== 0) return pointDiff; // Sort by points first to avoid ties
+      return (a.rank ?? 9999) - (b.rank ?? 9999);
+    });
 
-    // Build set of previous pairs from server endpoint (preferred) or fall back to in-memory challenges
+    // Build set of previous pairs from server endpoint or fallback to challenges
     const previousPairs = new Set<string>();
     if (avoidRematches) {
       try {
@@ -441,17 +449,10 @@ export default function DashboardScrimsPage() {
             previousPairs.add(key);
           }
         } else {
-          // fallback to using loaded challenges
-          for (const c of challenges) {
-            const ida = c.challengerTeam?.id;
-            const idb = c.challengedTeam?.id;
-            if (ida && idb) {
-              const key = ida < idb ? `${ida}|${idb}` : `${idb}|${ida}`;
-              previousPairs.add(key);
-            }
-          }
+          throw new Error("Failed to fetch prior opponents");
         }
-      } catch (e) {
+      } catch {
+        // fallback to using loaded challenges
         for (const c of challenges) {
           const ida = c.challengerTeam?.id;
           const idb = c.challengedTeam?.id;
@@ -463,49 +464,89 @@ export default function DashboardScrimsPage() {
       }
     }
 
-    const makePairsFromOrder = (order: TeamEntry[]) => {
-      const res: { a: TeamEntry; b: TeamEntry }[] = [];
-      for (let i = 0; i < pairCount; i++) {
-        const a = order[i * 2];
-        const b = order[i * 2 + 1];
-        if (!a || !b) return null;
-        res.push({ a, b });
-      }
-      return res;
-    };
-
+    // Improved pairing algorithm: snake draft style with constraint checking
+    const pairCount = Math.floor(teams.length / 2);
     let finalPairs: { a: TeamEntry; b: TeamEntry }[] | null = null;
 
     if (avoidRematches && previousPairs.size > 0) {
-      // Try several shuffles to find an order without previous pairs
-      const maxAttempts = 60;
+      // Use greedy matching with backtracking
+      const maxAttempts = 200; // Increased from 60 for better results
+      let bestPairs: { a: TeamWithStrength; b: TeamWithStrength }[] | null = null;
+      let bestViolations = previousPairs.size + 1;
+
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        // shuffle teams array copy
-        const copy = teams.slice();
+        const copy = [...teams];
+        const pairs: { a: TeamWithStrength; b: TeamWithStrength }[] = [];
+        const used = new Set<string>();
+        let violations = 0;
+
+        // Try to pair teams: alternate from strongest and weakest to balance matchups
+        for (let i = 0; i < pairCount; i++) {
+          const remaining = copy.filter((t) => !used.has(t.id));
+          if (remaining.length < 2) break;
+
+          const teamA = remaining[0];
+          let teamB = remaining[1];
+
+          // Try to find teamB that hasn't faced teamA before
+          let foundGoodPair = false;
+          for (let j = 1; j < remaining.length; j++) {
+            const candidate = remaining[j];
+            const key = (teamA.id < candidate.id) ? `${teamA.id}|${candidate.id}` : `${candidate.id}|${teamA.id}`;
+            if (!previousPairs.has(key)) {
+              teamB = candidate;
+              foundGoodPair = true;
+              break;
+            }
+          }
+
+          if (!foundGoodPair) {
+            // Count violations if no perfect pair found
+            const key = (teamA.id < teamB.id) ? `${teamA.id}|${teamB.id}` : `${teamB.id}|${teamA.id}`;
+            if (previousPairs.has(key)) violations++;
+          }
+
+          pairs.push({ a: teamA, b: teamB });
+          used.add(teamA.id);
+          used.add(teamB.id);
+        }
+
+        // Keep best solution found
+        if (violations < bestViolations) {
+          bestViolations = violations;
+          bestPairs = pairs;
+          if (violations === 0) break; // Perfect solution found
+        }
+
+        // Shuffle for next attempt
         for (let i = copy.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           const tmp = copy[i];
           copy[i] = copy[j];
           copy[j] = tmp;
         }
-        const pairs = makePairsFromOrder(copy);
-        if (!pairs) continue;
-        let ok = true;
-        for (const p of pairs) {
-          const ida = p.a.id;
-          const idb = p.b.id;
-          const key = ida < idb ? `${ida}|${idb}` : `${idb}|${ida}`;
-          if (previousPairs.has(key)) { ok = false; break; }
-        }
-        if (ok) { finalPairs = pairs; break; }
+      }
+
+      if (bestPairs && bestPairs.length > 0) {
+        finalPairs = bestPairs;
       }
     }
 
-    // fallback: use current ordering or first possible pairing
+    // Fallback: if no pairs generated, use sequential pairing by strength
     if (!finalPairs) {
-      const defaultPairs = makePairsFromOrder(teams);
-      finalPairs = defaultPairs ?? [];
+      finalPairs = [];
+      for (let i = 0; i < pairCount; i++) {
+        const a = teams[i * 2];
+        const b = teams[i * 2 + 1];
+        if (a && b) {
+          finalPairs.push({ a, b });
+        }
+      }
     }
+
+    // Create draft matches from final pairs
+    const drafts: typeof autoDrafts = [];
+    const firstDate = new Date(firstMatchDateTime);
 
     for (let i = 0; i < finalPairs.length; i++) {
       const a = finalPairs[i].a;

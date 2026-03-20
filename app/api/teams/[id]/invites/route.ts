@@ -32,8 +32,21 @@ export async function GET(
     }
 
     const where: Prisma.TeamInviteWhereInput = { teamId: id };
+    
+    // Always show only PENDING and non-expired invites by default
     if (status && Object.values(InviteStatus).includes(status as InviteStatus)) {
-      where.status = status as InviteStatus;
+      if (status === InviteStatus.PENDING) {
+        // Only show pending invites that haven't expired
+        where.status = InviteStatus.PENDING;
+        where.expiresAt = { gt: new Date() };
+      } else {
+        // Show other statuses
+        where.status = status as InviteStatus;
+      }
+    } else {
+      // Default: only non-expired pending invites
+      where.status = InviteStatus.PENDING;
+      where.expiresAt = { gt: new Date() };
     }
 
     const invites = await prisma.teamInvite.findMany({
@@ -50,7 +63,14 @@ export async function GET(
       orderBy: { sentAt: "desc" },
     });
 
-    return apiSuccess(invites);
+    // Filter out any that somehow slipped through (belt and suspenders)
+    const filtered = invites.filter(inv => {
+      if (inv.status !== InviteStatus.PENDING) return false;
+      if (inv.expiresAt && inv.expiresAt < new Date()) return false;
+      return true;
+    });
+
+    return apiSuccess(filtered);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to fetch invites";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);

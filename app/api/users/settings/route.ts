@@ -74,7 +74,7 @@ export async function PUT(request: Request) {
 
       const trimmedIgn = newValue.trim();
 
-      // Check if IGN is already taken
+      // Check if IGN is already taken (in User model)
       const existingUser = await prisma.user.findFirst({
         where: {
           ign: trimmedIgn,
@@ -90,8 +90,29 @@ export async function PUT(request: Request) {
         );
       }
 
-      // Log old IGN to history and update
-      await prisma.$transaction([
+      // Check if IGN is already taken (in Player model)
+      const existingPlayer = await prisma.player.findFirst({
+        where: {
+          ign: trimmedIgn,
+          userId: { not: user.id },
+        },
+      });
+
+      if (existingPlayer) {
+        return NextResponse.json(
+          { error: "This IGN is already taken" },
+          { status: 400 }
+        );
+      }
+
+      // Get associated Player record to update in transaction
+      const playerRecord = await prisma.player.findUnique({
+        where: { userId: user.id },
+      });
+
+      // Log old IGN to history and update both User and Player (if exists)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updateOps: any[] = [
         prisma.ignHistory.create({
           data: {
             userId: user.id,
@@ -102,7 +123,19 @@ export async function PUT(request: Request) {
           where: { id: user.id },
           data: { ign: trimmedIgn },
         }),
-      ]);
+      ];
+
+      // Also update associated Player record if it exists
+      if (playerRecord) {
+        updateOps.push(
+          prisma.player.update({
+            where: { id: playerRecord.id },
+            data: { ign: trimmedIgn },
+          })
+        );
+      }
+
+      await prisma.$transaction(updateOps);
 
       return NextResponse.json({
         success: true,

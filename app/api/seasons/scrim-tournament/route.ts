@@ -67,7 +67,50 @@ export async function POST(request: NextRequest) {
   try {
     const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const body = await request.json();
-    const { name, banner, setAsDefault } = body as { name?: string; banner?: string; setAsDefault?: boolean };
+    const {
+      name,
+      banner,
+      setAsDefault,
+      tournamentType = 'ROUND_ROBIN',
+      matchesPerTeam = 4,
+      numTeams = 8,
+      leagueStartDate,
+      swissWinLimit = 3,
+      swissLossLimit = 3,
+      swissPointsPerWin = 3,
+      gslTeamsPerGroup = 4,
+      playoffBracketSize = 8,
+    } = body as {
+      name?: string;
+      banner?: string;
+      setAsDefault?: boolean;
+      tournamentType?: string;
+      matchesPerTeam?: number;
+      numTeams?: number;
+      leagueStartDate?: string;
+      swissWinLimit?: number;
+      swissLossLimit?: number;
+      swissPointsPerWin?: number;
+      gslTeamsPerGroup?: number;
+      playoffBracketSize?: number;
+    };
+
+    // Validate tournament type
+    const validTypes = ['ROUND_ROBIN', 'SWISS', 'GSL', 'SINGLE_ELIM', 'DOUBLE_ELIM'];
+    if (!validTypes.includes(tournamentType)) {
+      return apiError(`Invalid tournament type. Must be one of: ${validTypes.join(', ')}`, 400);
+    }
+
+    // Validate based on tournament type
+    if (tournamentType === 'ROUND_ROBIN' && (matchesPerTeam < 1 || matchesPerTeam > numTeams - 1)) {
+      return apiError(`matchesPerTeam must be between 1 and ${numTeams - 1}`, 400);
+    }
+
+    if (tournamentType === 'SWISS') {
+      if (swissWinLimit < 1 || swissWinLimit > 10) return apiError('swissWinLimit must be 1-10', 400);
+      if (swissLossLimit < 1 || swissLossLimit > 10) return apiError('swissLossLimit must be 1-10', 400);
+      if (swissPointsPerWin < 1 || swissPointsPerWin > 10) return apiError('swissPointsPerWin must be 1-10', 400);
+    }
 
     const activeSeason = await prisma.season.findFirst({
       where: { status: "ACTIVE" },
@@ -78,7 +121,7 @@ export async function POST(request: NextRequest) {
       return apiError("No active season found", 404);
     }
 
-    const tournamentName = name?.trim() || `${activeSeason.name} Scrims`;
+    const tournamentName = name?.trim() || `${activeSeason.name} - ${tournamentType}`;
 
     // Check if a tournament with this name already exists
     const existing = await prisma.tournament.findFirst({
@@ -96,20 +139,80 @@ export async function POST(request: NextRequest) {
     const registrationDeadline = new Date();
     registrationDeadline.setDate(registrationDeadline.getDate() + 7);
 
+    const tournamentDate = leagueStartDate ? new Date(leagueStartDate) : new Date(activeSeason.endDate);
+    if (isNaN(tournamentDate.getTime())) {
+      return apiError("Invalid tournament date");
+    }
+
+    // Build rules based on tournament type
+    let rules: string[] = [];
+    let totalMatches = 0;
+    let description = '';
+
+    if (tournamentType === 'ROUND_ROBIN') {
+      totalMatches = Math.floor((numTeams * matchesPerTeam) / 2);
+      rules = [
+        `${numTeams} teams`,
+        `${matchesPerTeam} matches per team (${totalMatches} total)`,
+        `Points: Win (3) | 2-1 (2) | 1-2 (1) | Loss (0)`,
+        `Format: Round Robin with bracket progression to finals`,
+      ];
+      description = 'Every team plays every other team multiple times. Used in professional league seasons.';
+    } else if (tournamentType === 'SWISS') {
+      totalMatches = numTeams * 2; // Estimate
+      rules = [
+        `${numTeams} teams`,
+        `Swiss System: Teams paired by record each round`,
+        `Qualify at ${swissWinLimit} wins | Eliminate at ${swissLossLimit} losses`,
+        `Points per win: ${swissPointsPerWin}`,
+        `Best for large group stages (16+ teams)`,
+      ];
+      description = 'Perfect for World Championships. Teams play opponents of equal skill level.';
+    } else if (tournamentType === 'GSL') {
+      totalMatches = (numTeams / 4) * 3; // 3 matches per group of 4
+      rules = [
+        `${numTeams} teams in groups of ${gslTeamsPerGroup}`,
+        `Each group: Winners Match → Elimination Match → Decider`,
+        `Top 1 from each group advances (${numTeams / 4} slots to playoffs)`,
+        `Used in Mid-Season Cups and regional events`,
+      ];
+      description = 'Intense group format with zero meaningless games. Used in MSC.';
+    } else if (tournamentType === 'SINGLE_ELIM') {
+      totalMatches = playoffBracketSize - 1; // Single elim always has n-1 matches
+      rules = [
+        `${playoffBracketSize} teams bracket`,
+        `Single Elimination: One loss and you are out`,
+        `Fast, brutal format for qualifiers`,
+        `Matches: ${totalMatches}`,
+      ];
+      description = 'One loss and you\'re eliminated. Perfect for qualifiers with time constraints.';
+    } else if (tournamentType === 'DOUBLE_ELIM') {
+      totalMatches = (playoffBracketSize * 2) - 2; // Approximate for double elim
+      rules = [
+        `${playoffBracketSize} teams bracket`,
+        `Double Elimination: Upper + Lower brackets`,
+        `Grand Final: Winner\'s Bracket vs Loser\'s Bracket champion`,
+        `Used in all major MPL and M-Series playoffs`,
+        `Matches: ~${totalMatches}`,
+      ];
+      description = 'The fairest playoff format. Ensures the best two teams meet in the Grand Final.';
+    }
+
     const tournament = await prisma.tournament.create({
       data: {
         seasonId: activeSeason.id,
         name: tournamentName,
-        subtitle: "Weekly community scrims",
-        format: TournamentFormat.ROUND_ROBIN,
+        subtitle: description,
+        format: tournamentType as TournamentFormat,
         location: "Online",
         isOnline: true,
-        date: activeSeason.endDate,
+        date: tournamentDate,
         registrationDeadline,
-        slots: 128,
+        slots: numTeams > 16 ? 128 : 64,
         status: TournamentStatus.OPEN,
         prizePool: null,
         banner: banner?.trim() || null,
+        rules,
       },
     });
 
@@ -126,7 +229,17 @@ export async function POST(request: NextRequest) {
       "CREATE_SCRIM_TOURNAMENT",
       "Tournament",
       tournament.id,
-      JSON.stringify({ name: tournamentName, seasonId: activeSeason.id, setAsDefault })
+      JSON.stringify({
+        name: tournamentName,
+        seasonId: activeSeason.id,
+        setAsDefault,
+        tournamentType,
+        configuration: { 
+          numTeams, 
+          matchesPerTeam: tournamentType === 'ROUND_ROBIN' ? matchesPerTeam : undefined,
+          swissRules: tournamentType === 'SWISS' ? { swissWinLimit, swissLossLimit, swissPointsPerWin } : undefined,
+        },
+      })
     );
 
     return apiSuccess({
@@ -136,6 +249,11 @@ export async function POST(request: NextRequest) {
         name: tournament.name,
         status: tournament.status,
         format: tournament.format,
+        type: tournamentType,
+        configuration: {
+          teams: numTeams,
+          totalMatches,
+        },
       },
       isDefault: setAsDefault ?? false,
     }, 201);

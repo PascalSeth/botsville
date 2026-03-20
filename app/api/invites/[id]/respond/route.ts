@@ -67,21 +67,39 @@ export async function POST(
     }
 
     if (invite.expiresAt < new Date()) {
-      await prisma.teamInvite.update({
-        where: { id },
-        data: { status: InviteStatus.EXPIRED },
-      });
+      try {
+        await prisma.teamInvite.update({
+          where: { id },
+          data: { status: InviteStatus.EXPIRED },
+        });
+      } catch (err: unknown) {
+        // Handle unique constraint violation - if a record already exists with this status, just ignore
+        if (err instanceof Error && err.message.includes("Unique constraint failed")) {
+          console.log("Invite already marked as expired (unique constraint)");
+        } else {
+          throw err;
+        }
+      }
       return apiError("Invite has expired");
     }
 
     if (action === "decline") {
-      await prisma.teamInvite.update({
-        where: { id },
-        data: {
-          status: InviteStatus.DECLINED,
-          respondedAt: new Date(),
-        },
-      });
+      try {
+        await prisma.teamInvite.update({
+          where: { id },
+          data: {
+            status: InviteStatus.DECLINED,
+            respondedAt: new Date(),
+          },
+        });
+      } catch (err: unknown) {
+        // Handle unique constraint violation
+        if (err instanceof Error && err.message.includes("Unique constraint failed")) {
+          console.log("Invite already in declined or another state (unique constraint)");
+          return apiSuccess({ message: "Invite declined" });
+        }
+        throw err;
+      }
 
       // If declined by recipient (invite target), notify sender; if declined by captain (application), notify applicant
       const notifyUserId = isRecipient ? invite.fromUserId : invite.fromUserId;
@@ -250,7 +268,16 @@ export async function POST(
         },
       });
 
-      await prisma.teamInvite.update({ where: { id }, data: { status: InviteStatus.ACCEPTED, respondedAt: new Date() } });
+      try {
+        await prisma.teamInvite.update({ where: { id }, data: { status: InviteStatus.ACCEPTED, respondedAt: new Date() } });
+      } catch (err: unknown) {
+        // Handle unique constraint violation
+        if (err instanceof Error && err.message.includes("Unique constraint failed")) {
+          console.log("Invite already in accepted state (unique constraint)");
+        } else {
+          throw err;
+        }
+      }
 
       // Notify captain
       if (invite.team.captainId) {
@@ -278,7 +305,16 @@ export async function POST(
       try {
         const { player, isSubstitute } = await createPlayerForUser(applicantId!, applicantUser?.ign ?? invite.toIGN ?? '');
 
-        await prisma.teamInvite.update({ where: { id }, data: { status: InviteStatus.ACCEPTED, respondedAt: new Date() } });
+        try {
+          await prisma.teamInvite.update({ where: { id }, data: { status: InviteStatus.ACCEPTED, respondedAt: new Date() } });
+        } catch (err: unknown) {
+          // Handle unique constraint violation
+          if (err instanceof Error && err.message.includes("Unique constraint failed")) {
+            console.log("Invite already in accepted state (unique constraint)");
+          } else {
+            throw err;
+          }
+        }
 
         // Cancel other pending invites for this user (they've now joined a team)
         await prisma.teamInvite.updateMany({

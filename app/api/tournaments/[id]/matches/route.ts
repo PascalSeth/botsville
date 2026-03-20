@@ -63,10 +63,24 @@ export async function GET(
             challengedTeamId: true,
           },
         },
+        performances: {
+          select: {
+            id: true,
+            gameNumber: true,
+            kills: true,
+            deaths: true,
+            assists: true,
+          },
+        },
+        gameResults: {
+          select: {
+            gameNumber: true,
+            winnerTeamId: true,
+          },
+        },
         _count: {
           select: {
             screenshots: true,
-            performances: true,
           },
         },
       },

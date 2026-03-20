@@ -75,9 +75,9 @@ type PerformanceInput = {
   playerName: string;
   teamId: string;
   hero: string;
-  kills: number;
-  deaths: number;
-  assists: number;
+  kills: number | "";
+  deaths: number | "";
+  assists: number | "";
   isMvp: boolean;
 };
 
@@ -223,9 +223,9 @@ export default function MatchDetailPage({
         playerName: p.ign,
         teamId: match?.teamA?.id || "",
         hero: "",
-        kills: 0,
-        deaths: 0,
-        assists: 0,
+        kills: "",
+        deaths: "",
+        assists: "",
         isMvp: false,
       });
     }
@@ -236,9 +236,9 @@ export default function MatchDetailPage({
         playerName: p.ign,
         teamId: match?.teamB?.id || "",
         hero: "",
-        kills: 0,
-        deaths: 0,
-        assists: 0,
+        kills: "",
+        deaths: "",
+        assists: "",
         isMvp: false,
       });
     }
@@ -276,7 +276,7 @@ export default function MatchDetailPage({
       ...prev,
       [gameNum]: prev[gameNum]?.map((p) =>
         p.playerId === oldPlayerId
-          ? { ...p, playerId: newPlayerId, playerName: newPlayerName, hero: "", kills: 0, deaths: 0, assists: 0, isMvp: false }
+          ? { ...p, playerId: newPlayerId, playerName: newPlayerName, hero: "", kills: "", deaths: "", assists: "", isMvp: false }
           : p
       ) || [],
     }));
@@ -338,9 +338,9 @@ export default function MatchDetailPage({
       gameNumber: gameNum,
       playerId: p.playerId,
       hero: p.hero,
-      kills: p.kills,
-      deaths: p.deaths,
-      assists: p.assists,
+      kills: typeof p.kills === "string" ? (p.kills === "" ? 0 : parseInt(p.kills)) : p.kills,
+      deaths: typeof p.deaths === "string" ? (p.deaths === "" ? 0 : parseInt(p.deaths)) : p.deaths,
+      assists: typeof p.assists === "string" ? (p.assists === "" ? 0 : parseInt(p.assists)) : p.assists,
       isMvp: p.isMvp,
       side: p.teamId === match.teamA?.id ? "A" : "B",
       won: p.teamId === winner,
@@ -384,9 +384,9 @@ export default function MatchDetailPage({
         playerName: p.ign,
         teamId: match?.teamA?.id || "",
         hero: "",
-        kills: 0,
-        deaths: 0,
-        assists: 0,
+        kills: "",
+        deaths: "",
+        assists: "",
         isMvp: false,
       });
     }
@@ -396,9 +396,9 @@ export default function MatchDetailPage({
         playerName: p.ign,
         teamId: match?.teamB?.id || "",
         hero: "",
-        kills: 0,
-        deaths: 0,
-        assists: 0,
+        kills: "",
+        deaths: "",
+        assists: "",
         isMvp: false,
       });
     }
@@ -1034,7 +1034,10 @@ function PerformanceRow({
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => onUpdate("kills", Math.max(0, perf.kills - 1))}
+                onClick={() => {
+                  const currentVal = typeof perf.kills === "string" ? 0 : perf.kills;
+                  onUpdate("kills", Math.max(0, currentVal - 1));
+                }}
                 className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
                 title="Decrement kills"
               >
@@ -1045,10 +1048,11 @@ function PerformanceRow({
                 type="number"
                 min={0}
                 value={perf.kills}
-                onChange={(e) => onUpdate("kills", parseInt(e.target.value) || 0)}
+                onChange={(e) => onUpdate("kills", e.target.value === "" ? "" : parseInt(e.target.value) || 0)}
                 onKeyDown={(e) => {
-                  if (e.key === "ArrowUp") onUpdate("kills", perf.kills + 1);
-                  if (e.key === "ArrowDown") onUpdate("kills", Math.max(0, perf.kills - 1));
+                  const currentVal = typeof perf.kills === "string" ? 0 : perf.kills;
+                  if (e.key === "ArrowUp") onUpdate("kills", currentVal + 1);
+                  if (e.key === "ArrowDown") onUpdate("kills", Math.max(0, currentVal - 1));
                   if (e.key === "Tab" && !e.shiftKey) {
                     e.preventDefault();
                     inputRefs?.deaths?.current?.focus();
@@ -1058,7 +1062,10 @@ function PerformanceRow({
               />
               <button
                 type="button"
-                onClick={() => onUpdate("kills", perf.kills + 1)}
+                onClick={() => {
+                  const currentVal = typeof perf.kills === "string" ? 0 : perf.kills;
+                  onUpdate("kills", currentVal + 1);
+                }}
                 className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
                 title="Increment kills"
               >
@@ -1073,7 +1080,10 @@ function PerformanceRow({
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => onUpdate("deaths", Math.max(0, perf.deaths - 1))}
+                onClick={() => {
+                  const currentVal = typeof perf.deaths === "string" ? 0 : perf.deaths;
+                  onUpdate("deaths", Math.max(0, currentVal - 1));
+                }}
                 className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
                 title="Decrement deaths"
               >
@@ -1084,10 +1094,11 @@ function PerformanceRow({
                 type="number"
                 min={0}
                 value={perf.deaths}
-                onChange={(e) => onUpdate("deaths", parseInt(e.target.value) || 0)}
+                onChange={(e) => onUpdate("deaths", e.target.value === "" ? "" : parseInt(e.target.value) || 0)}
                 onKeyDown={(e) => {
-                  if (e.key === "ArrowUp") onUpdate("deaths", perf.deaths + 1);
-                  if (e.key === "ArrowDown") onUpdate("deaths", Math.max(0, perf.deaths - 1));
+                  const currentVal = typeof perf.deaths === "string" ? 0 : perf.deaths;
+                  if (e.key === "ArrowUp") onUpdate("deaths", currentVal + 1);
+                  if (e.key === "ArrowDown") onUpdate("deaths", Math.max(0, currentVal - 1));
                   if (e.key === "Tab" && !e.shiftKey) {
                     e.preventDefault();
                     inputRefs?.assists?.current?.focus();
@@ -1097,7 +1108,10 @@ function PerformanceRow({
               />
               <button
                 type="button"
-                onClick={() => onUpdate("deaths", perf.deaths + 1)}
+                onClick={() => {
+                  const currentVal = typeof perf.deaths === "string" ? 0 : perf.deaths;
+                  onUpdate("deaths", currentVal + 1);
+                }}
                 className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
                 title="Increment deaths"
               >
@@ -1112,7 +1126,10 @@ function PerformanceRow({
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => onUpdate("assists", Math.max(0, perf.assists - 1))}
+                onClick={() => {
+                  const currentVal = typeof perf.assists === "string" ? 0 : perf.assists;
+                  onUpdate("assists", Math.max(0, currentVal - 1));
+                }}
                 className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
                 title="Decrement assists"
               >
@@ -1123,10 +1140,11 @@ function PerformanceRow({
                 type="number"
                 min={0}
                 value={perf.assists}
-                onChange={(e) => onUpdate("assists", parseInt(e.target.value) || 0)}
+                onChange={(e) => onUpdate("assists", e.target.value === "" ? "" : parseInt(e.target.value) || 0)}
                 onKeyDown={(e) => {
-                  if (e.key === "ArrowUp") onUpdate("assists", perf.assists + 1);
-                  if (e.key === "ArrowDown") onUpdate("assists", Math.max(0, perf.assists - 1));
+                  const currentVal = typeof perf.assists === "string" ? 0 : perf.assists;
+                  if (e.key === "ArrowUp") onUpdate("assists", currentVal + 1);
+                  if (e.key === "ArrowDown") onUpdate("assists", Math.max(0, currentVal - 1));
                   if ((e.key === "Tab" || e.key === "Enter") && !e.shiftKey) {
                     e.preventDefault();
                     onTabFromAssists?.();
@@ -1136,7 +1154,10 @@ function PerformanceRow({
               />
               <button
                 type="button"
-                onClick={() => onUpdate("assists", perf.assists + 1)}
+                onClick={() => {
+                  const currentVal = typeof perf.assists === "string" ? 0 : perf.assists;
+                  onUpdate("assists", currentVal + 1);
+                }}
                 className="w-6 h-6 bg-white/5 text-white/60 rounded border border-white/5 flex items-center justify-center"
                 title="Increment assists"
               >

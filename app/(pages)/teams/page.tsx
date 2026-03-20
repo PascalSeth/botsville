@@ -461,18 +461,24 @@ const SidebarEntry = ({ team, active, onClick, index, canChallenge, challengeLoa
 
         <div className="flex items-center gap-2 shrink-0">
           {canChallenge && onChallenge && (
-            <button
-              type="button"
+            <div
+              role="button"
+              tabIndex={0}
               onClick={(event) => {
                 event.stopPropagation();
-                onChallenge();
+                if (!challengeLoading) onChallenge();
               }}
-              disabled={challengeLoading}
-              className="text-[8px]  uppercase tracking-wider px-2 py-1 border hover:bg-[#e8a000]/15 disabled:opacity-50"
-              style={{ color: teamColor, borderColor: `${teamColor}35` }}
+              onKeyDown={(event) => {
+                if ((event.key === 'Enter' || event.key === ' ') && !challengeLoading) {
+                  event.stopPropagation();
+                  onChallenge();
+                }
+              }}
+              className="text-[8px]  uppercase tracking-wider px-2 py-1 border hover:bg-[#e8a000]/15 cursor-pointer disabled:opacity-50"
+              style={{ color: teamColor, borderColor: `${teamColor}35`, opacity: challengeLoading ? 0.5 : 1 }}
             >
               {challengeLoading ? '...' : 'Challenge'}
-            </button>
+            </div>
           )}
           <ChevronRight size={11} style={{ color: active ? teamColor : '#222' }} className="shrink-0" />
         </div>

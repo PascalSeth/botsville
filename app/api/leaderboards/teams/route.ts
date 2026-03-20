@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const seasonId = searchParams.get("seasonId");
+    const tournamentStatus = searchParams.get("tournamentStatus")?.split(",") || [];
     const limit = parseInt(searchParams.get("limit") || "50");
     const skip = parseInt(searchParams.get("skip") || "0");
 
@@ -20,6 +21,9 @@ export async function GET(request: NextRequest) {
       });
       targetSeasonId = activeSeason?.id ?? null;
     }
+
+    // Build standings query
+    const standingsWhere: Record<string, unknown> = targetSeasonId ? { seasonId: targetSeasonId } : {};
 
     const [teams, standings, season] = await Promise.all([
       prisma.team.findMany({
@@ -42,7 +46,7 @@ export async function GET(request: NextRequest) {
       }),
       targetSeasonId
         ? prisma.teamStanding.findMany({
-            where: { seasonId: targetSeasonId },
+            where: standingsWhere,
             select: {
               id: true,
               teamId: true,

@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
-import { Loader2, CheckCircle, RefreshCw, BarChart3, Trash2 } from "lucide-react";
+import { Loader2, CheckCircle, RefreshCw, BarChart3, Trash2, Zap } from "lucide-react";
 import Link from "next/link";
+import { BracketVisualization } from "@/app/components/sections/BracketVisualization";
 
 type Tournament = { id: string; name: string; status: string };
 type Match = {
@@ -14,10 +15,13 @@ type Match = {
   scoreB: number;
   scheduledTime: string;
   bestOf: number;
+  statsFinalized?: boolean;
   teamA?: { id: string; name: string; tag: string } | null;
   teamB?: { id: string; name: string; tag: string } | null;
   winner?: { id: string; name: string } | null;
   challengeRequest?: { id?: string; status?: string } | null;
+  gameResults?: { gameNumber: number; winnerTeamId: string }[];
+  performances?: Array<{ id: string; gameNumber: number; kills: number; deaths: number; assists: number }>;
 };
 
 export default function DashboardMatchesPage() {
@@ -37,6 +41,12 @@ export default function DashboardMatchesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   // Per-game winners: map game number (1, 2, 3...) to winner team ID
   const [gameWinners, setGameWinners] = useState<Record<number, string>>({});
+  // Edit mode tracking
+  const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
+  // Bracket visualization
+  const [bracketMatches, setBracketMatches] = useState<Match[]>([]);
+  const [loadingBracket, setLoadingBracket] = useState(false);
+  const [viewMode, setViewMode] = useState<'table' | 'bracket'>('table');
 
   useEffect(() => {
     (async () => {
@@ -56,9 +66,22 @@ export default function DashboardMatchesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const loadBracketData = useCallback(async (tournamentId: string) => {
+    setLoadingBracket(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error: err } = await dashboardFetch<any[]>(
+      `/api/brackets/matches?tournamentId=${tournamentId}`
+    );
+    setLoadingBracket(false);
+    if (!err && data) {
+      setBracketMatches(Array.isArray(data) ? data : []);
+    }
+  }, []);
+
   const loadMatches = useCallback(async () => {
     if (!selectedTournamentId) {
       setMatches([]);
+      setBracketMatches([]);
       return;
     }
     setLoadingMatches(true);
@@ -69,27 +92,54 @@ export default function DashboardMatchesPage() {
     if (err) {
       setError(err);
       setMatches([]);
+      setBracketMatches([]);
       return;
     }
     setError(null);
-    setMatches(Array.isArray(data) ? data : []);
-  }, [selectedTournamentId]);
+    const matchesArray = Array.isArray(data) ? data : [];
+    setMatches(matchesArray);
+    // Load bracket visualization data
+    await loadBracketData(selectedTournamentId);
+  }, [selectedTournamentId, loadBracketData]);
 
   useEffect(() => {
     loadMatches();
   }, [loadMatches]);
 
   const openResultPanel = (m: Match) => {
-    if (resultMatchId === m.id) { setResultMatchId(null); return; }
+    if (resultMatchId === m.id) { setResultMatchId(null); setEditingMatchId(null); return; }
     setResultMatchId(m.id);
-    setResultWinnerId(m.teamA?.id ?? "");
-    setResultScoreA(2);
-    setResultScoreB(0);
-    setResultForfeit(false);
+    
+    // If match is already completed/forfeited, load existing data for editing
+    if (m.status === "COMPLETED" || m.status === "FORFEITED") {
+      setEditingMatchId(m.id);
+      setResultWinnerId(m.winner?.id ?? m.teamA?.id ?? "");
+      setResultScoreA(m.scoreA ?? 0);
+      setResultScoreB(m.scoreB ?? 0);
+      setResultForfeit(m.status === "FORFEITED");
+      
+      // Load per-game winners if available
+      if (m.gameResults && m.gameResults.length > 0) {
+        const winners: Record<number, string> = {};
+        m.gameResults.forEach(gr => {
+          winners[gr.gameNumber] = gr.winnerTeamId;
+        });
+        setGameWinners(winners);
+      } else {
+        setGameWinners({});
+      }
+    } else {
+      // New result entry
+      setEditingMatchId(null);
+      setResultWinnerId(m.teamA?.id ?? "");
+      setResultScoreA(2);
+      setResultScoreB(0);
+      setResultForfeit(false);
+      setGameWinners({});
+    }
+    
     setResultSuccess(null);
     setError(null);
-    // Reset per-game winners
-    setGameWinners({});
   };
 
   const submitResult = async (match: Match) => {
@@ -101,8 +151,8 @@ export default function DashboardMatchesPage() {
     
     // If per-game winners are specified, calculate scores from them
     if (gameWinnerEntries.length > 0) {
-      finalScoreA = gameWinnerEntries.filter(([game, winnerId]) => winnerId === match.teamA?.id).length;
-      finalScoreB = gameWinnerEntries.filter(([game, winnerId]) => winnerId === match.teamB?.id).length;
+      finalScoreA = gameWinnerEntries.filter(entry => entry[1] === match.teamA?.id).length;
+      finalScoreB = gameWinnerEntries.filter(entry => entry[1] === match.teamB?.id).length;
       
       // Determine overall winner based on scores
       if (finalScoreA > finalScoreB) {
@@ -125,10 +175,13 @@ export default function DashboardMatchesPage() {
         }))
       : undefined;
     
+    const isEditing = editingMatchId === match.id;
+    const method = isEditing ? "PUT" : "POST";
+    
     const { data, error: err } = await dashboardFetch<{ message: string }>(
       `/api/matches/${match.id}/result`,
       {
-        method: "POST",
+        method,
         body: JSON.stringify({
           winnerId: finalWinnerId,
           scoreA: finalScoreA,
@@ -143,8 +196,9 @@ export default function DashboardMatchesPage() {
     );
     setSubmittingResult(false);
     if (err) { setError(err); return; }
-    setResultSuccess(data?.message ?? "Result submitted");
+    setResultSuccess(data?.message ?? (isEditing ? "Result updated" : "Result submitted"));
     setResultMatchId(null);
+    setEditingMatchId(null);
     await loadMatches();
   };
 
@@ -217,7 +271,46 @@ export default function DashboardMatchesPage() {
         </select>
       </div>
 
+      {/* View mode toggle */}
+      <div className="flex gap-2 border-b border-white/10">
+        <button
+          type="button"
+          onClick={() => setViewMode('table')}
+          className={`px-4 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+            viewMode === 'table'
+              ? 'border-b-2 border-[#e8a000] text-[#e8a000]'
+              : 'text-[#666] hover:text-white'
+          }`}
+        >
+          Table View
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode('bracket')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+            viewMode === 'bracket'
+              ? 'border-b-2 border-[#e8a000] text-[#e8a000]'
+              : 'text-[#666] hover:text-white'
+          }`}
+        >
+          <Zap size={12} /> Bracket View
+        </button>
+      </div>
+
+      {/* Bracket visualization */}
+      {viewMode === 'bracket' && selectedTournamentId && (
+        <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 p-6 overflow-x-auto">
+          <BracketVisualization
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            matches={bracketMatches as any}
+            tournamentName={tournaments.find((t) => t.id === selectedTournamentId)?.name ?? 'Tournament'}
+            isLoading={loadingBracket}
+          />
+        </div>
+      )}
+
       {/* Matches table */}
+      {viewMode === 'table' && (
       <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 overflow-hidden">
         <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e8a000]">
@@ -278,13 +371,24 @@ export default function DashboardMatchesPage() {
                         {m.teamB?.name ?? "TBD"}
                       </td>
                       <td className="p-3">
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                          m.status === "COMPLETED" ? "bg-emerald-500/20 text-emerald-400" :
-                          m.status === "LIVE" ? "bg-red-500/20 text-red-400" :
-                          "bg-[#e8a000]/20 text-[#e8a000]"
-                        }`}>
-                          {m.status}
-                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                            m.status === "COMPLETED" ? "bg-emerald-500/20 text-emerald-400" :
+                            m.status === "LIVE" ? "bg-red-500/20 text-red-400" :
+                            "bg-[#e8a000]/20 text-[#e8a000]"
+                          }`}>
+                            {m.status}
+                          </span>
+                          {(m.status === "COMPLETED" || m.status === "FORFEITED") && m.performances && m.performances.length > 0 && (
+                            <span title={m.statsFinalized ? "Stats finalized" : "KDA data entered (not finalized)"} className={`px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1 ${
+                              m.statsFinalized
+                                ? "bg-emerald-500/30 text-emerald-300"
+                                : "bg-cyan-500/20 text-cyan-400"
+                            }`}>
+                              <BarChart3 size={10} /> {m.statsFinalized ? "FINALIZED" : "KDA"}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-3 text-[#666] text-sm">
                         {m.scheduledTime ? new Date(m.scheduledTime).toLocaleString() : "—"}
@@ -309,6 +413,19 @@ export default function DashboardMatchesPage() {
                             {resultMatchId === m.id ? "Cancel" : "Enter Result"}
                           </button>
                         )}
+                        {(m.status === "COMPLETED" || m.status === "FORFEITED") && (
+                          <button
+                            type="button"
+                            onClick={() => openResultPanel(m)}
+                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 border transition-colors ${
+                              resultMatchId === m.id
+                                ? "border-[#e8a000] text-[#e8a000] bg-[#e8a000]/10"
+                                : "border-white/20 text-[#aaa] hover:border-[#e8a000] hover:text-[#e8a000]"
+                            }`}
+                          >
+                            {resultMatchId === m.id ? "Cancel" : "Edit Result"}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleDeleteMatch(m)}
@@ -325,7 +442,7 @@ export default function DashboardMatchesPage() {
                         <td colSpan={7} className="p-4">
                           <div className="border border-[#e8a000]/30 rounded p-4 space-y-3">
                             <p className="text-[10px] font-black uppercase tracking-wider text-[#e8a000] mb-2">
-                              Submit Result — {m.stage ?? m.id} (BO{m.bestOf})
+                              {editingMatchId === m.id ? "Edit Result" : "Submit Result"} — {m.stage ?? m.id} (BO{m.bestOf})
                             </p>
                             {m.challengeRequest?.id && (
                               <div className="rounded border border-yellow-600/20 bg-yellow-600/10 px-3 py-2 text-sm text-yellow-200">
@@ -391,7 +508,7 @@ export default function DashboardMatchesPage() {
                                 className="flex items-center gap-2 px-4 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50"
                               >
                                 {submittingResult ? <Loader2 size={12} className="animate-spin" /> : null}
-                                Confirm Result
+                                {editingMatchId === m.id ? "Update Result" : "Confirm Result"}
                               </button>
                             </div>
                             {/* Per-game winners section */}
@@ -436,6 +553,7 @@ export default function DashboardMatchesPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

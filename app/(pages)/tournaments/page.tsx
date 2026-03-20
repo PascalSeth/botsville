@@ -20,6 +20,7 @@ if (typeof window !== 'undefined') {
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useHero } from '../../contexts/HeroContext';
 // import { motion, AnimatePresence, cubicBezier } from 'framer-motion';
 import {
@@ -765,7 +766,7 @@ export default function TournamentsPage() {
         const data: ApiResponse = await response.json();
         
         if (data.tournaments && Array.isArray(data.tournaments)) {
-          const upcoming = data.tournaments.filter(t => ['OPEN', 'UPCOMING'].includes(t.status));
+          const upcoming = data.tournaments.filter(t => ['OPEN', 'UPCOMING', 'LIVE', 'ONGOING'].includes(t.status));
           const past = data.tournaments.filter(t => t.status === 'COMPLETED');
           
           setTournaments(upcoming);
@@ -824,18 +825,24 @@ export default function TournamentsPage() {
               {/* Desktop: featured + sidebar */}
               <div className="hidden lg:grid grid-cols-[1fr_280px] xl:grid-cols-[1fr_320px] gap-4">
                 {featured && (
-                  <FeaturedCard
-                    t={featured}
-                    onRegister={() => setRegistering(featured)}
-                    selectedHeroImage={selectedHeroImage}
-                  />
+                  <Link href={`/tournaments/${featured.id}`}>
+                    <FeaturedCard
+                      t={featured}
+                      onRegister={() => setRegistering(featured)}
+                      selectedHeroImage={selectedHeroImage}
+                    />
+                  </Link>
                 )}
                 <div className="flex flex-col gap-2">
                   {tournaments.map((t) => (
-                    <SmallCard key={t.id} t={t}
-                      active={featured?.id === t.id}
-                      onSelect={() => setFeatured(t)}
-                      onRegister={() => setRegistering(t)} />
+                    <Link key={t.id} href={`/tournaments/${t.id}`}>
+                      <SmallCard
+                        t={t}
+                        active={featured?.id === t.id}
+                        onSelect={() => setFeatured(t)}
+                        onRegister={() => setRegistering(t)}
+                      />
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -843,12 +850,13 @@ export default function TournamentsPage() {
               {/* Mobile/tablet */}
               <div className="lg:hidden flex flex-col gap-4">
                 {tournaments.map((t) => (
-                  <FeaturedCard
-                    key={t.id}
-                    t={t}
-                    onRegister={() => setRegistering(t)}
-                    selectedHeroImage={selectedHeroImage}
-                  />
+                  <Link key={t.id} href={`/tournaments/${t.id}`}>
+                    <FeaturedCard
+                      t={t}
+                      onRegister={() => setRegistering(t)}
+                      selectedHeroImage={selectedHeroImage}
+                    />
+                  </Link>
                 ))}
               </div>
             </>
@@ -875,7 +883,11 @@ export default function TournamentsPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pastTournaments.map((t) => <PastCard key={t.id} t={t} />)}
+              {pastTournaments.map((t) => (
+                <Link key={t.id} href={`/tournaments/${t.id}`}>
+                  <PastCard t={t} />
+                </Link>
+              ))}
             </div>
 
             <div className="mt-8 flex items-center justify-between border border-white/[0.04] px-4 py-3">

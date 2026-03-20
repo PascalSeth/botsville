@@ -25,6 +25,14 @@ type Tournament = {
   status: string;
   banner: string | null;
   rules?: string[];
+  numGroups?: number;
+  teamsPerGroup?: number;
+  matchesPerTeam?: number;
+  matchesBeforeBracket?: number;
+};
+
+type TournamentWithRegistrations = Tournament & {
+  registrations?: Array<{ id: string; teamId: string }>;
 };
 
 const FORMATS = ["SINGLE_ELIMINATION", "DOUBLE_ELIMINATION", "ROUND_ROBIN", "SWISS_PLAYOFFS"];
@@ -56,6 +64,20 @@ export default function EditTournamentPage() {
   const [currentBanner, setCurrentBanner] = useState<string | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
 
+  // Group stage parameters
+  const [numGroups, setNumGroups] = useState(1);
+  const [teamsPerGroup, setTeamsPerGroup] = useState(4);
+  const [matchesPerTeam, setMatchesPerTeam] = useState(3);
+  const [registeredTeamsCount, setRegisteredTeamsCount] = useState(0);
+  const [manualOverride, setManualOverride] = useState(false);
+
+  // Auto-calculate matches before bracket (total group stage matches)
+  const matchesBeforeBracket = useMemo(() => {
+    return numGroups > 0 && teamsPerGroup > 0 
+      ? Math.round(numGroups * (teamsPerGroup * matchesPerTeam / 2))
+      : 0;
+  }, [numGroups, teamsPerGroup, matchesPerTeam]);
+
   const fileToDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -83,6 +105,17 @@ export default function EditTournamentPage() {
     if (Number.isNaN(parsed.getTime())) return "";
     return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   }, [registrationDeadline]);
+
+  // Check if registration is closed
+  const isRegistrationClosed = useMemo(() => {
+    if (!registrationDeadline) return false;
+    return new Date() > new Date(registrationDeadline);
+  }, [registrationDeadline]);
+
+  // Check if tournament can have group stage configured
+  const canConfigureGroupStage = useMemo(() => {
+    return isRegistrationClosed && (status === "CLOSED" || status === "ONGOING");
+  }, [isRegistrationClosed, status]);
 
   useEffect(() => {
     if (!id) return;
@@ -117,6 +150,31 @@ export default function EditTournamentPage() {
       setRulesText((tournamentData.rules || []).join("\n"));
       setStatus(tournamentData.status);
       setCurrentBanner(tournamentData.banner || null);
+      setNumGroups(tournamentData.numGroups || 1);
+      setTeamsPerGroup(tournamentData.teamsPerGroup || 4);
+      setMatchesPerTeam(tournamentData.matchesPerTeam || 3);
+      
+      // Fetch registered teams count if registration is closed
+      const deadlineTime = new Date(tournamentData.registrationDeadline);
+      if (new Date() > deadlineTime) {
+        try {
+          const { data: regsData } = await dashboardFetch<TournamentWithRegistrations>(
+            `/api/tournaments/${id}?include=registrations`
+          );
+          if (regsData?.registrations) {
+            const registeredCount = regsData.registrations.length;
+            setRegisteredTeamsCount(registeredCount);
+            // Auto-calculate groups and teams per group
+            if (!tournamentData.numGroups || tournamentData.numGroups === 1) {
+              setNumGroups(1);
+              setTeamsPerGroup(registeredCount);
+            }
+          }
+        } catch (_err) {
+          console.error("Error fetching registrations:", _err);
+        }
+      }
+      
       setLoading(false);
     })();
   }, [id]);
@@ -196,6 +254,10 @@ export default function EditTournamentPage() {
           .filter(Boolean),
         status,
         banner,
+        numGroups,
+        teamsPerGroup,
+        matchesPerTeam,
+        matchesBeforeBracket,
       }),
     });
 
@@ -387,6 +449,89 @@ export default function EditTournamentPage() {
             className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
           />
         </div>
+
+        {!canConfigureGroupStage && (
+          <div className="border-t border-yellow-500/30 pt-4 mt-4 rounded-lg bg-yellow-500/10 px-4 py-3">
+            <p className="text-[10px] text-yellow-300 font-bold">
+              ⚠️ Group Stage Configuration available after registration closes (Status: {status})
+            </p>
+          </div>
+        )}
+        
+        {canConfigureGroupStage && (
+          <div className="border-t border-white/10 pt-4 mt-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[10px] font-black uppercase tracking-wider text-[#e8a000] block">Group Stage Configuration</h3>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={manualOverride}
+                  onChange={(e) => setManualOverride(e.target.checked)}
+                  className="accent-[#e8a000]"
+                />
+                <span className="text-[10px] text-[#aaa] uppercase tracking-wider font-bold">Manual Override</span>
+              </label>
+            </div>
+            
+            {!manualOverride && registeredTeamsCount > 0 && (
+              <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 mb-4">
+                <p className="text-[10px] text-green-300 font-bold">
+                  ✓ Auto-configured from {registeredTeamsCount} registered teams
+                </p>
+              </div>
+            )}
+            
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-[#666] block mb-1">Number of Groups</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={16}
+                  value={numGroups}
+                  onChange={(e) => setNumGroups(parseInt(e.target.value, 10) || 1)}
+                  disabled={!manualOverride && registeredTeamsCount > 0}
+                  className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-[#666] block mb-1">Teams per Group</label>
+                <input
+                  type="number"
+                  min={2}
+                  max={16}
+                  value={teamsPerGroup}
+                  onChange={(e) => setTeamsPerGroup(parseInt(e.target.value, 10) || 4)}
+                  disabled={!manualOverride && registeredTeamsCount > 0}
+                  className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-[#666] block mb-1">Matches per Team</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={15}
+                  value={matchesPerTeam}
+                  onChange={(e) => setMatchesPerTeam(parseInt(e.target.value, 10) || 3)}
+                  disabled={!manualOverride}
+                  className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+            </div>
+            
+            <div className="rounded-lg border border-[#e8a000]/30 bg-[#e8a000]/10 px-4 py-3 mt-4">
+              <p className="text-[10px] text-[#e8a000] font-bold">
+                Bracket triggers after: <span className="text-[#ffb800]">{matchesBeforeBracket}</span> total group stage matches
+              </p>
+            </div>
+            {registeredTeamsCount > 0 && (
+              <p className="text-[10px] text-[#555] mt-1">
+                Registered teams: <span className="text-[#aaa] font-bold">{registeredTeamsCount}</span>
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="space-y-2">
           <label className="text-[10px] font-black uppercase tracking-wider text-[#666] block">Tournament image</label>

@@ -102,6 +102,14 @@ enum TournamentFormat {
   SWISS_PLAYOFFS
 }
 
+// Bracket type for individual matches — double elimination uses both
+enum BracketType {
+  WINNER_BRACKET    // Advance to ...
+  LOSER_BRACKET     // Consolation bracket
+  GRAND_FINAL       // Winner bracket winner vs Loser bracket winner (best-of-5)
+  GROUP_STAGE       // Group round-robin
+}
+
 // Registration lifecycle
 enum RegistrationStatus {
   PENDING
@@ -380,6 +388,7 @@ model Season {
 
   scrimTournament   Tournament?  @relation("SeasonScrimTournament", fields: [scrimTournamentId], references: [id])
   teamStandings     TeamStanding[]
+  teamSeasonRecords TeamSeasonRecord[]   // New: season-specific team records
   playerMvpRankings PlayerMvpRanking[]
   heroMeta          HeroMeta[]
   bestRoleAwards    BestRoleAward[]
@@ -387,6 +396,7 @@ model Season {
   tournaments       Tournament[]
   monthlyStandings  MonthlyStanding[]
   headToHeads       HeadToHead[]
+  seasonAwards      SeasonAwards?        // New: season champion, MVP, etc.
 
   @@index([status])
   @@map("seasons")
@@ -425,10 +435,15 @@ model Team {
   matchesAsB        Match[]                  @relation("TeamB")
   matchesWon        Match[]                  @relation("Winner")
   standings         TeamStanding[]
+  seasonRecords     TeamSeasonRecord[]       // New: season-specific records
+  seasonAwardsChampion SeasonAwards?         @relation("SeasonChampion")  // New: champion award
+  seasonAwardsRunner   SeasonAwards?         @relation("SeasonRunnerUp")
+  seasonAwardsThird    SeasonAwards?         @relation("SeasonThirdPlace")
   pastPodiums       PastTournamentPodium[]
   prizeDistributions PrizeDistribution[]
   invitesSent       TeamInvite[]
   inviteLinks       TeamInviteLink[]
+  groupTeams        TournamentGroupTeam[]    // New: group stage assignments
   groupStandings    GroupStageStanding[]
   draftEntries      MatchDraft[]
   challengesSent    MatchChallenge[]           @relation("ChallengeChallengerTeam")
@@ -489,6 +504,11 @@ model Player {
   bestRoleAwards   BestRoleAward[]
   roleVotes        RoleVote[]
   matchPerformances MatchPerformance[]
+  matchMvpAwards   MatchMvp[]          @relation("MatchMvpAwards")      // New: per-match MVP
+  tournamentMvps   TournamentMvp[]     @relation("TournamentMvpAwards") // New: tournament MVP aggregates
+  seasonAwardsMvp  SeasonAwards?       @relation("SeasonMvp")           // New: season MVP award
+  seasonAwardsOffender SeasonAwards?   @relation("SeasonBestOffender")
+  seasonAwardsDefender SeasonAwards?   @relation("SeasonBestDefender")
 
   @@index([teamId])
   @@index([role])
@@ -596,6 +616,8 @@ model Tournament {
   registrations      TournamentRegistration[]
   waitlist           Waitlist[]
   matches            Match[]
+  groups             TournamentGroup[]        // New: tournament groups for group stage
+  mvpAwards          TournamentMvp[]          // New: tournament MVP aggregates
   groupStandings     GroupStageStanding[]
   scrimVaults        ScrimVault[]
   pastRecord         PastTournament?
@@ -667,38 +689,55 @@ model Waitlist {
 // ═══════════════════════════════════════════════════════════
 
 model Match {
-  id            String      @id @default(uuid())
+  id            String       @id @default(uuid())
   tournamentId  String
-  refereeId     String?     // assigned referee userId
+  refereeId     String?      // assigned referee userId
   teamAId       String
   teamBId       String
   scheduledTime DateTime
-  status        MatchStatus @default(UPCOMING)
-  scoreA        Int         @default(0) // games won in the series
-  scoreB        Int         @default(0)
-  stage         String?     // e.g. "Group A — Match 3", "Grand Finals — Game 2"
-  bestOf        Int         @default(3)
-  round         Int?        // round number in round-robin (1 = Week 1, 2 = Week 2…); null for playoff knockout matches
-  elapsed       String?     // for live display e.g. "23:45"
+  status        MatchStatus  @default(UPCOMING)
+  scoreA        Int          @default(0) // games won in the series
+  scoreB        Int          @default(0)
+  stage         String?      // e.g. "Group A — Match 3", "Grand Finals — Game 2"
+  bestOf        Int          @default(3)
+  round         Int?         // round number in round-robin (1 = Week 1, 2 = Week 2…); null for playoff knockout matches
+  elapsed       String?      // for live display e.g. "23:45"
   winnerId      String?
-  forfeitedById String?     // which team forfeited, if applicable
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  forfeitedById String?      // which team forfeited, if applicable
+  statsFinalized Boolean     @default(false) // tracks if finalize endpoint was called
+  
+  // ═══════════════════════════════════════════
+  // BRACKET PROGRESSION FIELDS
+  // ═══════════════════════════════════════════
+  bracketType   BracketType? // WINNER_BRACKET, LOSER_BRACKET, GRAND_FINAL, GROUP_STAGE
+  nextMatchId   String?      // Match ID for winner to advance to (if bracketType matches progression logic)
+  loserNextId   String?      // Match ID for loser to advance to (used in double-elimination)
+  bracketPosition Int?       // Seeding/position in bracket tree (1 = first match, 2 = second, etc.)
+  
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
-  tournament   Tournament      @relation(fields: [tournamentId], references: [id])
-  teamA        Team            @relation("TeamA", fields: [teamAId], references: [id])
-  teamB        Team            @relation("TeamB", fields: [teamBId], references: [id])
-  winner       Team?           @relation("Winner", fields: [winnerId], references: [id])
-  screenshots  MatchScreenshot[]
-  performances MatchPerformance[]
-  drafts       MatchDraft[]
-  dispute      MatchDispute?
+  tournament     Tournament       @relation(fields: [tournamentId], references: [id])
+  teamA          Team             @relation("TeamA", fields: [teamAId], references: [id])
+  teamB          Team             @relation("TeamB", fields: [teamBId], references: [id])
+  winner         Team?            @relation("Winner", fields: [winnerId], references: [id])
+  nextMatch      Match?           @relation("MatchProgression", fields: [nextMatchId], references: [id])
+  loserNextMatch Match?           @relation("LoserBracketProgression", fields: [loserNextId], references: [id])
+  prevMatchesWinner Match[]       @relation("MatchProgression")
+  prevMatchesLoser  Match[]       @relation("LoserBracketProgression")
+  screenshots    MatchScreenshot[]
+  performances   MatchPerformance[]
+  drafts         MatchDraft[]
+  dispute        MatchDispute?
   challengeRequest MatchChallenge? @relation("ChallengeScheduledMatch")
-  gameResults  MatchGameResult[]
+  gameResults    MatchGameResult[]
+  mvpAwards      MatchMvp[]
 
   @@index([tournamentId])
   @@index([status])
   @@index([scheduledTime])
+  @@index([bracketType])
+  @@index([bracketPosition])
   @@map("matches")
 }
 
@@ -850,6 +889,142 @@ model MatchDraft {
   @@index([matchId, gameNumber])
   @@index([hero])
   @@map("match_drafts")
+}
+
+// ═══════════════════════════════════════════════════════════
+// TOURNAMENT GROUPS — For group stage management
+// ═══════════════════════════════════════════════════════════
+
+model TournamentGroup {
+  id           String   @id @default(uuid())
+  tournamentId String
+  name         String   // e.g. "Group A", "Group B"
+  description  String?
+  createdAt    DateTime @default(now())
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  teams      TournamentGroupTeam[]
+
+  @@unique([tournamentId, name])
+  @@index([tournamentId])
+  @@map("tournament_groups")
+}
+
+model TournamentGroupTeam {
+  id      String @id @default(uuid())
+  groupId String
+  teamId  String
+
+  group TournamentGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  team  Team            @relation(fields: [teamId], references: [id])
+
+  @@unique([groupId, teamId])
+  @@index([groupId])
+  @@map("tournament_group_teams")
+}
+
+// ═══════════════════════════════════════════════════════════
+// MVP AWARDS — Per-match MVP tracking
+// ═══════════════════════════════════════════════════════════
+
+model MatchMvp {
+  id        String   @id @default(uuid())
+  matchId   String
+  playerId  String
+  awards    String   // JSON: { "mvp": true, "kills": 12, "assist": 8 }
+  createdAt DateTime @default(now())
+
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player Player @relation("MatchMvpAwards", fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, playerId])
+  @@index([matchId])
+  @@index([playerId])
+  @@map("match_mvps")
+}
+
+// Tournament-level MVP aggregation
+model TournamentMvp {
+  id           String   @id @default(uuid())
+  tournamentId String
+  playerId     String
+  mvpCount     Int      @default(0)    // how many matches this player was MVP
+  totalKills   Int      @default(0)
+  totalAssists Int      @default(0)
+  totalDeaths  Int      @default(0)
+  winRate      Float    @default(0.0)
+  ranking      Int?     // 1 for tournament MVP, 2 for runner-up, etc.
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  player     Player     @relation("TournamentMvpAwards", fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, playerId])
+  @@index([tournamentId, ranking])
+  @@index([playerId])
+  @@map("tournament_mvps")
+}
+
+// ═══════════════════════════════════════════════════════════
+// SEASON AWARDS — Season champions, runners-up, MVPs
+// ═══════════════════════════════════════════════════════════
+
+model SeasonAwards {
+  id                String   @id @default(uuid())
+  seasonId          String   @unique
+  championTeamId    String?  @unique  // One team per season as champion
+  runnerUpTeamId    String?  @unique  // One team per season as runner-up
+  thirdPlaceTeamId  String?  @unique  // One team per season as third place
+  seasonMvpId       String?  @unique  // One player per season as MVP
+  seasonMvpTeamId   String?
+  bestOffenderId    String?  @unique  // One player per season with most kills
+  bestDefenderId    String?  @unique  // One player per season with best defense
+  awardedAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  season            Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  championTeam      Team?  @relation("SeasonChampion", fields: [championTeamId], references: [id])
+  runnerUpTeam      Team?  @relation("SeasonRunnerUp", fields: [runnerUpTeamId], references: [id])
+  thirdPlaceTeam    Team?  @relation("SeasonThirdPlace", fields: [thirdPlaceTeamId], references: [id])
+  seasonMvp         Player? @relation("SeasonMvp", fields: [seasonMvpId], references: [id])
+  bestOffender      Player? @relation("SeasonBestOffender", fields: [bestOffenderId], references: [id])
+  bestDefender      Player? @relation("SeasonBestDefender", fields: [bestDefenderId], references: [id])
+
+  @@index([seasonId])
+  @@map("season_awards")
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEAM SEASON RECORDS — Per-team, per-season statistics
+// Separate from overall career totals
+// ═══════════════════════════════════════════════════════════
+
+model TeamSeasonRecord {
+  id              String   @id @default(uuid())
+  teamId          String
+  seasonId        String
+  wins            Int      @default(0)
+  losses          Int      @default(0)
+  forfeits        Int      @default(0)
+  draws           Int      @default(0)
+  points          Int      @default(0)      // points earned this season
+  rank            Int?
+  previousRank    Int?
+  tier            Tier     @default(C)
+  tournamentPlaces String?  // JSON: { "tournament_id": 1, "tournament_id": 3 } (placements)
+  premiumPoints   Int      @default(0)      // Points from major tournaments
+  streak          String?  // e.g. "W5", "L2"
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, seasonId])
+  @@index([seasonId, rank])
+  @@index([teamId])
+  @@map("team_season_records")
 }
 
 // ═══════════════════════════════════════════════════════════

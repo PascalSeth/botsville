@@ -12,7 +12,7 @@ import { TournamentFormat } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
 
-// GET - Get tournament details
+// GET - Get tournament details by ID or slug
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -20,7 +20,8 @@ export async function GET(
   try {
     const { id } = await context.params;
 
-    const tournament = await prisma.tournament.findUnique({
+    // Try to find by ID first, then by name (slug)
+    let tournament = await prisma.tournament.findUnique({
       where: { id },
       include: {
         season: {
@@ -58,6 +59,48 @@ export async function GET(
         },
       },
     });
+
+    // If not found by ID, try by name (for slug-based URLs)
+    if (!tournament) {
+      tournament = await prisma.tournament.findFirst({
+        where: { name: id },
+        include: {
+          season: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+            },
+          },
+          pointsFormulas: {
+            orderBy: { placement: "asc" },
+          },
+          registrations: {
+            where: {
+              status: "APPROVED",
+            },
+            include: {
+              team: {
+                select: {
+                  id: true,
+                  name: true,
+                  tag: true,
+                  logo: true,
+                },
+              },
+            },
+            orderBy: { seed: "asc" },
+          },
+          _count: {
+            select: {
+              registrations: true,
+              matches: true,
+              waitlist: true,
+            },
+          },
+        },
+      });
+    }
 
     if (!tournament || tournament.deletedAt) {
       return apiError("Tournament not found", 404);
