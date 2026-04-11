@@ -323,6 +323,180 @@ const CountdownDisplay = ({ target, color }: { target: string; color?: string })
   );
 };
 
+// ── Competition Brief Component ────────────────────────────────
+const CompetitionBrief = ({ delay = 0.4 }: { delay?: number }) => {
+  const sections = [
+    {
+      title: 'Tournament Logistics',
+      icon: Clock,
+      items: [
+        { label: 'Duration', val: '2 Weeks', sub: 'Intensity period' },
+        { label: 'Match Days', val: 'Fri • Sat • Sun', sub: 'Weekend focus' },
+        { label: 'Total Play Days', val: '6 Days', sub: 'Total engagement' },
+      ]
+    },
+    {
+      title: 'Tournament Format',
+      icon: Layout,
+      content: (
+        <div className="space-y-4">
+          <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+            <p className="text-[#e8a000] text-[10px] font-black uppercase tracking-widest mb-2">Stage 1: Group Stage</p>
+            <p className="text-white text-xs font-bold uppercase mb-2">Single Round Robin</p>
+            <p className="text-white/50 text-[10px] leading-relaxed">All 8 teams play each other once. Guarantees equal evaluation opportunities and fair scouting data.</p>
+          </div>
+          <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+            <p className="text-[#e8a000] text-[10px] font-black uppercase tracking-widest mb-2">Stage 2: Playoffs</p>
+            <p className="text-white text-xs font-bold uppercase mb-2">Single Elimination</p>
+            <p className="text-white/50 text-[10px] leading-relaxed">Top 4 teams advance to the final showdown on Sunday.</p>
+          </div>
+        </div>
+      )
+    },
+    {
+      title: 'Match Specifications',
+      icon: Target,
+      content: (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+            <div>
+              <p className="text-white text-xs font-bold uppercase">Standard Matches</p>
+              <p className="text-white/40 text-[9px] uppercase tracking-widest mt-1">Best of 3 (BO3)</p>
+            </div>
+            <Swords size={20} className="text-[#e8a000]" />
+          </div>
+          <div className="flex items-center justify-between p-4 rounded-xl bg-[#e8a000]/10 border border-[#e8a000]/30">
+            <div>
+              <p className="text-[#e8a000] text-xs font-bold uppercase">Grand Final</p>
+              <p className="text-[#e8a000]/60 text-[9px] uppercase tracking-widest mt-1">Best of 5 (BO5)</p>
+            </div>
+            <Trophy size={20} className="text-[#e8a000]" />
+          </div>
+          <p className="text-[9px] text-white/30 italic px-2">BO3 allows for tactical adaptation and visible draft understanding for scouts.</p>
+        </div>
+      )
+    },
+    {
+      title: 'Points & Rankings',
+      icon: Medal,
+      content: (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+             <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-center">
+                <p className="text-emerald-400 text-sm font-black uppercase">Win: 3 PTS</p>
+             </div>
+             <div className="p-4 rounded-xl bg-red-500/5 border border-red-500/20 text-center">
+                <p className="text-red-400 text-sm font-black uppercase">Loss: 0 PTS</p>
+             </div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[10px] font-black text-[#555] uppercase tracking-widest px-1">Tie-Breakers</p>
+            <div className="space-y-1">
+              {['Head-to-head result', 'Game difference (W-L)', 'Total game wins'].map((t, i) => (
+                <div key={i} className="flex items-center gap-2 text-[10px] text-white/60 px-2 font-medium">
+                   <span className="text-[#e8a000]">{i+1}.</span> {t}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )
+    }
+  ];
+
+  return (
+    <div id="brief" className="space-y-8 scroll-mt-24">
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {sections.map((s, i) => {
+            const Icon = s.icon;
+            return (
+              <GlassCard key={i} delay={delay + (i * 0.1)}>
+                 <div className="flex items-center gap-3 mb-6">
+                   <div className="p-2 rounded-lg bg-[#e8a000]/10 text-[#e8a000]"><Icon size={18} /></div>
+                   <h3 className="text-xs font-black text-white uppercase tracking-widest">{s.title}</h3>
+                 </div>
+                 {s.items ? (
+                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                     {s.items.map((item, idx) => (
+                       <div key={idx} className="space-y-1">
+                          <p className="text-[8px] font-black text-[#555] uppercase tracking-widest">{item.label}</p>
+                          <p className="text-xs font-black text-white uppercase">{item.val}</p>
+                          <p className="text-[7px] text-white/30 uppercase tracking-tighter">{item.sub}</p>
+                       </div>
+                     ))}
+                   </div>
+                 ) : s.content}
+              </GlassCard>
+            );
+          })}
+       </div>
+
+       <GlassCard delay={delay + 0.4}>
+          <div className="flex items-center gap-3 mb-8">
+             <div className="p-2 rounded-lg bg-[#e8a000]/10 text-[#e8a000]"><Calendar size={18} /></div>
+             <h3 className="text-xs font-black text-white uppercase tracking-widest">Weekly Schedule Structure</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+             <div className="space-y-6">
+                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                   <p className="text-sm font-black text-white uppercase tracking-tighter">WEEK 1: Group Matches (Part 1)</p>
+                   <span className="px-3 py-1 bg-white/5 rounded-lg text-[9px] font-black text-white/40 uppercase tracking-widest">12 Matches</span>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                   {['FRIDAY', 'SATURDAY', 'SUNDAY'].map(day => (
+                     <div key={day} className="space-y-3">
+                        <p className="text-[9px] font-black text-[#e8a000] uppercase tracking-[0.2em]">{day}</p>
+                        <div className="space-y-1.5 opacity-50">
+                           {[1,2,3,4].map(m => (
+                             <div key={m} className="h-6 rounded-md bg-white/5 border border-white/5 flex items-center px-2">
+                                <span className="text-[7px] font-black text-white/30">M{(['FRIDAY', 'SATURDAY', 'SUNDAY'].indexOf(day) * 4) + m}</span>
+                             </div>
+                           ))}
+                        </div>
+                     </div>
+                   ))}
+                </div>
+             </div>
+
+             <div className="space-y-6">
+                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                   <p className="text-sm font-black text-white uppercase tracking-tighter">WEEK 2: Finish + Playoffs</p>
+                   <span className="px-3 py-1 bg-[#e8a000]/10 rounded-lg text-[9px] font-black text-[#e8a000] uppercase tracking-widest">Final Phase</span>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                   {[
+                     { day: 'FRIDAY', type: 'Matches 13-16' },
+                     { day: 'SATURDAY', type: 'Finish RR' },
+                     { day: 'SUNDAY', type: 'TOP 4 FINALS' }
+                   ].map(d => (
+                     <div key={d.day} className="space-y-3">
+                        <p className="text-[9px] font-black text-[#e8a000] uppercase tracking-[0.2em]">{d.day}</p>
+                        <div className="space-y-1.5">
+                           {d.day === 'SUNDAY' ? (
+                             <>
+                               {['Semi Final 1', 'Semi Final 2', 'Grand Final'].map(f => (
+                                 <div key={f} className="h-6 rounded-md bg-[#e8a000]/10 border border-[#e8a000]/20 flex items-center px-2">
+                                    <span className="text-[7px] font-black text-[#e8a000]">{f}</span>
+                                 </div>
+                               ))}
+                             </>
+                           ) : (
+                             <div className="p-3 rounded-lg bg-white/5 border border-white/5 h-[84px] flex items-center justify-center">
+                                <span className="text-[8px] font-black text-white/20 uppercase text-center leading-tight">{d.type}</span>
+                             </div>
+                           )}
+                        </div>
+                     </div>
+                   ))}
+                </div>
+             </div>
+          </div>
+       </GlassCard>
+    </div>
+  );
+};
+
 export default function TournamentDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const [tournament, setTournament] = useState<Tournament | null>(null);
@@ -492,9 +666,21 @@ export default function TournamentDetailPage() {
                  {[
                    { label: 'Bracket', icon: Trophy, path: 'bracket' },
                    { label: 'Rankings', icon: Medal, path: 'standings' },
-                   { label: 'Awards', icon: Zap, path: 'awards', condition: isCompleted }
+                   { label: 'Awards', icon: Zap, path: 'awards', condition: isCompleted },
+                   { label: 'Brief', icon: Layout, path: '#brief', isScroll: true }
                  ].filter(tab => tab.condition !== false).map((tab) => {
                     const Icon = tab.icon;
+                    if (tab.isScroll) {
+                      return (
+                        <button key={tab.path} onClick={() => document.getElementById('brief')?.scrollIntoView({ behavior: 'smooth' })} className="w-full flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 text-white/40 hover:text-[#e8a000] hover:border-[#e8a000]/30 transition-all group">
+                           <div className="flex items-center gap-3">
+                              <div className="p-2 rounded-xl bg-white/5 text-white/20 group-hover:text-[#e8a000] group-hover:bg-[#e8a000]/10 transition-all"><Icon size={16} /></div>
+                              <span className="text-[10px] font-black uppercase tracking-widest">{tab.label}</span>
+                           </div>
+                           <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
+                        </button>
+                      );
+                    }
                     return (
                       <Link key={tab.path} href={`/tournaments/${slug}/${tab.path}`} className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 text-white/40 hover:text-[#e8a000] hover:border-[#e8a000]/30 transition-all group">
                          <div className="flex items-center gap-3">
@@ -509,8 +695,9 @@ export default function TournamentDetailPage() {
            </div>
         </div>
 
-        {/* Right: Insights & Competition */}
-        <div className="lg:col-span-2 space-y-8">
+        {/* Right: Insights & Competition Brief */}
+        <div className="lg:col-span-2 space-y-12">
+           <CompetitionBrief />
            {/* Standings Preview */}
            {standings.length > 0 && (
              <GlassCard delay={0.4}>

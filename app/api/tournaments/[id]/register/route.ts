@@ -159,8 +159,15 @@ export async function POST(
       // Can reapply if previously rejected
     }
 
-    // Check if tournament is full
-    if (tournament.filled >= tournament.slots) {
+    // Check if tournament is full by counting actual registrations
+    const currentRegistrationCount = await prisma.tournamentRegistration.count({
+      where: {
+        tournamentId: id,
+        status: { in: ['APPROVED', 'PENDING'] }
+      }
+    });
+
+    if (currentRegistrationCount >= tournament.slots) {
       // Add to waitlist
       const waitlistCount = await prisma.waitlist.count({
         where: { tournamentId: id },

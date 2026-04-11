@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
             },
           },
           registrations: {
-            where: { status: 'APPROVED' },
+            where: { status: { in: ['APPROVED', 'PENDING'] } },
             select: { id: true },
           },
           _count: {

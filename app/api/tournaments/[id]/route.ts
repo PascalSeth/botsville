@@ -36,7 +36,7 @@ export async function GET(
         },
         registrations: {
           where: {
-            status: "APPROVED",
+            status: { in: ['APPROVED', 'PENDING'] },
           },
           include: {
             team: {
@@ -106,7 +106,19 @@ export async function GET(
       return apiError("Tournament not found", 404);
     }
 
-    return apiSuccess(tournament);
+    // Transform to include filled count
+    const t = tournament as any;
+    const filled = await prisma.tournamentRegistration.count({
+      where: {
+        tournamentId: t.id,
+        status: { in: ['APPROVED', 'PENDING'] }
+      }
+    });
+
+    return apiSuccess({
+      ...t,
+      filled
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to fetch tournament";
     console.error("Get tournament error:", error);
