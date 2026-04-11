@@ -72,6 +72,7 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const [registrationStatus, setRegistrationStatus] = useState<string | null>(null);
   const [registeredTeams, setRegisteredTeams] = useState<string[]>([]);
+  const [teamData, setTeamData] = useState<any>(null);
 
   useEffect(() => {
     // Fetch user's teams
@@ -82,14 +83,15 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
           fetch(`/api/tournaments/${tournament.id}/register`),
         ]);
 
-        const teamData = await teamResponse.json();
+        const teamJson = await teamResponse.json();
         const registrationData = await registrationResponse.json();
 
-        if (teamResponse.ok && teamData?.name && typeof teamData.name === 'string') {
-          setRegisteredTeams([teamData.name]);
-          setIsCaptain(Boolean(teamData.isCaptain));
-          if (Boolean(teamData.isCaptain)) {
-            setTeam(teamData.name);
+        if (teamResponse.ok && teamJson) {
+          setTeamData(teamJson);
+          setRegisteredTeams([teamJson.name]);
+          setIsCaptain(Boolean(teamJson.isCaptain));
+          if (Boolean(teamJson.isCaptain)) {
+            setTeam(teamJson.name);
           }
         }
 
@@ -99,8 +101,8 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
             setRegistrationStatus(String(registrationData.registrationStatus));
           }
         }
-      } catch (error) {
-        console.error('Failed to fetch user teams:', error);
+      } catch (e) {
+        console.error("Fetch registration data error:", e);
       }
     };
     fetchTeams();
@@ -110,6 +112,14 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
   }, []);
+
+  // Eligibility Checks
+  const hasMinPlayers = (teamData?.players?.length || 0) >= 5;
+  const roles = teamData?.players?.map((p: any) => p.role) || [];
+  const requiredRolesList = ['EXP', 'JUNGLE', 'MID', 'GOLD', 'ROAM'];
+  const hasAllRoles = requiredRolesList.every(r => roles.includes(r));
+  const hasBranding = Boolean(teamData?.logo && teamData?.banner);
+  const isEligible = isCaptain && hasMinPlayers && hasAllRoles && hasBranding;
 
   const canSubmit = isCaptain && team && agreed && !loading && !alreadyRegistered;
   const submit = async () => {
@@ -206,11 +216,15 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
                       <button key={tm} onClick={() => setTeam(tm)} className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${
                         team === tm ? 'bg-[#e8a000]/10 border-[#e8a000] text-white' : 'bg-white/[0.02] border-white/5 text-[#555] hover:bg-white/[0.05]'
                       }`}>
-                        <span className="font-black text-[11px] uppercase tracking-widest">{tm}</span>
+                        <div className="flex items-center gap-4">
+                           <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center p-1">
+                              {teamData?.logo ? <img src={teamData.logo} alt="" className="w-full h-full object-contain" /> : <Shield size={14} className="opacity-20" />}
+                           </div>
+                           <span className="font-black text-[11px] uppercase tracking-widest">{tm}</span>
+                        </div>
                         {team === tm && <CheckCircle size={14} className="text-[#e8a000]" />}
                       </button>
                     ))}
-                    {!isCaptain && <p className="text-[9px] text-red-400 font-black uppercase tracking-widest mt-2 flex items-center gap-2"><AlertCircle size={12} /> Captain status required</p>}
                   </div>
                 ) : (
                   <div className="p-6 rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-center">
@@ -219,6 +233,38 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
                   </div>
                 )}
               </div>
+
+              {/* Eligibility Checklist */}
+              {team && !alreadyRegistered && (
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#555] block">Eligibility Requirements</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      { label: 'Captain Authority', met: isCaptain, sub: 'Team owner permission' },
+                      { label: 'Active Personnel', met: hasMinPlayers, sub: 'Min 5 players required' },
+                      { label: 'Role Coverage', met: hasAllRoles, sub: 'All 5 roles occupied' },
+                      { label: 'Visual Identity', met: hasBranding, sub: 'Logo & Banner uploaded' },
+                    ].map((cond, i) => (
+                      <div key={i} className={`p-4 rounded-2xl border transition-all ${cond.met ? 'bg-emerald-500/5 border-emerald-500/10' : 'bg-red-500/5 border-red-500/10'}`}>
+                         <div className="flex items-center justify-between mb-1">
+                            <p className={`text-[9px] font-black uppercase tracking-wider ${cond.met ? 'text-emerald-400' : 'text-red-400/80'}`}>{cond.label}</p>
+                            {cond.met ? <CheckCircle size={12} className="text-emerald-400" /> : <AlertCircle size={12} className="text-red-400/50" />}
+                         </div>
+                         <p className="text-[8px] text-[#555] uppercase tracking-tighter">{cond.sub}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {!isEligible && (
+                    <div className="p-4 rounded-xl bg-white/5 border border-white/10 flex items-start gap-3">
+                       <Zap size={14} className="text-[#e8a000] mt-0.5" />
+                       <div className="space-y-1">
+                          <p className="text-[9px] font-black text-white uppercase tracking-widest leading-tight">Requirement Unmet</p>
+                          <p className="text-[8px] text-white/40 uppercase leading-relaxed">Ensure your team has a full roster and branding in the <Link href="/dashboard/my-team" className="text-[#e8a000] hover:underline">Team Dashboard</Link>.</p>
+                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-4">
                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#555] block">Tournament Rules</label>
@@ -244,8 +290,12 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
                   </span>
                 </label>
 
-                <button onClick={submit} disabled={!canSubmit} className="w-full py-5 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl hover:bg-[#ffb800] transition-all disabled:opacity-20 flex items-center justify-center gap-3">
-                   {loading ? <Loader2 size={16} className="animate-spin" /> : <><Shield size={16} /> Register Now</>}
+                <button 
+                  onClick={submit} 
+                  disabled={!canSubmit || !isEligible} 
+                  className="w-full py-5 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl hover:bg-[#ffb800] transition-all disabled:opacity-20 flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(232,160,0,0.1)] active:scale-[0.98]"
+                >
+                   {loading ? <Loader2 size={16} className="animate-spin" /> : <><Shield size={16} /> Finalize Registration</>}
                 </button>
               </div>
 
