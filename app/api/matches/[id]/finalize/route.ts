@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api-utils";
-import { MatchStatus } from "@/app/generated/prisma/enums";
+import { MatchStatus, MainRole, MetaTier, DraftType } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
 // POST /api/matches/[id]/finalize - Finalize match and update all player stats and leaderboards
@@ -95,7 +95,12 @@ export async function POST(
     // Update player MVP rankings for the season if available
     if (seasonId) {
       await updateSeasonPlayerRankings(seasonId);
+      // Update Hero meta stats for the season
+      await updateHeroMeta(seasonId);
     }
+
+    // Update Team & Group Standings (Tournament + Season)
+    await updateStandings(matchId);
 
     // Mark match as stats finalized
     await prisma.match.update({
@@ -285,3 +290,275 @@ async function updateSeasonPlayerRankings(seasonId: string) {
     });
   }
 }
+
+// Update Hero meta stats for the season based on picks, bans and wins
+async function updateHeroMeta(seasonId: string) {
+  try {
+    // 1. Get all matches for this season
+    const matches = await prisma.match.findMany({
+      where: {
+        tournament: { seasonId },
+        status: MatchStatus.COMPLETED,
+      },
+      select: { id: true },
+    });
+
+    const matchIds = matches.map((m) => m.id);
+    if (matchIds.length === 0) return;
+
+    // 2. Get total unique games in the season
+    // Using MatchPerformance as the source of truth for games played
+    const perfGames = await prisma.matchPerformance.groupBy({
+      by: ["matchId", "gameNumber"],
+      where: { matchId: { in: matchIds } },
+    });
+    const totalGames = perfGames.length;
+    if (totalGames === 0) return;
+
+    // 3. Get total picks and wins per hero
+    const perfs = await prisma.matchPerformance.findMany({
+      where: { matchId: { in: matchIds } },
+      select: { hero: true, won: true },
+    });
+
+    const heroStats: Record<string, { picks: number; wins: number; bans: number }> = {};
+
+    for (const p of perfs) {
+      if (!heroStats[p.hero]) {
+        heroStats[p.hero] = { picks: 0, wins: 0, bans: 0 };
+      }
+      heroStats[p.hero].picks++;
+      if (p.won) {
+        heroStats[p.hero].wins++;
+      }
+    }
+
+    // 4. Get total bans per hero from MatchDraft
+    const bans = await prisma.matchDraft.findMany({
+      where: { 
+        matchId: { in: matchIds },
+        type: DraftType.BAN 
+      },
+      select: { hero: true },
+    });
+
+    for (const b of bans) {
+      if (!heroStats[b.hero]) {
+        heroStats[b.hero] = { picks: 0, wins: 0, bans: 0 };
+      }
+      heroStats[b.hero].bans++;
+    }
+
+    // 5. Update or create HeroMeta entries
+    for (const [heroName, stats] of Object.entries(heroStats)) {
+      const pickRate = stats.picks / totalGames;
+      const banRate = stats.bans / totalGames;
+      const winRate = stats.picks > 0 ? stats.wins / stats.picks : 0;
+
+      // Logic for Tier assignment
+      // Score based on winRate (weighted), pickRate and banRate (popularity)
+      const score = (winRate * 0.5) + (pickRate * 0.3) + (banRate * 0.2);
+      
+      let tier: MetaTier = MetaTier.C;
+      if (score >= 0.55 || (winRate > 0.6 && pickRate > 0.1)) tier = MetaTier.S_PLUS;
+      else if (score >= 0.45) tier = MetaTier.S;
+      else if (score >= 0.35) tier = MetaTier.A;
+      else if (score >= 0.25) tier = MetaTier.B;
+
+      // Get primary role for hero
+      const role = HERO_ROLE_MAPPING[heroName] || MainRole.MID;
+
+      await prisma.heroMeta.upsert({
+        where: {
+          hero_seasonId: {
+            hero: heroName,
+            seasonId,
+          },
+        },
+        update: {
+          pickRate,
+          banRate,
+          winRate,
+          tier,
+          role,
+        },
+        create: {
+          hero: heroName,
+          seasonId,
+          pickRate,
+          banRate,
+          winRate,
+          tier,
+          role,
+        },
+      });
+    }
+  } catch (error) {
+    console.error("Error updating HeroMeta:", error);
+  }
+}
+
+// Update Tournament Group Standings and Season Standings based on match result
+async function updateStandings(matchId: string) {
+  try {
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        tournament: {
+          select: { id: true, seasonId: true }
+        },
+        teamA: true,
+        teamB: true,
+        winner: true,
+      }
+    });
+
+    if (!match || !match.tournament) return;
+
+    const { id: tournamentId, seasonId } = match.tournament;
+    const teamAId = match.teamAId;
+    const teamBId = match.teamBId;
+    const winnerId = match.winnerId;
+
+    // ── 1. Update Group Stage Standings (Tournament Level) ──
+    // Only if match is tagged as a group stage match
+    if (match.bracketType === 'GROUP_STAGE') {
+      // Find which group these teams are in
+      const groupA = await prisma.tournamentGroup.findFirst({
+        where: { tournamentId, teams: { some: { id: teamAId } } }
+      });
+      const groupB = await prisma.tournamentGroup.findFirst({
+        where: { tournamentId, teams: { some: { id: teamBId } } }
+      });
+
+      // Usually they are in the same group
+      if (groupA && groupB && groupA.id === groupB.id) {
+        const groupName = groupA.name;
+
+        // Upsert for Team A
+        await prisma.groupStageStanding.upsert({
+          where: { tournamentId_groupName_teamId: { tournamentId, groupName, teamId: teamAId } },
+          update: {
+            wins: { increment: winnerId === teamAId ? 1 : 0 },
+            losses: { increment: winnerId === teamBId ? 1 : 0 },
+            draws: { increment: !winnerId ? 1 : 0 },
+            groupPoints: { increment: winnerId === teamAId ? 3 : (!winnerId ? 1 : 0) },
+          },
+          create: {
+            tournamentId,
+            groupName,
+            teamId: teamAId,
+            wins: winnerId === teamAId ? 1 : 0,
+            losses: winnerId === teamBId ? 1 : 0,
+            draws: !winnerId ? 1 : 0,
+            groupPoints: winnerId === teamAId ? 3 : (!winnerId ? 1 : 0),
+          }
+        });
+
+        // Upsert for Team B
+        await prisma.groupStageStanding.upsert({
+          where: { tournamentId_groupName_teamId: { tournamentId, groupName, teamId: teamBId } },
+          update: {
+            wins: { increment: winnerId === teamBId ? 1 : 0 },
+            losses: { increment: winnerId === teamAId ? 1 : 0 },
+            draws: { increment: !winnerId ? 1 : 0 },
+            groupPoints: { increment: winnerId === teamBId ? 3 : (!winnerId ? 1 : 0) },
+          },
+          create: {
+            tournamentId,
+            groupName,
+            teamId: teamBId,
+            wins: winnerId === teamBId ? 1 : 0,
+            losses: winnerId === teamAId ? 1 : 0,
+            draws: !winnerId ? 1 : 0,
+            groupPoints: winnerId === teamBId ? 3 : (!winnerId ? 1 : 0),
+          }
+        });
+      }
+    }
+
+    // ── 2. Update Team Standings (Season Level) ──
+    // Points count 1-1 to the season ranking as requested
+    const pointsToAddA = winnerId === teamAId ? 3 : (!winnerId ? 1 : 0);
+    const pointsToAddB = winnerId === teamBId ? 3 : (!winnerId ? 1 : 0);
+
+    // Update Team A Season Standing
+    await prisma.teamStanding.upsert({
+      where: { teamId_seasonId: { seasonId, teamId: teamAId } },
+      update: {
+        wins: { increment: winnerId === teamAId ? 1 : 0 },
+        losses: { increment: winnerId === teamBId ? 1 : 0 },
+        points: { increment: pointsToAddA },
+      },
+      create: {
+        seasonId,
+        teamId: teamAId,
+        wins: winnerId === teamAId ? 1 : 0,
+        losses: winnerId === teamBId ? 1 : 0,
+        points: pointsToAddA,
+        rank: 0,
+      }
+    });
+
+    // Update Team B Season Standing
+    await prisma.teamStanding.upsert({
+      where: { teamId_seasonId: { seasonId, teamId: teamBId } },
+      update: {
+        wins: { increment: winnerId === teamBId ? 1 : 0 },
+        losses: { increment: winnerId === teamAId ? 1 : 0 },
+        points: { increment: pointsToAddB },
+      },
+      create: {
+        seasonId,
+        teamId: teamBId,
+        wins: winnerId === teamBId ? 1 : 0,
+        losses: winnerId === teamAId ? 1 : 0,
+        points: pointsToAddB,
+        rank: 0,
+      }
+    });
+
+    // Finally, refresh ranks
+    await updateSeasonPlayerRankings(seasonId);
+
+  } catch (error) {
+    console.error("Error updating standings in finalize:", error);
+  }
+}
+
+// Map of heroes to their primary lane/role in MLBB Meta context
+const HERO_ROLE_MAPPING: Record<string, MainRole> = {
+  // EXP Lane (Fighters/Tanks)
+  "Akai": MainRole.ROAM, "Aldous": MainRole.EXP, "Alpha": MainRole.JUNGLE, "Argus": MainRole.EXP, "Arlott": MainRole.EXP, 
+  "Badang": MainRole.EXP, "Balmond": MainRole.JUNGLE, "Bane": MainRole.EXP, "Barats": MainRole.JUNGLE, "Baxia": MainRole.JUNGLE, 
+  "Belerick": MainRole.ROAM, "Benedetta": MainRole.EXP, "Chou": MainRole.EXP, "Dyrroth": MainRole.EXP, "Edith": MainRole.EXP, 
+  "Esmeralda": MainRole.EXP, "Freya": MainRole.JUNGLE, "Gatotkaca": MainRole.ROAM, "Gloo": MainRole.EXP, "Guinevere": MainRole.JUNGLE, 
+  "Hilda": MainRole.ROAM, "Jawhead": MainRole.JUNGLE, "Joy": MainRole.JUNGLE, "Julian": MainRole.EXP, "Khaleed": MainRole.EXP, 
+  "Lapu-Lapu": MainRole.EXP, "Leomord": MainRole.JUNGLE, "Martis": MainRole.JUNGLE, "Masha": MainRole.EXP, "Minsitthar": MainRole.ROAM, 
+  "Paquito": MainRole.EXP, "Phoveus": MainRole.EXP, "Ruby": MainRole.EXP, "Silvanna": MainRole.EXP, "Sun": MainRole.EXP, 
+  "Terizla": MainRole.EXP, "Thamuz": MainRole.EXP, "Uranus": MainRole.EXP, "X.Borg": MainRole.EXP, "Yu Zhong": MainRole.EXP, "Zilong": MainRole.EXP,
+  
+  // Jungle (Assassins/Fighters)
+  "Aamon": MainRole.JUNGLE, "Fanny": MainRole.JUNGLE, "Gusion": MainRole.JUNGLE, "Hanzo": MainRole.JUNGLE, "Harley": MainRole.JUNGLE, 
+  "Hayabusa": MainRole.JUNGLE, "Helcurt": MainRole.JUNGLE, "Karina": MainRole.JUNGLE, "Lancelot": MainRole.JUNGLE, "Ling": MainRole.JUNGLE, 
+  "Natalia": MainRole.ROAM, "Nolan": MainRole.JUNGLE, "Roger": MainRole.JUNGLE, "Saber": MainRole.JUNGLE, "Yin": MainRole.JUNGLE, 
+  "Yi Sun-shin": MainRole.JUNGLE, "Granger": MainRole.JUNGLE, "Fredrinn": MainRole.JUNGLE,
+  
+  // Mid Lane (Mages)
+  "Alice": MainRole.MID, "Aurora": MainRole.MID, "Cecilion": MainRole.MID, "Chang'e": MainRole.MID, "Cyclops": MainRole.MID, 
+  "Eudora": MainRole.MID, "Faramis": MainRole.MID, "Gord": MainRole.MID, "Harith": MainRole.MID, "Kadita": MainRole.MID, 
+  "Kagura": MainRole.MID, "Lunox": MainRole.MID, "Luo Yi": MainRole.MID, "Lylia": MainRole.MID, "Nana": MainRole.MID, 
+  "Novaria": MainRole.MID, "Odette": MainRole.MID, "Pharsa": MainRole.MID, "Valentina": MainRole.MID, "Valir": MainRole.MID, 
+  "Vale": MainRole.MID, "Vexana": MainRole.MID, "Xavier": MainRole.MID, "Yve": MainRole.MID, "Zhask": MainRole.MID, "Zhuxin": MainRole.MID,
+  
+  // Gold Lane (Marksmen)
+  "Beatrix": MainRole.GOLD, "Brody": MainRole.GOLD, "Bruno": MainRole.GOLD, "Claude": MainRole.GOLD, "Clint": MainRole.GOLD, 
+  "Hanabi": MainRole.GOLD, "Irithel": MainRole.GOLD, "Karrie": MainRole.GOLD, "Layla": MainRole.GOLD, "Lesley": MainRole.GOLD, 
+  "Melissa": MainRole.GOLD, "Miya": MainRole.GOLD, "Moskov": MainRole.GOLD, "Natan": MainRole.GOLD, "Popol and Kupa": MainRole.GOLD, 
+  "Wanwan": MainRole.GOLD, "Ixia": MainRole.GOLD, "Cici": MainRole.EXP,
+  
+  // Roaming (Tanks/Supports)
+  "Atlas": MainRole.ROAM, "Carmilla": MainRole.ROAM, "Diggie": MainRole.ROAM, "Estes": MainRole.ROAM, "Floryn": MainRole.ROAM, 
+  "Franco": MainRole.ROAM, "Hylos": MainRole.ROAM, "Johnson": MainRole.ROAM, "Kaja": MainRole.ROAM, "Khufra": MainRole.ROAM, 
+  "Lolita": MainRole.ROAM, "Minotaur": MainRole.ROAM, "Rafaela": MainRole.ROAM, "Tigreal": MainRole.ROAM, "Angela": MainRole.ROAM, "Selena": MainRole.ROAM,
+};

@@ -1,5 +1,18 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { useHero } from '../../contexts/HeroContext';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Calendar, Clock, Trophy, ChevronRight, X,
+  CheckCircle, AlertCircle, Swords, Lock, MapPin,
+  Flame, ArrowRight, Zap, Loader2, Share2, Shield, Users
+} from 'lucide-react';
+
 // Floating animation for hero image
 const floatingHeroStyle: React.CSSProperties = {
   animation: 'hero-float 3.5s ease-in-out infinite',
@@ -17,19 +30,6 @@ if (typeof window !== 'undefined') {
   `;
   document.head.appendChild(style);
 }
-
-import React, { useState, useEffect, useCallback } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { useHero } from '../../contexts/HeroContext';
-// import { motion, AnimatePresence, cubicBezier } from 'framer-motion';
-import {
-  Calendar, Clock, Trophy, ChevronRight, X,
-  CheckCircle, AlertCircle, Swords, Lock, MapPin,
-  Flame, ArrowRight, Zap,
-} from 'lucide-react';
-
-// const ease = cubicBezier(0.22, 1, 0.36, 1);
 
 const Scanlines = ({ opacity = 0.025 }: { opacity?: number }) => (
   <div className="absolute inset-0 pointer-events-none z-[1]"
@@ -49,7 +49,7 @@ const OrbEffect = ({ color = '#e8a000' }: { color?: string }) => (
   </>
 );
 
-type TStatus = 'OPEN' | 'CLOSED' | 'UPCOMING' | 'COMPLETED';
+type TStatus = 'OPEN' | 'CLOSED' | 'UPCOMING' | 'COMPLETED' | 'LIVE' | 'ONGOING';
 
 type Tournament = {
   id: string;
@@ -67,6 +67,7 @@ type Tournament = {
   tags?: string[];
   heroImage?: string | null;
   banner?: string | null;
+  image?: string | null; // Compatibility with legacy field
   rules?: string[];
   season?: { id: string; name: string } | null;
 };
@@ -76,28 +77,30 @@ type ApiResponse = {
   pagination: { total: number; limit: number; skip: number };
 };
 
-const canRegisterTournament = (tournament: Tournament): boolean => {
+const getRegistrationStatus = (tournament: Tournament): { canRegister: boolean; label: string; color: string } => {
   const filled = tournament.filled || 0;
   const isFull = filled >= tournament.slots;
-  const acceptsRegistrations = tournament.status === 'OPEN' || tournament.status === 'UPCOMING';
-  const deadline = tournament.registrationDeadline ? new Date(tournament.registrationDeadline) : new Date(tournament.date);
-  const beforeDeadline = Date.now() <= deadline.getTime();
-  return acceptsRegistrations && beforeDeadline && !isFull;
+  const deadlineDate = tournament.registrationDeadline ? new Date(tournament.registrationDeadline) : new Date(tournament.date);
+  const isPastDeadline = Date.now() > deadlineDate.getTime();
+
+  if (tournament.status === 'COMPLETED') return { canRegister: false, label: 'Tournament Completed', color: 'text-gray-500 border-gray-500/30 bg-gray-500/10' };
+  if (isFull) return { canRegister: false, label: 'Tournament Full', color: 'text-red-500 border-red-500/30 bg-red-500/10' };
+  if (isPastDeadline) return { canRegister: false, label: 'Registration Closed', color: 'text-red-500 border-red-500/30 bg-red-500/10' };
+
+  // If we're here, it's not completed, not full, and before deadline
+  return { canRegister: true, label: 'Registration Open', color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' };
 };
 
-// ── Utility to format date consistently (no SSR mismatch) ──
+const canRegisterTournament = (tournament: Tournament): boolean => {
+  return getRegistrationStatus(tournament).canRegister;
+};
+
 const formatDate = (date: Date | string): string => {
   const dateObj = typeof date === 'string' ? new Date(date) : date;
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const weekday = days[dateObj.getDay()];
-  const day = dateObj.getDate();
-  const month = months[dateObj.getMonth()];
-  const year = dateObj.getFullYear();
-  return `${weekday} ${day} ${month} ${year}`;
+  return dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-// ── Countdown ─────────────────────────────────────────────────
+// ── Countdown Hook ─────────────────────────────────────────────────
 function useCountdown(target: Date) {
   const calc = useCallback(() => {
     const diff = target.getTime() - Date.now();
@@ -121,18 +124,18 @@ function useCountdown(target: Date) {
 const CountdownDisplay = ({ target, color }: { target: string; color?: string }) => {
   const t = useCountdown(new Date(target));
   const displayColor = color || '#e8a000';
-  if (t.over) return <span className="text-[#e84040] text-[10px] font-black tracking-widest uppercase">Registration Closed</span>;
+  if (t.over) return <span className="text-red-500 text-[10px] font-black tracking-widest uppercase">Registration Closed</span>;
   return (
     <div className="flex items-end gap-1.5">
       {[{ v: t.d, l: 'Days' }, { v: t.h, l: 'Hrs' }, { v: t.m, l: 'Min' }, { v: t.s, l: 'Sec' }].map(({ v, l }, i) => (
         <React.Fragment key={l}>
-          <div className="flex flex-col items-center bg-black/50 border border-white/10 px-2.5 py-1.5 min-w-[44px]">
-            <span className="font-black text-2xl leading-none tabular-nums" style={{ color: displayColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
+          <div className="flex flex-col items-center bg-white/5 border border-white/10 px-3 py-2 min-w-[50px] rounded-xl">
+            <span className="font-black text-2xl leading-none tabular-nums text-white">
               {String(v).padStart(2, '0')}
             </span>
-            <span className="text-[7px] tracking-[0.15em] uppercase text-[#333] mt-0.5">{l}</span>
+            <span className="text-[7px] tracking-[0.2em] uppercase text-[#555] mt-1">{l}</span>
           </div>
-          {i < 3 && <span className="text-[#333] font-black text-xl mb-1.5">:</span>}
+          {i < 3 && <span className="text-white/20 font-black text-xl mb-3">:</span>}
         </React.Fragment>
       ))}
     </div>
@@ -152,38 +155,24 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
   const [registeredTeams, setRegisteredTeams] = useState<string[]>([]);
 
   useEffect(() => {
-    // Fetch user's teams
     const fetchTeams = async () => {
       try {
         const [teamResponse, registrationResponse] = await Promise.all([
           fetch('/api/my-team'),
           fetch(`/api/tournaments/${tournament.id}/register`),
         ]);
-
         const teamData = await teamResponse.json();
         const registrationData = await registrationResponse.json();
-
-        if (!teamResponse.ok) {
-          return;
-        }
-
-        if (teamData?.name && typeof teamData.name === 'string') {
+        if (teamResponse.ok && teamData?.name) {
           setRegisteredTeams([teamData.name]);
           setIsCaptain(Boolean(teamData.isCaptain));
-          if (Boolean(teamData.isCaptain)) {
-            setTeam(teamData.name);
-          }
+          if (Boolean(teamData.isCaptain)) setTeam(teamData.name);
         }
-
         if (registrationResponse.ok && registrationData?.registered) {
           setAlreadyRegistered(true);
-          if (registrationData?.registrationStatus) {
-            setRegistrationStatus(String(registrationData.registrationStatus));
-          }
+          if (registrationData?.registrationStatus) setRegistrationStatus(String(registrationData.registrationStatus));
         }
-      } catch (error) {
-        console.error('Failed to fetch user teams:', error);
-      }
+      } catch (e) {}
     };
     fetchTeams();
   }, [tournament.id]);
@@ -196,559 +185,323 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
   const canSubmit = isCaptain && team && agreed && !loading && !alreadyRegistered;
   const submit = async () => {
     if (!canSubmit) return;
-
     setError(null);
     setLoading(true);
-
     try {
       const response = await fetch(`/api/tournaments/${tournament.id}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
-
       const data = await response.json();
-
       if (!response.ok) {
-        setError(data?.error || 'Failed to register for tournament');
+        setError(data?.error || 'Failed to register');
         setLoading(false);
         return;
       }
-
       setDone(true);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to register for tournament');
+    } catch (err) {
+      setError('Connection failed');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div
-      className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-end sm:items-center justify-center"
-      onClick={onClose}>
-      <div
-        className="relative w-full sm:max-w-lg bg-[#07070d] border-t sm:border overflow-hidden max-h-[94dvh] sm:max-h-[88vh] flex flex-col sm:mx-4"
-        style={{ borderColor: `${(tournament.color || '#e8a000')}35` }}
-        onClick={e => e.stopPropagation()}>
+  const accentColor = tournament.color || '#e8a000';
 
-        <div className="relative h-40 sm:h-48 shrink-0 overflow-hidden">
-          <Image src={tournament.banner || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1400&q=80'} alt="" fill className="object-cover brightness-20" />
-          <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at bottom left, ${(tournament.color || '#e8a000')}40, transparent 60%)` }} />
-          <div className="absolute inset-0" style={{ background: `linear-gradient(125deg, ${(tournament.color || '#e8a000')}18, transparent 50%)` }} />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#07070d] to-transparent" />
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="relative w-full max-w-xl bg-[#08080d] border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="relative h-48 shrink-0 overflow-hidden">
+          <img src={tournament.banner || tournament.image || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80'} alt="" className="w-full h-full object-cover brightness-[0.2]" />
+          <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at bottom left, ${accentColor}40, transparent 60%)` }} />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#08080d] via-transparent to-transparent" />
           <Scanlines />
-
-          <div
-            className="absolute bottom-0 right-4 h-[130%] w-28 sm:w-36 pointer-events-none select-none">
-            <div className="relative w-full h-full">
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-20 h-4 rounded-full"
-                style={{
-                  background: `radial-gradient(ellipse, ${(tournament.color || '#e8a000')}60 0%, transparent 70%)`,
-                  filter: 'blur(6px)',
-                }} />
-              <Image src={tournament.heroImage || '/stunchou.png'} alt="" fill
-                className="object-contain object-bottom drop-shadow-[0_0_24px_rgba(232,160,0,0.4)]" />
-            </div>
-          </div>
-
-          <button onClick={onClose}
-            className="absolute top-3 right-3 w-7 h-7 bg-black/70 border border-white/10 flex items-center justify-center text-[#555] hover:text-white transition-colors z-10">
-            <X size={13} />
-          </button>
-
-          <div className="absolute bottom-3 left-4">
-            <p className="text-[8px] tracking-[0.3em] uppercase font-black mb-0.5" style={{ color: `${(tournament.color || '#e8a000')}90` }}>Register Your Team</p>
-            <h2 className="text-white font-black text-2xl uppercase leading-none" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-              {tournament.name}
-            </h2>
+          <button onClick={onClose} className="absolute top-6 right-6 p-2 rounded-xl bg-black/50 border border-white/10 text-white hover:bg-white/10 transition-colors z-10"><X size={18} /></button>
+          <div className="absolute bottom-6 left-8">
+            <p className="text-[10px] tracking-[0.3em] uppercase font-black mb-2" style={{ color: accentColor }}>Team Registration</p>
+            <h2 className="text-white font-black text-3xl uppercase tracking-tighter leading-none">{tournament.name}</h2>
           </div>
         </div>
 
-        <div className="overflow-y-auto flex-1 px-5 py-5 flex flex-col gap-5">
-          {done && (
-            <div className="flex flex-col items-center gap-4 py-10 text-center">
-              <div className="w-16 h-16 border-2 border-[#27ae60] flex items-center justify-center">
-                <CheckCircle size={32} className="text-[#27ae60]" />
+        <div className="overflow-y-auto flex-1 p-8 space-y-8 scrollbar-hide">
+          {done ? (
+            <div className="flex flex-col items-center gap-6 py-12 text-center">
+              <CheckCircle size={64} className="text-emerald-400" />
+              <div className="space-y-2">
+                <p className="text-white font-black text-3xl uppercase tracking-tighter leading-none">Registration Complete</p>
+                <p className="text-[#555] text-xs font-medium">Your team has been successfully registered.</p>
               </div>
-              <div>
-                <p className="text-white font-black text-2xl uppercase" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Squad Registered!</p>
-                <p className="text-[#444] text-[11px] mt-1.5 tracking-wide leading-relaxed">
-                  <span className="font-bold" style={{ color: (tournament.color || '#e8a000') }}>{team}</span> is now registered for {tournament.name}. Confirmation incoming.
-                </p>
-              </div>
-              <button onClick={onClose}
-                className="px-8 py-2.5 font-black text-[11px] tracking-[0.25em] uppercase bg-[#e8a000] text-black hover:bg-[#ffb800] transition-colors">
-                Let&apos;s Go
-              </button>
+              <button onClick={onClose} className="px-10 py-4 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-[#ffb800] transition-all">Close</button>
             </div>
-          )}
-
-          {!done && <>
-            <div className="grid grid-cols-2 gap-1.5">
-              {[
-                { label: 'Date',     val: new Date(tournament.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) },
-                { label: 'Format',   val: tournament.format },
-                { label: 'Location', val: tournament.location },
-                { label: 'Slots',    val: `${tournament.filled || 0}/${tournament.slots} filled` },
-              ].map(s => (
-                <div key={s.label} className="bg-white/[0.03] border border-white/[0.05] px-3 py-2">
-                  <p className="text-[8px] tracking-widest uppercase text-[#333] mb-0.5">{s.label}</p>
-                  <p className="text-white text-[11px] font-bold">{s.val}</p>
-                </div>
-              ))}
-            </div>
-
-            <div>
-              <p className="text-[#444] text-[9px] tracking-[0.3em] uppercase font-black mb-2">Select Your Team</p>
-              <div className="flex flex-col gap-1">
-                {registeredTeams.length > 0 ? registeredTeams.map(tm => (
-                  <button key={tm} onClick={() => setTeam(tm)}
-                    className="flex items-center justify-between px-3 py-2.5 border text-left transition-all duration-150 relative overflow-hidden group"
-                    style={team === tm
-                      ? { borderColor: `${(tournament.color || '#e8a000')}60`, background: `${(tournament.color || '#e8a000')}10` }
-                      : { borderColor: 'rgba(255,255,255,0.06)', background: 'transparent' }
-                    }>
-                    {team !== tm && (
-                      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        style={{ background: `linear-gradient(90deg, ${(tournament.color || '#e8a000')}08, transparent)` }} />
-                    )}
-                    <span className="font-black text-xs uppercase tracking-wide relative"
-                      style={{ color: team === tm ? 'white' : '#555', fontFamily: "'Barlow Condensed', sans-serif" }}>
-                      {tm}
-                    </span>
-                    {team === tm && <CheckCircle size={12} style={{ color: (tournament.color || '#e8a000') }} />}
-                  </button>
-                )) : (
-                  <div className="px-3 py-2.5 text-[11px] text-[#666]">No teams registered. <a href="/register-team" className="text-[#e8a000] hover:underline">Create one</a></div>
-                )}
-              </div>
-              {registeredTeams.length > 0 && !isCaptain && (
-                <p className="text-[10px] text-[#e84040] mt-2">Only team captains can register for tournaments.</p>
-              )}
-            </div>
-
-            <div>
-              <p className="text-[#444] text-[9px] tracking-[0.3em] uppercase font-black mb-2">Requirements</p>
-              <div className="bg-white/[0.02] border border-white/[0.05] p-3 flex flex-col gap-1.5">
-                {(tournament.rules && tournament.rules.length > 0) ? tournament.rules.map((r, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <div className="w-1 h-1 rounded-full mt-1.5 shrink-0" style={{ background: (tournament.color || '#e8a000') }} />
-                    <p className="text-[#555] text-[10px] tracking-wide">{r}</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'Date', val: formatDate(tournament.date), icon: Calendar },
+                  { label: 'Format', val: tournament.format.replace(/_/g, ' '), icon: Swords },
+                  { label: 'Capacity', val: `${tournament.filled || 0}/${tournament.slots}`, icon: Users },
+                  { label: 'Domain', val: tournament.location || 'Online', icon: MapPin },
+                ].map(s => (
+                  <div key={s.label} className="bg-white/[0.03] border border-white/[0.05] p-4 rounded-2xl">
+                    <div className="flex items-center gap-2 mb-1.5 opacity-40">
+                      <s.icon size={12} className="text-[#e8a000]" />
+                      <p className="text-[8px] tracking-widest uppercase font-black">{s.label}</p>
+                    </div>
+                    <p className="text-white text-[10px] font-black uppercase tracking-wide">{s.val}</p>
                   </div>
-                )) : (
-                  <p className="text-[#555] text-[10px] tracking-wide">No specific rules listed.</p>
+                ))}
+              </div>
+
+              <div className="space-y-4">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#555] block">Select Team</label>
+                {registeredTeams.length > 0 ? (
+                  <div className="space-y-2">
+                    {registeredTeams.map(tm => (
+                      <button key={tm} onClick={() => setTeam(tm)} className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                        team === tm ? 'bg-[#e8a000]/10 border-[#e8a000] text-white' : 'bg-white/[0.02] border-white/5 text-[#555] hover:bg-white/[0.05]'
+                      }`}>
+                        <span className="font-black text-[11px] uppercase tracking-widest">{tm}</span>
+                        {team === tm && <CheckCircle size={14} className="text-[#e8a000]" />}
+                      </button>
+                    ))}
+                    {!isCaptain && <p className="text-[9px] text-red-400 font-black uppercase flex items-center gap-2 mt-2"><AlertCircle size={12} /> Captaincy authority required</p>}
+                  </div>
+                ) : (
+                  <div className="p-8 border border-dashed border-white/10 rounded-2xl text-center">
+                    <p className="text-[10px] text-[#555] font-black uppercase mb-3">No active squads found</p>
+                    <Link href="/register-team" className="text-[#e8a000] text-[10px] font-black uppercase tracking-widest hover:underline">Establish New Team →</Link>
+                  </div>
                 )}
               </div>
-            </div>
 
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <div onClick={() => setAgreed(!agreed)}
-                className="w-4 h-4 border shrink-0 mt-0.5 flex items-center justify-center transition-all cursor-pointer"
-                style={agreed ? { borderColor: (tournament.color || '#e8a000'), background: (tournament.color || '#e8a000') } : { borderColor: '#2a2a2a' }}>
-                {agreed && <CheckCircle size={10} className="text-black" />}
+              <div className="space-y-6">
+                <label className="flex items-start gap-4 cursor-pointer group">
+                  <div onClick={() => setAgreed(!agreed)} className={`w-5 h-5 rounded-lg border shrink-0 mt-0.5 flex items-center justify-center transition-all ${
+                    agreed ? 'bg-[#e8a000] border-[#e8a000]' : 'border-white/10 group-hover:border-white/20'
+                  }`}>
+                    {agreed && <CheckCircle size={12} className="text-black" />}
+                  </div>
+                  <span className="text-[#444] text-[10px] leading-relaxed font-bold group-hover:text-[#666] transition-colors uppercase tracking-tight">Accept tournament protocol and community guidelines.</span>
+                </label>
+                <button onClick={submit} disabled={!canSubmit} className="w-full py-5 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl hover:bg-[#ffb800] transition-all disabled:opacity-20 flex items-center justify-center gap-3">
+                   {loading ? <Loader2 size={16} className="animate-spin" /> : <><Shield size={16} /> Register Now</>}
+                </button>
               </div>
-              <span className="text-[#444] text-[10px] leading-relaxed tracking-wide group-hover:text-[#666] transition-colors">
-                I am an authorised representative of this team and agree to Botsville tournament rules and MLBB community guidelines.
-              </span>
-            </label>
 
-            <button
-              onClick={submit} disabled={!canSubmit}
-              className="relative w-full py-3 font-black text-[11px] tracking-[0.25em] uppercase overflow-hidden transition-all group disabled:opacity-30 disabled:cursor-not-allowed"
-              style={canSubmit ? { background: (tournament.color || '#e8a000'), color: '#000' } : { background: '#111', color: '#333', border: '1px solid #222' }}>
-              <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-white/20 skew-x-12 transition-transform duration-500 pointer-events-none" />
-              <span className="relative flex items-center justify-center gap-2">
-                {loading
-                  ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                  : !team ? 'Select a team first'
-                  : !isCaptain ? 'Captain required'
-                  : alreadyRegistered ? 'Already registered'
-                  : !agreed ? 'Agree to rules first'
-                  : <><span>Lock In Your Squad</span><Zap size={12} /></>
-                }
-              </span>
-            </button>
+              {alreadyRegistered && (
+                <div className="p-4 rounded-2xl bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-[9px] font-black uppercase tracking-widest text-center">
+                  You are already registered for this tournament.
+                </div>
+              )}
 
-            {alreadyRegistered && (
-              <div className="bg-[#e8a000]/10 border border-[#e8a000]/30 px-3 py-2 text-[#e8a000] text-[11px] tracking-wide">
-                Your team is already registered{registrationStatus ? ` (${registrationStatus})` : ""}.
-              </div>
-            )}
-
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/30 px-3 py-2 text-red-300 text-[11px] tracking-wide">
-                {error}
-              </div>
-            )}
-          </>}
+              {error && <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-[9px] font-black uppercase text-center">{error}</div>}
+            </>
+          )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };
 
-// ══════════════════════════════════════════════════════════
-// FEATURED HERO CARD
-// ══════════════════════════════════════════════════════════
-const FeaturedCard = ({
-  t,
-  onRegister,
-  selectedHeroImage,
-}: {
-  t: Tournament;
-  onRegister: () => void;
-  selectedHeroImage?: string | null;
-}) => {
+// ── Featured Hero Card ─────────────────────────────────────────
+const FeaturedCard = ({ t, onRegister, selectedHeroImage }: { t: Tournament; onRegister: () => void; selectedHeroImage?: string | null; }) => {
   const color = t.color || '#e8a000';
   const filled = t.filled ?? 0;
-  const slotsLeft = Math.max(t.slots - filled, 0);
-  const isFull = filled >= t.slots;
-  const isOpen = canRegisterTournament(t);
-  const bannerSrc = t.banner && t.banner.trim().length > 0
-    ? t.banner
-    : 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1400&q=80';
-  const heroSrc = selectedHeroImage && selectedHeroImage.trim().length > 0
-    ? selectedHeroImage
-    : t.heroImage && t.heroImage.trim().length > 0
-    ? t.heroImage
-    : bannerSrc;
+  const regStatus = getRegistrationStatus(t);
+  const bannerSrc = t.banner || t.image || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80';
+  const heroSrc = selectedHeroImage || t.heroImage || bannerSrc;
 
   return (
-    <div
-      className="relative w-full overflow-hidden bg-[#07070d] border border-white/[0.08]">
-
-      <div className="absolute inset-0 z-0 overflow-hidden">
-        <div className="absolute inset-0">
-          <Image src={bannerSrc} alt="" fill className="object-cover brightness-25" />
-        </div>
-        <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at bottom left, ${color}40, transparent 55%)` }} />
-        <div className="absolute inset-0" style={{ background: `linear-gradient(120deg, ${color}18, transparent 50%)` }} />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#07070d]/95 via-[#07070d]/50 to-[#07070d]/30" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#07070d] via-transparent to-[#07070d]/50" />
+    <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} className="relative w-full overflow-hidden bg-[#0a0a0f] border border-white/5 rounded-[2.5rem] shadow-2xl">
+      <div className="absolute inset-0 z-0">
+        <img src={bannerSrc} alt="" className="w-full h-full object-cover brightness-[0.15]" />
+        <div className="absolute inset-0" style={{ background: `radial-gradient(circle at 30% 50%, ${color}20, transparent 70%)` }} />
+        <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-[#0a0a0f] to-transparent" />
       </div>
 
-      <div className="absolute top-0 bottom-0 left-[55%] w-px pointer-events-none hidden lg:block"
-        style={{ background: `linear-gradient(to bottom, transparent, ${color}18, transparent)` }} />
+      <div className="absolute top-0 bottom-0 left-[55%] w-px bg-white/5 hidden lg:block" />
+      <Scanlines opacity={0.05} />
 
-      <Scanlines />
-
-      <div
-        className="absolute bottom-0 right-0 lg:right-[8%] h-[110%] w-[42%] sm:w-[36%] lg:w-[28%] pointer-events-none select-none z-10">
+      <div className="absolute bottom-0 right-0 lg:right-[5%] h-[115%] w-[45%] pointer-events-none select-none z-10">
         <div className="relative w-full h-full">
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-40 h-8 rounded-full"
-            style={{
-              background: `radial-gradient(ellipse, ${color}60 0%, transparent 70%)`,
-              filter: 'blur(10px)',
-            }} />
-          <Image src={heroSrc} alt="Tournament Hero" fill
-            className="object-contain object-bottom drop-shadow-[0_0_48px_rgba(232,160,0,0.45)]" priority />
+          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-64 h-12 rounded-full bg-[#e8a000] opacity-20 blur-3xl" />
+          <img src={heroSrc} alt="" className="w-full h-full object-contain object-bottom drop-shadow-[0_0_60px_rgba(232,160,0,0.3)]" style={floatingHeroStyle} />
         </div>
       </div>
 
-      <div className="relative z-20 px-6 sm:px-10 py-8 sm:py-12 flex flex-col gap-6 lg:max-w-[58%]">
-        <div className="flex items-center gap-2 flex-wrap">
-          {t.status === 'OPEN' && !isFull && (
-            <span
-              className="flex items-center gap-1.5 bg-black/60 border border-[#27ae60]/50 px-2.5 py-1 backdrop-blur-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#27ae60]" />
-              <span className="text-[#27ae60] text-[9px] font-black tracking-widest uppercase">Registration Open</span>
-            </span>
-          )}
-          {isFull && (
-            <span className="flex items-center gap-1.5 bg-black/60 border border-[#e84040]/40 px-2.5 py-1">
-              <Lock size={8} className="text-[#e84040]" /><span className="text-[#e84040] text-[9px] font-black tracking-widest uppercase">Full</span>
-            </span>
-          )}
-          {t.status === 'UPCOMING' && !isOpen && (
-            <span className="flex items-center gap-1.5 bg-black/60 border border-[#555]/40 px-2.5 py-1">
-              <Clock size={8} className="text-[#555]" /><span className="text-[#555] text-[9px] font-black tracking-widest uppercase">Opens Soon</span>
-            </span>
-          )}
-          {(t.tags || []).map(tag => (
-            <span key={tag} className="text-[8px] font-black tracking-widest uppercase px-2 py-1"
-              style={{ color, background: `${color}15`, border: `1px solid ${color}30` }}>{tag}</span>
+      <div className="relative z-20 p-10 lg:p-20 flex flex-col gap-8 lg:max-w-2xl">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border ${regStatus.color}`}>
+            {regStatus.label}
+          </span>
+          {t.tags?.map(tag => (
+            <span key={tag} className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-white/60 text-[10px] font-black uppercase tracking-widest">{tag}</span>
           ))}
         </div>
 
-        <div>
-          <p className="text-[9px] tracking-[0.4em] uppercase font-black mb-2" style={{ color: `${color}90` }}>{t.subtitle}</p>
-          <h2 className="font-black uppercase leading-none text-white"
-            style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(2.4rem, 6vw, 4.5rem)', letterSpacing: '-0.02em' }}>
-            {t.name}
-          </h2>
-          <div className="mt-3 h-0.5 w-24" style={{ background: `linear-gradient(90deg, ${color}, transparent)` }} />
-          <p className="text-[#555] text-sm mt-3 leading-relaxed max-w-xs">{t.description}</p>
+        <div className="space-y-4">
+          <p className="text-[10px] font-black text-[#e8a000] uppercase tracking-[0.4em]">{t.subtitle || 'Championship Event'}</p>
+          <h2 className="text-7xl font-black text-white uppercase tracking-tighter leading-[0.85]">{t.name}</h2>
+          <div className="h-1 w-24 bg-[#e8a000] mt-6" />
         </div>
 
-        <div className="flex flex-col gap-1.5">
+        <div className="grid grid-cols-2 gap-x-12 gap-y-4">
           {[
-            { icon: <Swords size={9} />, val: t.format },
-            { icon: <MapPin size={9} />, val: t.location },
-            { icon: <Calendar size={9} />, val: formatDate(t.date) },
-          ].map(m => (
-            <div key={m.val} className="flex items-center gap-2">
-              <span style={{ color: `${color}80` }}>{m.icon}</span>
-              <span className="text-[#666] text-[11px] tracking-wide">{m.val}</span>
-            </div>
-          ))}
+            { icon: Swords, label: 'Mode', val: t.format.replace(/_/g, ' ') },
+            { icon: MapPin, label: 'Domain', val: t.location || 'Online' },
+            { icon: Calendar, label: 'Launch', val: formatDate(t.date) },
+            { icon: Users, label: 'Load', val: `${filled}/${t.slots}` },
+          ].map(stat => {
+            const Icon = stat.icon;
+            return (
+              <div key={stat.label} className="flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-white/5 text-[#e8a000]"><Icon size={16} /></div>
+                <div>
+                  <p className="text-[9px] font-black text-[#444] uppercase tracking-widest">{stat.label}</p>
+                  <p className="text-[11px] font-bold text-white uppercase">{stat.val}</p>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[8px] tracking-[0.2em] uppercase text-[#333]">Slots Filled</span>
-            <span className="text-[10px] font-black font-mono" style={{ color }}>{filled}/{t.slots}</span>
-          </div>
-          <div className="h-1 w-full max-w-xs bg-white/[0.06] overflow-hidden">
-            <div className="h-full" style={{ background: color, width: `${Math.min((filled / t.slots) * 100, 100)}%` }} />
-          </div>
+        <div className="space-y-4 pt-4">
+          <p className="text-[10px] font-black text-[#333] uppercase tracking-[0.3em]">Registration Ends In</p>
+          <CountdownDisplay target={t.registrationDeadline || t.date} />
         </div>
 
-        <div>
-          <p className="text-[8px] tracking-[0.25em] uppercase text-[#333] mb-2">Starts In</p>
-          <CountdownDisplay target={t.date} color={color} />
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={isOpen ? onRegister : undefined} disabled={!isOpen}
-            className="relative overflow-hidden flex items-center gap-2 font-black text-[11px] tracking-[0.2em] uppercase px-6 py-3 transition-all group disabled:opacity-40 disabled:cursor-not-allowed"
-            style={isOpen ? { background: '#e8a000', color: '#000' } : { border: '1px solid #222', color: '#333', background: 'transparent' }}>
-            <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-white/25 skew-x-12 transition-transform duration-500 pointer-events-none" />
-            <span className="relative">{isOpen ? 'Register Now' : (t.status === 'CLOSED' || isFull ? 'Registration Full' : 'Coming Soon')}</span>
-            {isOpen && <ArrowRight size={13} className="relative" />}
+        <div className="flex items-center gap-4 pt-6">
+          <button onClick={onRegister} disabled={!regStatus.canRegister} className="px-12 py-5 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl hover:bg-[#ffb800] transition-all shadow-2xl shadow-[#e8a000]/20 flex items-center gap-3 active:scale-[0.98] disabled:opacity-20">
+            {regStatus.canRegister ? <><Zap size={16} /> Register</> : <><Lock size={16} /> {regStatus.label}</>}
           </button>
-          {isOpen && (
-            <span className="text-[#333] text-[9px] tracking-widest uppercase">
-              {slotsLeft} slot{slotsLeft !== 1 ? 's' : ''} left
-            </span>
-          )}
+          <Link href={`/tournaments/${t.id}`} className="px-12 py-5 bg-white/5 border border-white/10 text-white font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl hover:bg-white/10 transition-all">
+            More Details
+          </Link>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
-// ── Small sidebar card ────────────────────────────────────────
-const SmallCard = ({ t, active, onSelect, onRegister }: {
-  t: Tournament; active: boolean;
-  onSelect: () => void; onRegister: () => void;
-}) => {
+// ── Small Gallery Card ─────────────────────────────────────────
+const SmallCard = ({ t, active, onSelect, onRegister }: { t: Tournament; active: boolean; onSelect: () => void; onRegister: () => void; }) => {
   const color = t.color || '#e8a000';
-  const filled = t.filled ?? 0;
-  const isFull = filled >= t.slots;
-  const isOpen = canRegisterTournament(t);
-  const tick   = useCountdown(new Date(t.date));
-  const bannerSrc = t.banner && t.banner.trim().length > 0
-    ? t.banner
-    : 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&q=80';
+  const regStatus = getRegistrationStatus(t);
+  const bannerSrc = t.banner || t.image || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80';
 
   return (
-    <div
-      onClick={onSelect}
-      className="group relative cursor-pointer border overflow-hidden transition-all duration-300"
-      style={{ borderColor: active ? `${color}50` : 'rgba(255,255,255,0.06)', background: active ? `${color}0a` : 'transparent' }}>
-      <div className="absolute left-0 top-0 bottom-0 w-0.5 transition-all" style={{ background: active ? color : 'transparent' }} />
-
-      <div className="relative h-16 overflow-hidden shrink-0">
-        <Image src={bannerSrc} alt="" fill className="object-cover brightness-20 group-hover:brightness-30 transition-all duration-500" />
-        <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at left, ${color}30, transparent 60%)` }} />
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#08080e]/90" />
-        <div className="absolute top-2 right-2">
-          {isOpen
-            ? <div className="w-1.5 h-1.5 rounded-full bg-[#27ae60]" />
-            : <div className="w-1.5 h-1.5 rounded-full bg-[#333]" />
-          }
-        </div>
-        <div className="absolute bottom-1 right-2 pointer-events-none select-none">
-          <span className="font-black text-3xl leading-none" style={{ color: `${color}0c`, fontFamily: "'Barlow Condensed', sans-serif" }}>
-            {t.name.split(' ')[0]}
-          </span>
-        </div>
+    <motion.button onClick={onSelect} className={`relative group w-full p-6 rounded-3xl border transition-all text-left overflow-hidden ${
+      active ? 'bg-white/[0.04] border-[#e8a000]' : 'bg-transparent border-white/5 hover:border-white/20'
+    }`}>
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <img src={bannerSrc} alt="" className="w-full h-full object-cover brightness-[0.05]" />
       </div>
-
-      <div className="p-3 flex flex-col gap-2">
-        <div>
-          <p className="text-[7px] tracking-[0.3em] uppercase mb-0.5" style={{ color: `${color}70` }}>{t.subtitle}</p>
-          <p className="text-white font-black text-sm uppercase leading-none" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{t.name}</p>
-        </div>
-        {!tick.over && (
-          <div className="flex items-center gap-1.5">
-            <Clock size={8} style={{ color: `${color}80` }} />
-            <span className="text-[#444] text-[9px] font-mono">{tick.d}d {String(tick.h).padStart(2,'0')}h {String(tick.m).padStart(2,'0')}m</span>
+      <div className="relative z-10 flex flex-col gap-6">
+        <div className="flex items-center justify-between">
+          <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border ${regStatus.color}`}>
+            {regStatus.label.split(' ')[regStatus.label.split(' ').length - 1]}
           </div>
-        )}
-        <div className="h-0.5 w-full bg-white/[0.05]">
-          <div className="h-full transition-all" style={{ width: `${Math.min((filled/t.slots)*100, 100)}%`, background: color }} />
+          <p className="text-[10px] font-black font-mono text-white/20">#{t.id.split('-')[0]}</p>
         </div>
-        <button
-          onClick={e => { e.stopPropagation(); if (isOpen) onRegister(); }}
-          disabled={!isOpen}
-          className="w-full py-1.5 font-black text-[9px] tracking-[0.2em] uppercase border transition-all disabled:opacity-30"
-          style={isOpen
-            ? { borderColor: '#e8a000', color: '#000', background: '#e8a000' }
-            : { borderColor: '#1a1a1a', color: '#333', background: 'transparent' }
-          }>
-          {isOpen ? 'Register →' : (t.status === 'CLOSED' || isFull ? 'Full' : 'Soon')}
-        </button>
+        <div className="space-y-1">
+          <p className="text-[8px] font-black text-[#e8a000] uppercase tracking-[0.3em]">{t.subtitle || 'Arena Championship'}</p>
+          <h3 className="text-xl font-black text-white uppercase tracking-tighter group-hover:text-[#e8a000] transition-colors">{t.name}</h3>
+        </div>
+        <div className="flex items-center justify-between border-t border-white/5 pt-4">
+           <div className="flex items-center gap-2 text-[#555] text-[10px] font-bold">
+             <Calendar size={12} /> {new Date(t.date).toLocaleDateString()}
+           </div>
+           <ArrowRight size={16} className={`text-[#333] group-hover:text-[#e8a000] transition-all ${active ? 'translate-x-1 text-[#e8a000]' : ''}`} />
+        </div>
       </div>
-    </div>
+    </motion.button>
   );
 };
 
-// ── Past card ─────────────────────────────────────────────────
+// ── Past Tournament Card ───────────────────────────────────────
 const PastCard = ({ t }: { t: Tournament }) => (
-  <div
-    className="group relative border border-white/[0.05] hover:border-white/[0.12] bg-[#09090f] overflow-hidden transition-all duration-300">
-    <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{ background: (t.color || '#e8a000') }} />
-    <div className="relative h-32 overflow-hidden">
-      <Image src={t.banner || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80'} alt="" fill className="object-cover brightness-25 group-hover:brightness-35 group-hover:scale-105 transition-all duration-500" />
-      <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at bottom left, ${(t.color || '#e8a000')}35, transparent 60%)` }} />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#09090f] to-transparent" />
-      <Trophy size={18} className="absolute top-3 left-4" style={{ color: (t.color || '#e8a000') }} />
-      <div className="absolute bottom-2 right-3 pointer-events-none select-none">
-        <span className="font-black text-5xl leading-none" style={{ color: `${(t.color || '#e8a000')}0d`, fontFamily: "'Barlow Condensed', sans-serif" }}>
-          {t.name.split(' ').slice(-1)[0]}
-        </span>
+  <Link href={`/tournaments/${t.id}`} className="group relative bg-[#0a0a0f] border border-white/5 rounded-3xl overflow-hidden hover:border-[#e8a000]/30 transition-all">
+    <div className="relative h-48 overflow-hidden">
+      <img src={t.banner || t.image || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80'} alt="" className="w-full h-full object-cover brightness-[0.2] transition-transform group-hover:scale-105 duration-700" />
+      <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0f] via-transparent to-transparent" />
+      <Trophy size={20} className="absolute top-6 left-6 text-[#e8a000]" />
+    </div>
+    <div className="p-8 space-y-4">
+      <div className="space-y-1">
+        <p className="text-[8px] font-black text-[#555] uppercase tracking-[0.4em]">{new Date(t.date).toLocaleDateString()}</p>
+        <h3 className="text-2xl font-black text-white uppercase tracking-tighter">{t.name}</h3>
+      </div>
+      <div className="pt-4 border-t border-white/5 flex items-center justify-between">
+        <span className="text-[9px] font-black uppercase text-[#444] tracking-widest">Archive Sealed</span>
+        <ChevronRight size={16} className="text-[#333] group-hover:text-[#e8a000] transition-all group-hover:translate-x-1" />
       </div>
     </div>
-    <div className="p-4">
-      <p className="text-[8px] tracking-[0.3em] uppercase mb-0.5 text-[#333]">{new Date(t.date).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</p>
-      <h3 className="text-white font-black text-2xl uppercase leading-none mb-3" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{t.name}</h3>
-      <div className="h-px w-full bg-white/[0.04] mb-3" />
-      <div className="flex items-center justify-between text-[11px]">
-        <span className="text-[#666] uppercase tracking-wide">Completed Tournament</span>
-        <span className="px-2 py-1 bg-white/5 text-[#e8a000] text-[9px] font-black">View Details</span>
+  </Link>
+);
+
+// ── Page Header ───────────────────────────────────────────────
+const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcomingCount?: number; openCount?: number; pastCount?: number }) => (
+  <div className="relative h-[600px] overflow-hidden border-b border-white/5 flex flex-col justify-center">
+    <div className="absolute inset-0 z-0">
+      <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1600&q=80" alt="" className="w-full h-full object-cover brightness-[0.08]" />
+      <div className="absolute inset-0 bg-gradient-to-r from-[#05050a] via-[#05050a]/80 to-transparent" />
+      <Scanlines opacity={0.03} />
+      <OrbEffect />
+    </div>
+
+    <div className="absolute top-0 right-0 bottom-0 w-[55%] pointer-events-none select-none z-10 hidden lg:block">
+      <div className="relative w-full h-full">
+        <img src="/heroes/brody.png" alt="" className="w-full h-full object-contain object-top" style={{ ...floatingHeroStyle, filter: 'drop-shadow(-40px 0 60px rgba(232,160,0,0.1))' }} />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#05050a] via-[#05050a]/40 to-transparent" />
       </div>
+    </div>
+
+    <div className="relative z-20 max-w-7xl mx-auto px-6 lg:px-14 flex flex-col justify-center h-full w-full">
+       <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} className="max-w-2xl space-y-8">
+          <div className="flex items-center gap-3">
+             <div className="w-8 h-1 bg-[#e8a000]" />
+             <p className="text-[#e8a000] text-[10px] font-black uppercase tracking-[0.4em]">Botsville · Official Tournaments</p>
+          </div>
+          <h1 className="text-[clamp(4rem,10vw,8rem)] font-black text-white uppercase tracking-tighter leading-[0.85]">
+            TOURNAMENT<br />
+            <span className="text-transparent" style={{ WebkitTextStroke: '2px #e8a000' }}>LIST</span>
+          </h1>
+          <p className="text-[#555] text-lg font-medium tracking-wide max-w-md">
+            Find the next match for your team. Join open tournaments or view past results.
+          </p>
+
+          <div className="flex items-center gap-12 pt-4">
+             {[
+               { l: 'Upcoming', v: upcomingCount, c: '#e8a000' },
+               { l: 'Open', v: openCount, c: '#27ae60' },
+               { l: 'Past', v: pastCount, c: '#4a90d9' }
+             ].map(s => (
+               <div key={s.l} className="space-y-1">
+                 <p className="text-4xl font-black text-white font-mono leading-none" style={{ color: s.c }}>{s.v}</p>
+                 <p className="text-[9px] font-black text-[#333] uppercase tracking-[0.3em]">{s.l}</p>
+               </div>
+             ))}
+          </div>
+
+          <div className="flex items-center gap-4 pt-8">
+             <a href="#active" className="px-10 py-5 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl hover:bg-[#ffb800] transition-all flex items-center gap-3 active:scale-[0.98]">
+                View All <ChevronRight size={16} />
+             </a>
+             <a href="#past" className="px-10 py-5 text-[#444] hover:text-white font-black text-[10px] uppercase tracking-[0.3em] transition-all">
+                Past Tournaments →
+             </a>
+          </div>
+       </motion.div>
     </div>
   </div>
 );
 
-// ══════════════════════════════════════════════════════════
-// PAGE HEADER
-// Large hero image dominates the right side like a background
-// ══════════════════════════════════════════════════════════
-const PageHeader = ({ upcomingCount = 0, openCount = 0, pastCount = 0 }: { upcomingCount?: number; openCount?: number; pastCount?: number }) => {
-  return (
-    <div className="relative overflow-hidden border-b border-white/[0.05]" style={{ minHeight: '420px' }}>
-
-      {/* ── Dark bg + faint Ken Burns banner ── */}
-      <div className="absolute inset-0">
-        <div className="absolute inset-0">
-          <Image src={'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1600&q=80'} alt="" fill className="object-cover brightness-[0.1]" />
-        </div>
-        {/* Strong dark-to-transparent gradient from left so text is readable */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#08080e] via-[#08080e]/85 to-transparent" />
-        <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 20% 60%, #e8a00010, transparent 55%)' }} />
-        {/* Subtle grid */}
-        <div className="absolute inset-0 opacity-[0.02]"
-          style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '50px 50px' }} />
-      </div>
-      <Scanlines opacity={0.02} />
-      <OrbEffect />
-
-      {/* ══ LARGE HERO IMAGE — covers the entire right side, bleeds to edge ══
-          This container handles the initial entrance animation (Slide In).   */}
-      <div
-        className="absolute top-0 right-0 bottom-0 w-[62%] sm:w-[58%] lg:w-[52%] pointer-events-none select-none z-[2]"
-      >
-        <div className="absolute inset-0">
-          <Image
-            src="/heroes/brody.png"
-            alt=""
-            fill
-            className="object-cover object-top"
-            style={{ 
-              filter: 'drop-shadow(-50px 0 90px rgba(232,160,0,0.10))',
-              ...floatingHeroStyle
-            }}
-            priority
-          />
-          <div
-            className="absolute bottom-0 left-0 right-0 h-44 pointer-events-none"
-            style={{
-              background: 'radial-gradient(ellipse at 65% 100%, rgba(232,160,0,0.16) 0%, transparent 62%)',
-            }}
-          />
-        </div>
-
-        {/* Static Overlays (Do not float) — Ensure edges stay masked */}
-        {/* Left-edge fade — key to blending into the text area */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#08080e] via-[#08080e]/40 to-transparent" />
-        {/* Bottom fade */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#08080e] via-transparent to-transparent" />
-        {/* Top fade */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#08080e]/60 via-transparent to-transparent" />
-      </div>
-
-      {/* Hairline vertical accent at the image's left fade boundary */}
-      <div className="hidden md:block absolute top-0 bottom-0 left-[44%] sm:left-[46%] lg:left-[50%] w-px pointer-events-none z-[3]"
-        style={{ background: 'linear-gradient(to bottom, transparent, rgba(232,160,0,0.08), transparent)' }} />
-
-      {/* ── Content — left side ── */}
-      <div className="relative z-20 max-w-7xl mx-auto px-6 sm:px-10 lg:px-14 py-14 sm:py-20 flex flex-col justify-center" style={{ minHeight: '420px' }}>
-        <div className="max-w-lg">
-          <div
-            className="flex items-center gap-2 mb-4">
-            <span className="w-6 h-0.5 bg-[#e8a000]" />
-            <span className="text-[#e8a000] text-[9px] font-black tracking-[0.4em] uppercase">Ghana MLBB · Season 5</span>
-          </div>
-
-          <h1
-            className="font-black uppercase leading-none text-white"
-            style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(3rem, 7vw, 5.5rem)', letterSpacing: '-0.02em' }}>
-            TOURNAMENT<br />
-            <span style={{ WebkitTextStroke: '2px #e8a000', color: 'transparent' }}>HUB</span>
-          </h1>
-
-          <p
-            className="text-[#444] text-sm mt-4 tracking-wide leading-relaxed max-w-sm">
-            Register · Compete · Champion ·{' '}
-            <span className="font-bold" style={{ color: '#27ae60' }}>
-              {openCount} open now
-            </span>
-          </p>
-
-          {/* Quick stats */}
-          <div
-            className="flex items-center gap-8 mt-6">
-            {[
-              { label: 'Upcoming', val: upcomingCount,                                                color: '#e8a000' },
-              { label: 'Open',     val: openCount, color: '#27ae60' },
-              { label: 'Past',     val: pastCount,                                                        color: '#4a90d9' },
-            ].map(s => (
-              <div key={s.label} className="flex flex-col gap-0.5">
-                <span className="font-black text-3xl font-mono leading-none"
-                  style={{ color: s.color, fontFamily: "'Barlow Condensed', sans-serif" }}>{s.val}</span>
-                <span className="text-[#2a2a2a] text-[8px] tracking-[0.2em] uppercase">{s.label}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* CTAs */}
-          <div
-            className="flex gap-3 mt-8 flex-wrap">
-            <a href="#upcoming"
-              className="relative overflow-hidden flex items-center gap-2 border border-[#e8a000] text-[#e8a000] font-black uppercase tracking-[0.15em] px-5 py-2.5 text-[11px] group transition-colors duration-300 hover:scale-[1.04] active:scale-[0.97]">
-              <span className="absolute inset-0 bg-[#e8a000] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
-              <span className="relative z-10 group-hover:text-black transition-colors duration-300">Browse Tournaments</span>
-              <ChevronRight size={12} className="relative z-10 group-hover:text-black transition-colors duration-300" />
-            </a>
-            <a href="#past"
-              className="text-[#444] hover:text-white font-black uppercase tracking-widest px-4 py-2.5 text-[11px] transition-colors">
-              Past Results →
-            </a>
-          </div>
-        </div>
-      </div>
-
-      <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#e8a000]/20 to-transparent" />
-    </div>
-  );
-};
-
-// ══════════════════════════════════════════════════════════
-// MAIN PAGE
-// ══════════════════════════════════════════════════════════
 export default function TournamentsPage() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [pastTournaments, setPastTournaments] = useState<Tournament[]>([]);
@@ -757,150 +510,96 @@ export default function TournamentsPage() {
   const [loading, setLoading] = useState(true);
   const { heroImage: selectedHeroImage } = useHero();
 
-  // selected hero is provided by global HeroProvider (useHero)
-
   useEffect(() => {
     const fetchTournaments = async () => {
       try {
         const response = await fetch('/api/tournaments?limit=100');
         const data: ApiResponse = await response.json();
-        
         if (data.tournaments && Array.isArray(data.tournaments)) {
           const upcoming = data.tournaments.filter(t => ['OPEN', 'UPCOMING', 'LIVE', 'ONGOING'].includes(t.status));
           const past = data.tournaments.filter(t => t.status === 'COMPLETED');
-          
-          setTournaments(upcoming);
-          setPastTournaments(past);
-          
-          if (upcoming.length > 0) {
-            setFeatured(upcoming[0]);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch tournaments:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
 
+          // Sort upcoming tournaments: open for registration ones first
+          const sortedUpcoming = [...upcoming].sort((a, b) => {
+            const aOpen = canRegisterTournament(a);
+            const bOpen = canRegisterTournament(b);
+            if (aOpen && !bOpen) return -1;
+            if (!aOpen && bOpen) return 1;
+            return 0;
+          });
+
+          setTournaments(sortedUpcoming);
+          setPastTournaments(past);
+          if (sortedUpcoming.length > 0) setFeatured(sortedUpcoming[0]);
+        }
+      } catch (error) {} finally { setLoading(false); }
+    };
     fetchTournaments();
   }, []);
 
+  if (loading) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#05050a] gap-4">
+      <Loader2 size={32} className="animate-spin text-[#e8a000]" />
+      <p className="text-[10px] font-black uppercase text-[#444] tracking-[0.4em]">Querying Archive Registry...</p>
+    </div>
+  );
+
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&display=swap');
-        ::-webkit-scrollbar { width: 0; height: 0; }
-      `}</style>
+    <div className="min-h-screen bg-[#05050a] selection:bg-[#e8a000]/30 overflow-x-hidden">
+      <AnimatePresence>
+        {registering && <RegisterModal t={registering} onClose={() => setRegistering(null)} />}
+      </AnimatePresence>
 
-      <main className="min-h-screen bg-[#08080e]">
-        <PageHeader 
-          upcomingCount={tournaments.length} 
-          openCount={tournaments.filter((t) => canRegisterTournament(t)).length}
-          pastCount={pastTournaments.length}
-        />
+      <PageHeader upcomingCount={tournaments.length} openCount={tournaments.filter(t => canRegisterTournament(t)).length} pastCount={pastTournaments.length} />
 
-        {/* ── UPCOMING ── */}
-        <div id="upcoming" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
-          <div
-            className="flex items-center gap-3 mb-8">
-            <Flame size={14} className="text-[#e8a000]" />
-            <span className="text-[#e8a000] text-[9px] font-black tracking-[0.4em] uppercase">Upcoming Tournaments</span>
-            <div className="flex-1 h-px bg-white/[0.04]" />
-          </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="text-center">
-                <div className="w-12 h-12 border-2 border-[#e8a000]/20 border-t-[#e8a000] rounded-full animate-spin mx-auto mb-4" />
-                <p className="text-[#666] text-sm tracking-wide uppercase">Loading tournaments...</p>
+      <main className="max-w-7xl mx-auto px-6 lg:px-14 py-24 space-y-32">
+        {/* Active Deployment Segment */}
+        <section id="active" className="space-y-12">
+           <div className="flex items-center justify-between">
+              <div className="space-y-2">
+                 <div className="flex items-center gap-3">
+                    <div className="w-10 h-1 bg-[#e8a000]" />
+                    <h2 className="text-[10px] font-black text-[#e8a000] uppercase tracking-[0.4em]">Featured</h2>
+                 </div>
+                 <h2 className="text-4xl font-black text-white uppercase tracking-tighter">Open <span className="text-[#e8a000]">Tournaments</span></h2>
               </div>
-            </div>
-          ) : tournaments.length === 0 ? (
-            <div className="text-center py-20">
-              <p className="text-[#666] text-sm tracking-wide uppercase">No upcoming tournaments at this time.</p>
-            </div>
-          ) : (
-            <>
-              {/* Desktop: featured + sidebar */}
-              <div className="hidden lg:grid grid-cols-[1fr_280px] xl:grid-cols-[1fr_320px] gap-4">
-                {featured && (
-                  <Link href={`/tournaments/${featured.id}`}>
-                    <FeaturedCard
-                      t={featured}
-                      onRegister={() => setRegistering(featured)}
-                      selectedHeroImage={selectedHeroImage}
-                    />
-                  </Link>
-                )}
-                <div className="flex flex-col gap-2">
-                  {tournaments.map((t) => (
-                    <Link key={t.id} href={`/tournaments/${t.id}`}>
-                      <SmallCard
-                        t={t}
-                        active={featured?.id === t.id}
-                        onSelect={() => setFeatured(t)}
-                        onRegister={() => setRegistering(t)}
-                      />
-                    </Link>
-                  ))}
+              <div className="px-6 py-3 rounded-full bg-white/5 border border-white/10 text-[9px] font-black text-[#555] uppercase tracking-widest flex items-center gap-2">
+                 <Shield size={14} className="text-[#e8a000]" /> Botsville Secured
+              </div>
+           </div>
+
+           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+              <div className="lg:col-span-3">
+                 {featured && <FeaturedCard t={featured} onRegister={() => setRegistering(featured)} selectedHeroImage={selectedHeroImage} />}
+              </div>
+              <div className="lg:col-span-1 space-y-4 max-h-[700px] overflow-y-auto scrollbar-hide pr-2">
+                 <p className="text-[9px] font-black text-[#333] uppercase tracking-[0.3em] px-2 mb-4">All Tournaments</p>
+                 {tournaments.map(t => (
+                   <SmallCard key={t.id} t={t} active={featured?.id === t.id} onSelect={() => setFeatured(t)} onRegister={() => setRegistering(t)} />
+                 ))}
+              </div>
+           </div>
+        </section>
+
+        {/* Global History Segment */}
+        <section id="past" className="space-y-12">
+           <div className="flex items-center gap-3">
+              <div className="w-10 h-1 bg-[#e8a000]" />
+              <h2 className="text-4xl font-black text-white uppercase tracking-tighter">Past <span className="text-[#e8a000]">Tournaments</span></h2>
+           </div>
+           
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {pastTournaments.length > 0 ? (
+                pastTournaments.map(t => <PastCard key={t.id} t={t} />)
+              ) : (
+                <div className="col-span-full py-24 text-center border border-dashed border-white/10 rounded-[3rem]">
+                   <Clock size={48} className="text-[#1a1a1a] mx-auto mb-6" />
+                   <p className="text-[10px] font-black text-[#444] uppercase tracking-[0.3em]">No Historic Records Available</p>
                 </div>
-              </div>
-
-              {/* Mobile/tablet */}
-              <div className="lg:hidden flex flex-col gap-4">
-                {tournaments.map((t) => (
-                  <Link key={t.id} href={`/tournaments/${t.id}`}>
-                    <FeaturedCard
-                      t={t}
-                      onRegister={() => setRegistering(t)}
-                      selectedHeroImage={selectedHeroImage}
-                    />
-                  </Link>
-                ))}
-              </div>
-            </>
-          )}
-
-          <div className="mt-8 border border-[#e8a000]/15 bg-[#e8a000]/[0.04] px-4 py-3 flex items-start gap-3">
-            <AlertCircle size={13} className="text-[#e8a000] shrink-0 mt-0.5" />
-            <p className="text-[#555] text-[11px] leading-relaxed tracking-wide">
-              Team must have minimum 5 active players on Botsville platform. Registrations reviewed within 24h. Contact admins via Discord for disputes.
-            </p>
-          </div>
-        </div>
-
-        {/* ── PAST ── */}
-        {pastTournaments.length > 0 && (
-          <div id="past" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-14">
-            <div className="border-t border-white/[0.04] pt-10 mb-8">
-              <div className="flex items-center gap-3">
-                <Trophy size={14} className="text-[#e8a000]" />
-                <span className="text-[#e8a000] text-[9px] font-black tracking-[0.4em] uppercase">Past Results</span>
-                <div className="flex-1 h-px bg-white/[0.04]" />
-                <span className="text-[#222] text-[9px] tracking-widest uppercase">{pastTournaments.length} completed</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pastTournaments.map((t) => (
-                <Link key={t.id} href={`/tournaments/${t.id}`}>
-                  <PastCard t={t} />
-                </Link>
-              ))}
-            </div>
-
-            <div className="mt-8 flex items-center justify-between border border-white/[0.04] px-4 py-3">
-              <p className="text-[#222] text-[10px] tracking-widest uppercase">Full bracket history & VODs available on request</p>
-              <ChevronRight size={11} className="text-[#222]" />
-            </div>
-          </div>
-        )}
-
-        {/* AnimatePresence removed for static rendering */}
-          {registering && <RegisterModal t={registering} onClose={() => setRegistering(null)} />}
-        {/* AnimatePresence removed for static rendering */}
+              )}
+           </div>
+        </section>
       </main>
-    </>
+    </div>
   );
 }

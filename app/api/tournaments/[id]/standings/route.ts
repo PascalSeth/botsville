@@ -7,28 +7,10 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
-    console.log("Fetching standings for tournament:", id);
-
-    // Fetch tournament to get its season
-    const tournament = await prisma.tournament.findUnique({
-      where: { id },
-      select: { seasonId: true },
-    });
-
-    console.log("Tournament found:", tournament);
-
-    if (!tournament) {
-      return NextResponse.json(
-        { error: "Tournament not found" },
-        { status: 404 }
-      );
-    }
-
-    // Fetch season standings
-    const standings = await prisma.teamSeasonRecord.findMany({
-      where: {
-        seasonId: tournament.seasonId,
-      },
+    
+    // Fetch group stage standings for this tournament
+    const groupStandings = await prisma.groupStageStanding.findMany({
+      where: { tournamentId: id },
       include: {
         team: {
           select: {
@@ -36,29 +18,35 @@ export async function GET(
             name: true,
             tag: true,
             logo: true,
+            color: true,
           },
         },
       },
       orderBy: [
-        { points: "desc" },
+        { groupName: "asc" },
+        { groupPoints: "desc" },
         { wins: "desc" },
-        { losses: "asc" },
+        { tiebreakerScore: "desc" },
       ],
     });
 
-    console.log("Standings found:", standings.length);
+    // Group the results by groupName
+    const standingsByGroup: Record<string, any[]> = {};
+    groupStandings.forEach((s) => {
+      if (!standingsByGroup[s.groupName]) {
+        standingsByGroup[s.groupName] = [];
+      }
+      standingsByGroup[s.groupName].push({
+        ...s,
+        rank: standingsByGroup[s.groupName].length + 1,
+      });
+    });
 
-    // Add rank
-    const rankedStandings = standings.map((record, index) => ({
-      id: record.id,
-      rank: index + 1,
-      wins: record.wins,
-      losses: record.losses,
-      points: record.points,
-      team: record.team,
-    }));
+    return NextResponse.json({ 
+      tournamentId: id,
+      groups: standingsByGroup 
+    });
 
-    return NextResponse.json({ standings: rankedStandings });
   } catch (error) {
     console.error("Error fetching tournament standings:", error);
     return NextResponse.json(

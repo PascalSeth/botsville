@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       where.tier = tierParam as MetaTier;
     }
 
-    const [heroes, total] = await Promise.all([
+    const [heroesRaw, total] = await Promise.all([
       prisma.heroMeta.findMany({
         where,
         orderBy: [
@@ -47,6 +47,12 @@ export async function GET(request: NextRequest) {
       }),
       prisma.heroMeta.count({ where }),
     ]);
+
+    // Map hero field to heroName for frontend compatibility
+    const heroes = heroesRaw.map(h => ({
+      ...h,
+      heroName: h.hero
+    }));
 
     return apiSuccess({
       heroes,

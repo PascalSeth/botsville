@@ -72,13 +72,19 @@ type Tab = 'season' | 'standings' | 'players' | 'meta';
 
 export default function LeaderboardPage() {
   const [tab, setTab] = useState<Tab>('season');
-  const [seasonTab, setSeasonTab] = useState<'cumulative' | 'monthly'>('cumulative');
+  const [seasonTab, setSeasonTab] = useState<'cumulative' | 'monthly' | 'tournaments'>('cumulative');
 
   // Season data
   const [activeSeason, setActiveSeason] = useState<ActiveSeason | null>(null);
   const [seasonStandings, setSeasonStandings] = useState<SeasonStanding[]>([]);
   const [monthlyData, setMonthlyData] = useState<Record<string, MonthlyRow[]>>({});
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>('');
+
+  // Tournament data
+  const [tournaments, setTournaments] = useState<any[]>([]);
+  const [selectedTournamentId, setSelectedTournamentId] = useState<string>('');
+  const [tournamentStandings, setTournamentStandings] = useState<Record<string, any[]>>({});
+  const [loadingTournament, setLoadingTournament] = useState(false);
 
   // Legacy leaderboard data
   const [standings, setStandings] = useState<ApiTeamStanding[]>([]);
@@ -123,6 +129,17 @@ export default function LeaderboardPage() {
       if (standingsData?.standings) setStandings(standingsData.standings);
       if (playersData?.rankings) setPlayerRankings(playersData.rankings);
       if (heroesData?.heroes) setHeroMeta(heroesData.heroes);
+
+      // Fetch tournaments for the active season
+      if (active) {
+        const tRes = await fetch(`/api/tournaments?seasonId=${active.id}`);
+        const tData = await tRes.json();
+        const tournamentList = tData?.data?.tournaments ?? tData?.tournaments ?? [];
+        setTournaments(tournamentList);
+        if (tournamentList.length > 0) {
+          setSelectedTournamentId(tournamentList[0].id);
+        }
+      }
     } catch (err) {
       console.error('Leaderboard fetch error:', err);
     } finally {
@@ -158,6 +175,26 @@ export default function LeaderboardPage() {
     return () => clearInterval(id);
   }, [playerRankings]);
   const featuredRole = roleTopList[activeRoleIndex] ?? null;
+
+  // Manual fetch for tournament standings when selected changed
+  useEffect(() => {
+    if (selectedTournamentId && seasonTab === 'tournaments') {
+      fetchTournamentStandings(selectedTournamentId);
+    }
+  }, [selectedTournamentId, seasonTab]);
+
+  const fetchTournamentStandings = async (id: string) => {
+    setLoadingTournament(true);
+    try {
+      const res = await fetch(`/api/tournaments/${id}/standings`);
+      const data = await res.json();
+      setTournamentStandings(data.groups || {});
+    } catch (err) {
+      console.error('Failed to fetch tournament standings:', err);
+    } finally {
+      setLoadingTournament(false);
+    }
+  };
 
   if (loading) return (
     <main className="min-h-screen bg-[#08080d] text-white flex items-center justify-center">
@@ -235,12 +272,12 @@ export default function LeaderboardPage() {
               <>
                 {/* Sub-tabs */}
                 <div className="flex gap-3 mb-4">
-                  {(['cumulative', 'monthly'] as const).map((st) => (
+                  {(['cumulative', 'monthly', 'tournaments'] as const).map((st) => (
                     <button key={st} onClick={() => setSeasonTab(st)}
                       className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border transition-colors ${
                         seasonTab === st ? 'border-[#e8a000] text-[#e8a000] bg-[#e8a000]/10' : 'border-white/10 text-[#555] hover:border-white/30'
                       }`}>
-                      {st === 'cumulative' ? '🏆 Season Total' : '📅 Monthly'}
+                      {st === 'cumulative' ? '🏆 Season Total' : st === 'monthly' ? '📅 Monthly' : '🎮 Tournaments'}
                     </button>
                   ))}
                 </div>
@@ -374,6 +411,80 @@ export default function LeaderboardPage() {
                               })}
                             </div>
                           </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Tournament table */}
+                {seasonTab === 'tournaments' && (
+                  <div className="space-y-6">
+                    {tournaments.length === 0 ? (
+                      <p className="text-[#444] text-center py-12">No tournaments found for this season.</p>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-3">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-[#555]">Select Tournament:</label>
+                          <select 
+                            value={selectedTournamentId} 
+                            onChange={(e) => setSelectedTournamentId(e.target.value)}
+                            className="bg-[#0f0f18] border border-white/10 text-white text-[11px] font-bold uppercase tracking-wider px-3 py-1.5 outline-none focus:border-[#e8a000]/50"
+                          >
+                            {tournaments.map(t => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {loadingTournament ? (
+                          <div className="flex justify-center py-12">
+                            <Loader2 className="animate-spin text-[#e8a000]" size={24} />
+                          </div>
+                        ) : Object.keys(tournamentStandings).length === 0 ? (
+                          <p className="text-[#444] text-center py-12">No data recorded for this tournament yet.</p>
+                        ) : (
+                          Object.entries(tournamentStandings).map(([groupName, rows]) => (
+                            <div key={groupName} className="space-y-3">
+                              <h3 className="text-[#e8a000] font-black text-sm uppercase tracking-[0.2em] flex items-center gap-2">
+                                <Swords size={14} /> {groupName}
+                              </h3>
+                              <div className="overflow-x-auto">
+                                <div className="min-w-[480px]">
+                                  <div className="grid grid-cols-[36px_1fr_50px_50px_50px_70px] gap-2 px-3 mb-2">
+                                    {['#', 'Team', 'W', 'L', 'D', 'PTS'].map((h) => (
+                                      <p key={h} className="text-[#333] text-[9px] uppercase tracking-widest font-bold">{h}</p>
+                                    ))}
+                                  </div>
+                                  {rows.map((s, i) => {
+                                    const c = s.team.color || '#e8a000';
+                                    return (
+                                      <div key={s.id} className="grid grid-cols-[36px_1fr_50px_50px_50px_70px] gap-2 items-center px-3 py-3 mb-1 bg-[#0f0f18] border border-white/[0.05] hover:border-white/[0.12] transition-colors">
+                                        <span className="text-white font-black text-sm font-mono">{i < 3 ? ['🥇','🥈','🥉'][i] : i + 1}</span>
+                                        <div className="flex items-center gap-2">
+                                          {s.team.logo ? (
+                                            <img src={s.team.logo} alt={s.team.tag} className="w-5 h-5 rounded-full object-cover" />
+                                          ) : (
+                                            <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black" style={{ background: c + '33', color: c }}>
+                                              {s.team.tag.slice(0, 2)}
+                                            </div>
+                                          )}
+                                          <div>
+                                            <p className="text-white font-black text-[12px] uppercase leading-none">{s.team.name}</p>
+                                            <p className="text-[#444] text-[9px]">[{s.team.tag}]</p>
+                                          </div>
+                                        </div>
+                                        <p className="text-[#27ae60] font-black text-sm">{s.wins}</p>
+                                        <p className="text-[#e84040] font-black text-sm">{s.losses}</p>
+                                        <p className="text-[#666] text-sm">{s.draws}</p>
+                                        <p className={`font-black font-mono text-sm text-[#e8a000]`}>{s.groupPoints}</p>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          ))
                         )}
                       </>
                     )}

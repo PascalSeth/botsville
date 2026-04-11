@@ -24,15 +24,25 @@ type ScheduleMatch = {
 /*  Constants                                                */
 /* ───────────────────────────────────────────────────────── */
 const ROLE_ICONS: Record<string, string> = {
-  JUNGLER: '/roles/jungle.png', MID_LANER: '/roles/mid.png',
-  GOLD_LANER: '/roles/gold.png', EXP_LANER: '/roles/exp.png', ROAMER: '/roles/roam.png',
+  JUNGLE: '/roles/jungle.png',
+  MID: '/roles/mid.png',
+  GOLD: '/roles/gold.png',
+  EXP: '/roles/exp.png',
+  ROAM: '/roles/roam.png',
 };
 const ROLE_SHORT: Record<string, string> = {
-  JUNGLER: 'JG', MID_LANER: 'MID', GOLD_LANER: 'GLD', EXP_LANER: 'EXP', ROAMER: 'RMR',
+  JUNGLE: 'JG',
+  MID: 'MID',
+  GOLD: 'GLD',
+  EXP: 'EXP',
+  ROAM: 'RMR',
 };
 const ROLE_COLORS: Record<string, string> = {
-  JUNGLER: '#22c55e', MID_LANER: '#3b82f6', GOLD_LANER: '#f59e0b',
-  EXP_LANER: '#a855f7', ROAMER: '#ec4899',
+  JUNGLE: '#22c55e',
+  MID: '#3b82f6',
+  GOLD: '#f59e0b',
+  EXP: '#a855f7',
+  ROAM: '#ec4899',
 };
 const TEAM_A_COLOR = '#e8740a';
 const TEAM_B_COLOR = '#3b82f6';

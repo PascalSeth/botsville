@@ -177,6 +177,12 @@ export async function PUT(
     if (body.banner !== undefined) updateData.banner = body.banner;
     if (body.rules !== undefined) updateData.rules = body.rules;
     if (body.prizePool !== undefined) updateData.prizePool = body.prizePool;
+    
+    // Group Stage Configuration
+    if (body.numGroups !== undefined) updateData.numGroups = body.numGroups;
+    if (body.teamsPerGroup !== undefined) updateData.teamsPerGroup = body.teamsPerGroup;
+    if (body.matchesPerTeam !== undefined) updateData.matchesPerTeam = body.matchesPerTeam;
+    if (body.matchesBeforeBracket !== undefined) updateData.matchesBeforeBracket = body.matchesBeforeBracket;
 
     if (Object.keys(updateData).length === 0) {
       return apiError("No fields to update");

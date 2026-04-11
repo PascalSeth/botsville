@@ -197,20 +197,20 @@ const TeamAvatar = ({ team, size = 'md' }: { team: MatchTeam; size?: 'sm' | 'md'
 /*  Role icon helper                                         */
 /* ────────────────────────────────────────────────────────── */
 const ROLE_ICONS: Record<string, string> = {
-  JUNGLER: '/roles/jungle.png',
-  MID_LANER: '/roles/mid.png',
-  GOLD_LANER: '/roles/gold.png',
-  EXP_LANER: '/roles/exp.png',
-  ROAMER: '/roles/roam.png',
+  JUNGLE: '/roles/jungle.png',
+  MID: '/roles/mid.png',
+  GOLD: '/roles/gold.png',
+  EXP: '/roles/exp.png',
+  ROAM: '/roles/roam.png',
 };
 
 const getRoleLabel = (role: string) => {
   const labels: Record<string, string> = {
-    JUNGLER: 'JG',
-    MID_LANER: 'MID',
-    GOLD_LANER: 'GOLD',
-    EXP_LANER: 'EXP',
-    ROAMER: 'ROAM',
+    JUNGLE: 'JG',
+    MID: 'MID',
+    GOLD: 'GOLD',
+    EXP: 'EXP',
+    ROAM: 'ROAM',
   };
   return labels[role] || role.slice(0, 3);
 };

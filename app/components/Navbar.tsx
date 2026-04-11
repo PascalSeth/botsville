@@ -1046,22 +1046,24 @@ export const Navbar = () => {
 
             <div className="hidden lg:block w-px h-4 bg-white/6" />
 
-            {/* Auth section — desktop (hidden while session loads to avoid flash) */}
+            {/* Auth section */}
             {isLoading ? (
               <div className="hidden lg:block w-20 h-7" />
             ) : isLoggedIn ? (
               <UserDropdown user={user!} onLogout={() => signOut({ callbackUrl: '/' })} />
             ) : (
-              <div className="hidden lg:flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <Link
                   href="/login"
-                  className="text-[10px] font-bold tracking-[0.18em] uppercase text-[#8a8a8a] hover:text-white transition-colors px-2"
+                  className="flex items-center gap-1.5 h-7 px-2.5 text-[10px] font-black tracking-[0.18em] uppercase text-[#8a8a8a] border border-white/6 hover:text-white hover:border-[#e8a000]/30 transition-all rounded-sm"
                 >
-                  Login
+                  <User size={11} className="lg:hidden" />
+                  <span className="hidden lg:inline">Login</span>
+                  <span className="lg:hidden">Login</span>
                 </Link>
                 <Link
                   href="/login"
-                  className="relative overflow-hidden group flex items-center gap-1.5 px-4 py-2.25 text-[10px] font-black tracking-[0.18em] uppercase text-black"
+                  className="relative overflow-hidden group flex items-center gap-1.5 h-7 px-3 text-[10px] font-black tracking-[0.18em] uppercase text-black rounded-sm"
                   style={{ background: 'linear-gradient(135deg, #e8a000, #f0a900)' }}
                 >
                   <motion.div
@@ -1074,8 +1076,9 @@ export const Navbar = () => {
                     whileHover={{ x: '200%' }}
                     transition={{ duration: 0.5 }}
                   />
-                  <Zap size={10} className="relative" />
-                  <span className="relative">Register</span>
+                  <Zap size={10} className="relative shrink-0" />
+                  <span className="relative hidden sm:inline">Register</span>
+                  <span className="relative sm:hidden">Join</span>
                 </Link>
               </div>
             )}

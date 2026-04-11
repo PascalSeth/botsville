@@ -606,6 +606,13 @@ model Tournament {
   banner               String?
   rules                String[]         @default([])
   prizePool            String?          // display string e.g. "GH₵ 5,000"
+  
+  // Group Stage Runtime Metadata
+  numGroups            Int?
+  teamsPerGroup        Int?
+  matchesPerTeam       Int?
+  matchesBeforeBracket Int?
+
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   deletedAt            DateTime?

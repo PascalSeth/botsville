@@ -20,6 +20,7 @@ import {
   Search,
   ChevronDown,
   ArrowLeftRight,
+  Plus,
 } from "lucide-react";
 
 type Player = {
@@ -88,13 +89,13 @@ type HeroCatalogItem = {
   imageUrl: string | null;
 };
 
-const ROLE_ORDER = ["JUNGLER", "MID_LANER", "GOLD_LANER", "EXP_LANER", "ROAMER"];
+const ROLE_ORDER = ["JUNGLE", "MID", "GOLD", "EXP", "ROAM"];
 const ROLE_LABELS: Record<string, string> = {
-  JUNGLER: "JG",
-  MID_LANER: "MID",
-  GOLD_LANER: "GOLD",
-  EXP_LANER: "EXP",
-  ROAMER: "ROAM",
+  JUNGLE: "JG",
+  MID: "MID",
+  GOLD: "GOLD",
+  EXP: "EXP",
+  ROAM: "ROAM",
 };
 
 export default function MatchDetailPage({
@@ -117,6 +118,12 @@ export default function MatchDetailPage({
   const [gameWinner, setGameWinner] = useState<Record<number, string>>({});
   const [submittingPerf, setSubmittingPerf] = useState(false);
   const [finalizingStats, setFinalizingStats] = useState(false);
+  
+  // Quick Add state
+  const [showQuickAddA, setShowQuickAddA] = useState(false);
+  const [showQuickAddB, setShowQuickAddB] = useState(false);
+  const [quickAddIgn, setQuickAddIgn] = useState("");
+  const [quickAddRole, setQuickAddRole] = useState("");
   
   // Refs for tab flow navigation
   const performanceRefs = useRef<Record<string, { kills: React.RefObject<HTMLInputElement>; deaths: React.RefObject<HTMLInputElement>; assists: React.RefObject<HTMLInputElement> }>>({});
@@ -436,6 +443,39 @@ export default function MatchDetailPage({
     await loadMatch();
   };
 
+  const handleQuickAddPlayer = async (teamId: string, side: 'A' | 'B') => {
+    if (!quickAddIgn || !quickAddRole) {
+      setError("IGN and Role are required");
+      return;
+    }
+
+    setSubmittingPerf(true);
+    const { data, error: err } = await dashboardFetch<{ player: Player }>(`/api/teams/${teamId}/players`, {
+      method: "POST",
+      body: JSON.stringify({
+        ign: quickAddIgn,
+        role: quickAddRole,
+        isSubstitute: true, // Quick-added players are stand-ins
+      }),
+    });
+
+    if (err) {
+      setError(err);
+      setSubmittingPerf(false);
+      return;
+    }
+
+    setSuccess(`Player ${quickAddIgn} added to roster!`);
+    setQuickAddIgn("");
+    setQuickAddRole("");
+    if (side === 'A') setShowQuickAddA(false);
+    else setShowQuickAddB(false);
+
+    // Refresh rosters and match data
+    await loadMatch();
+    setSubmittingPerf(false);
+  };
+
   const totalGames = match?.bestOf || 3;
   const isCompleted = match?.status === "COMPLETED" || match?.status === "FORFEITED";
   const selectedGameWinnerId = gameWinner[selectedGame] || null;
@@ -650,12 +690,68 @@ export default function MatchDetailPage({
         <div className="p-4 space-y-6">
           {/* Team A Players */}
           <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
-                <Shield size={12} className="text-blue-400" />
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
+                  <Shield size={12} className="text-blue-400" />
+                </div>
+                <span className="text-sm font-bold text-blue-400">{match.teamA?.name} (Blue Side)</span>
               </div>
-              <span className="text-sm font-bold text-blue-400">{match.teamA?.name} (Blue Side)</span>
+              {!showQuickAddA && (
+                <button
+                  onClick={() => setShowQuickAddA(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-[#e8a000]/10 border border-[#e8a000]/20 rounded-md text-[10px] font-black uppercase tracking-wider text-[#e8a000] hover:bg-[#e8a000]/20 transition-all"
+                >
+                  <Plus size={12} />
+                  Add Member
+                </button>
+              )}
             </div>
+
+            {showQuickAddA && (
+              <div className="mb-4 p-3 rounded-lg border border-[#e8a000]/20 bg-[#e8a000]/5 flex items-center gap-3">
+                <span className="text-[10px] font-black text-[#e8a000] bg-[#e8a000]/10 px-1.5 py-0.5 rounded border border-[#e8a000]/20">
+                  SUB
+                </span>
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={quickAddIgn}
+                    onChange={(e) => setQuickAddIgn(e.target.value)}
+                    placeholder="Stand-in Player IGN"
+                    className="w-full bg-[#0a0a0f] border border-white/10 text-white px-3 py-1.5 text-sm outline-none focus:border-[#e8a000]/50"
+                  />
+                </div>
+                <div className="w-40">
+                  <select
+                    value={quickAddRole}
+                    onChange={(e) => setQuickAddRole(e.target.value)}
+                    className="w-full bg-[#0a0a0f] border border-white/10 text-white px-3 py-1.5 text-sm outline-none focus:border-[#e8a000]/50"
+                  >
+                    <option value="">Select Role</option>
+                    <option value="">Select Role</option>
+                    <option value="JUNGLE">JUNGLER (JG)</option>
+                    <option value="MID">MID LANER (MID)</option>
+                    <option value="GOLD">GOLD LANER (GOLD)</option>
+                    <option value="EXP">EXP LANER (EXP)</option>
+                    <option value="ROAM">ROAMER (ROAM)</option>
+                  </select>
+                </div>
+                <button
+                  onClick={() => handleQuickAddPlayer(match.teamA?.id || "", 'A')}
+                  disabled={submittingPerf}
+                  className="px-3 py-1.5 bg-[#e8a000] text-black text-[10px] font-black uppercase tracking-wider hover:bg-[#ffb800]"
+                >
+                  Add
+                </button>
+                <button
+                  onClick={() => setShowQuickAddA(false)}
+                  className="text-[10px] font-black uppercase tracking-wider text-[#666] hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
             <div className="grid gap-2">
               {gamePerformances[selectedGame]
                 ?.filter((p) => p.teamId === match?.teamA?.id)
@@ -685,12 +781,68 @@ export default function MatchDetailPage({
 
           {/* Team B Players */}
           <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded bg-red-500/20 border border-red-500/30 flex items-center justify-center">
-                <Swords size={12} className="text-red-400" />
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded bg-red-500/20 border border-red-500/30 flex items-center justify-center">
+                  <Swords size={12} className="text-red-400" />
+                </div>
+                <span className="text-sm font-bold text-red-400">{match.teamB?.name} (Red Side)</span>
               </div>
-              <span className="text-sm font-bold text-red-400">{match.teamB?.name} (Red Side)</span>
+              {!showQuickAddB && (
+                <button
+                  onClick={() => setShowQuickAddB(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-[#e8a000]/10 border border-[#e8a000]/20 rounded-md text-[10px] font-black uppercase tracking-wider text-[#e8a000] hover:bg-[#e8a000]/20 transition-all"
+                >
+                  <Plus size={12} />
+                  Add Member
+                </button>
+              )}
             </div>
+
+            {showQuickAddB && (
+              <div className="mb-4 p-3 rounded-lg border border-[#e8a000]/20 bg-[#e8a000]/5 flex items-center gap-3">
+                <span className="text-[10px] font-black text-[#e8a000] bg-[#e8a000]/10 px-1.5 py-0.5 rounded border border-[#e8a000]/20">
+                  SUB
+                </span>
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={quickAddIgn}
+                    onChange={(e) => setQuickAddIgn(e.target.value)}
+                    placeholder="Stand-in Player IGN"
+                    className="w-full bg-[#0a0a0f] border border-white/10 text-white px-3 py-1.5 text-sm outline-none focus:border-[#e8a000]/50"
+                  />
+                </div>
+                <div className="w-40">
+                  <select
+                    value={quickAddRole}
+                    onChange={(e) => setQuickAddRole(e.target.value)}
+                    className="w-full bg-[#0a0a0f] border border-white/10 text-white px-3 py-1.5 text-sm outline-none focus:border-[#e8a000]/50"
+                  >
+                    <option value="">Select Role</option>
+                    <option value="">Select Role</option>
+                    <option value="JUNGLE">JUNGLER (JG)</option>
+                    <option value="MID">MID LANER (MID)</option>
+                    <option value="GOLD">GOLD LANER (GOLD)</option>
+                    <option value="EXP">EXP LANER (EXP)</option>
+                    <option value="ROAM">ROAMER (ROAM)</option>
+                  </select>
+                </div>
+                <button
+                  onClick={() => handleQuickAddPlayer(match.teamB?.id || "", 'B')}
+                  disabled={submittingPerf}
+                  className="px-3 py-1.5 bg-[#e8a000] text-black text-[10px] font-black uppercase tracking-wider hover:bg-[#ffb800]"
+                >
+                  Add
+                </button>
+                <button
+                  onClick={() => setShowQuickAddB(false)}
+                  className="text-[10px] font-black uppercase tracking-wider text-[#666] hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
             <div className="grid gap-2">
               {gamePerformances[selectedGame]
                 ?.filter((p) => p.teamId === match?.teamB?.id)

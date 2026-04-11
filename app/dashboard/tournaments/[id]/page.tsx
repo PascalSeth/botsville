@@ -1,10 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+/* eslint-disable @next/next/no-img-element */
+
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { 
+  Loader2, X, Plus, Trophy, Settings, 
+  Users, Play, Shield, Gauge, Layout, 
+  MapPin, Globe, Calendar, Clock, ChevronLeft,
+  AlertCircle, CheckCircle, ListChecks, Edit, Sparkles,
+  ExternalLink, Layers, Swords
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { dashboardFetch } from "../../lib/api";
-import { Loader2, X, Plus } from "lucide-react";
 
 type Tournament = {
   id: string;
@@ -37,9 +46,23 @@ type TournamentRegistration = {
   };
 };
 
+// Premium Glass Card Component
+const GlassCard = ({ children, className = "", delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.5, delay }}
+    className={`bg-white/[0.03] backdrop-blur-xl border border-white/10 rounded-2xl p-6 hover:border-white/20 transition-colors shadow-2xl ${className}`}
+  >
+    {children}
+  </motion.div>
+);
+
 export default function TournamentDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params?.id as string | undefined;
+  
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [registrations, setRegistrations] = useState<TournamentRegistration[]>([]);
   const [loadingRegistrations, setLoadingRegistrations] = useState(true);
@@ -53,7 +76,6 @@ export default function TournamentDetailPage() {
   const [savingImage, setSavingImage] = useState(false);
   const [imageMessage, setImageMessage] = useState<string | null>(null);
   const [showBulkRegisterModal, setShowBulkRegisterModal] = useState(false);
-  const [bulkTeamIds, setBulkTeamIds] = useState<string>("");
   const [bulkAutoApprove, setBulkAutoApprove] = useState(true);
   const [bulkSeed, setBulkSeed] = useState<string>("");
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -121,7 +143,6 @@ export default function TournamentDetailPage() {
     setAvailableTeams([]);
 
     try {
-      // First, refresh registrations to get the latest data
       const { data: registrationsData, error: registrationsError } = await dashboardFetch<TournamentRegistration[]>(`/api/tournaments/${id}/registrations`);
       
       let currentRegistrations = registrations;
@@ -130,35 +151,21 @@ export default function TournamentDetailPage() {
         setRegistrations(registrationsData);
       }
 
-      // Get registered team IDs (include PENDING and APPROVED, exclude REJECTED)
       const registeredTeamIds = new Set(
         currentRegistrations
           .filter((r: any) => r.status !== "REJECTED")
           .map((r) => r.team.id)
       );
-      console.log("Registered teams:", registeredTeamIds);
 
       const response = await fetch("/api/teams?limit=1000&status=ACTIVE");
       const result = await response.json();
 
-      console.log("Teams response:", result);
-
       if (Array.isArray(result.teams)) {
-        // Filter out already registered teams (including pending)
         const unregisteredTeams = result.teams.filter((team: any) => !registeredTeamIds.has(team.id));
-        
-        console.log("Total ACTIVE teams:", result.teams.length);
-        console.log("Registered team count:", registeredTeamIds.size);
-        console.log("Unregistered teams:", unregisteredTeams.length);
-        console.log("Unregistered teams list:", unregisteredTeams.map((t: any) => ({ id: t.id, name: t.name })));
-
         setAvailableTeams(unregisteredTeams);
-      } else {
-        console.error("Invalid teams response format:", result);
       }
     } catch (error) {
       console.error("Failed to fetch teams:", error);
-      setAvailableTeams([]);
     } finally {
       setLoadingAvailableTeams(false);
     }
@@ -197,23 +204,10 @@ export default function TournamentDetailPage() {
       return;
     }
 
-    if (data?.results) {
-      const successful = data.results.filter((r: any) => r.success).length;
-      const failed = data.results.filter((r: any) => !r.success).length;
-      setBulkMessage(`✓ Complete: ${successful} registered successfully, ${failed} failed`);
-    } else {
-      setBulkMessage(data?.message || "Teams registered successfully!");
-    }
-
-    // Reset form
-    setBulkTeamIds("");
-    setBulkSeed("");
+    setBulkMessage("Teams registered successfully!");
     setSelectedTeamIds(new Set());
-
-    // Refresh registrations
     await refreshRegistrations();
 
-    // Close modal after 2 seconds
     setTimeout(() => {
       setShowBulkRegisterModal(false);
       setBulkMessage(null);
@@ -284,14 +278,9 @@ export default function TournamentDetailPage() {
         return;
       }
 
-      if (data?.tournament) {
-        setTournament((prev) => (prev ? { ...prev, banner: data.tournament?.banner ?? uploadData.url } : prev));
-      } else {
-        setTournament((prev) => (prev ? { ...prev, banner: uploadData.url } : prev));
-      }
-
+      setTournament((prev) => (prev ? { ...prev, banner: uploadData.url } : prev));
       setImageFile(null);
-      setImageMessage("Tournament image updated.");
+      setImageMessage("Tournament banner updated.");
     } catch (uploadError) {
       setImageMessage(uploadError instanceof Error ? uploadError.message : "Failed to update image");
     } finally {
@@ -318,21 +307,14 @@ export default function TournamentDetailPage() {
       }
 
       const result = await res.json();
-      const teamCount = result.teamsAffected || 0;
-      const matchCount = result.matchesProcessed || 0;
+      setPointsMessage(`✓ Recalculated ${result.teamsAffected} teams based on ${result.matchesProcessed} matches.`);
       
-      // Create success message with details
-      const message = `✓ Standings updated: ${teamCount} teams recalculated from ${matchCount} completed matches (MLBB 3/2/1/0)`;
-      setPointsMessage(message);
-      
-      // Refresh tournament data
       const tournamentRes = await fetch(`/api/tournaments/${id}`);
       if (tournamentRes.ok) {
         const updatedTournament = await tournamentRes.json();
         setTournament(updatedTournament);
       }
 
-      // Keep message longer so user can see results
       setTimeout(() => setPointsMessage(null), 5000);
     } catch (err) {
       setPointsMessage(err instanceof Error ? err.message : "Failed to recalculate points");
@@ -341,392 +323,345 @@ export default function TournamentDetailPage() {
     }
   };
 
-  if (!id) {
+  if (loading) {
     return (
-      <div className="space-y-6">
-        <Link href="/dashboard/tournaments" className="text-[#e8a000] hover:underline text-sm font-bold uppercase tracking-wider">← Tournaments</Link>
-        <p className="text-[#666]">Missing tournament ID.</p>
+      <div className="min-h-screen bg-[#05050a] flex flex-col items-center justify-center gap-4">
+        <Loader2 size={32} className="animate-spin text-[#e8a000]" />
+        <p className="text-[#666] font-black uppercase tracking-widest text-[10px]">Synchronizing Tournament Data...</p>
       </div>
     );
   }
 
-  if (loading) return <div className="p-8 text-center text-[#666]">Loading...</div>;
-  if (error) {
+  if (error || !tournament) {
     return (
-      <div className="space-y-6">
-        <Link href="/dashboard/tournaments" className="text-[#e8a000] hover:underline text-sm font-bold uppercase tracking-wider">← Tournaments</Link>
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>
+      <div className="min-h-screen bg-[#05050a] p-12 flex flex-col items-center justify-center space-y-6">
+        <AlertCircle size={48} className="text-red-500/50" />
+        <p className="text-red-300 font-bold uppercase tracking-widest">{error || "Tournament Archive Not Found"}</p>
+        <Link href="/dashboard/tournaments" className="px-6 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-white/10 transition-all">Return to Dashboard</Link>
       </div>
     );
   }
-  if (!tournament) return <div className="p-8 text-[#666]">Tournament not found.</div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <Link href="/dashboard/tournaments" className="text-[#e8a000] hover:underline text-sm font-bold uppercase tracking-wider">← Tournaments</Link>
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/dashboard/tournaments/${tournament.id}/edit`}
-            className="px-4 py-2 border border-white/20 text-[#aaa] text-xs font-bold uppercase tracking-wider hover:bg-white/5"
-          >
-            Edit
-          </Link>
-          <Link
-            href={`/dashboard/matches?tournamentId=${tournament.id}`}
-            className="px-4 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800]"
-          >
-            View matches
-          </Link>
-        </div>
-      </div>
-      <div>
-        <h1 className="font-black text-2xl text-white uppercase tracking-[0.08em]">
-          {tournament.name}
-        </h1>
-        {tournament.subtitle && <p className="mt-1 text-[#888]">{tournament.subtitle}</p>}
-      </div>
-
-      <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 p-4 space-y-3 max-w-2xl">
-        <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Tournament image</p>
-        <label className="w-full bg-[#0d0d14] border border-white/10 px-3 py-2 text-sm text-white flex items-center">
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
-            className="w-full text-white file:mr-3 file:px-2 file:py-1 file:border file:border-white/20 file:bg-transparent file:text-[10px] file:uppercase file:tracking-wider file:text-white"
-          />
-        </label>
-        <div className="flex items-center gap-3 flex-wrap">
-          <button
-            type="button"
-            onClick={updateTournamentImage}
-            disabled={savingImage || uploadingImage || !imageFile}
-            className="px-4 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50 inline-flex items-center gap-2"
-          >
-            {(savingImage || uploadingImage) ? <Loader2 size={14} className="animate-spin" /> : null}
-            {uploadingImage ? "Uploading..." : savingImage ? "Saving..." : "Update image"}
-          </button>
-          <span className="text-[11px] text-[#777]">Stored in Supabase bucket: images</span>
-        </div>
-        {imageMessage ? <p className="text-sm text-[#aaa]">{imageMessage}</p> : null}
-      </div>
-
-      <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Status</p>
-          <p className="text-white font-semibold mt-1">{tournament.status}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Format</p>
-          <p className="text-white font-semibold mt-1">{tournament.format.replace(/_/g, " ")}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Season</p>
-          <p className="text-white font-semibold mt-1">{tournament.season?.name ?? "—"}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Date</p>
-          <p className="text-white font-semibold mt-1">{new Date(tournament.date).toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Location</p>
-          <p className="text-white font-semibold mt-1">{tournament.location} {tournament.isOnline ? "(Online)" : ""}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Slots</p>
-          <p className="text-white font-semibold mt-1">{tournament.slots}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Registrations</p>
-          <p className="text-white font-semibold mt-1">{tournament._count?.registrations ?? 0}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Matches</p>
-          <p className="text-white font-semibold mt-1">{tournament._count?.matches ?? 0}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Prize pool</p>
-          <p className="text-white font-semibold mt-1">{tournament.prizePool ?? "No prize pool"}</p>
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 p-6 space-y-3">
-        <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Rules</p>
-        {tournament.rules && tournament.rules.length > 0 ? (
-          <ul className="space-y-2">
-            {tournament.rules.map((rule, index) => (
-              <li key={`${rule}-${index}`} className="text-sm text-[#ccc]">• {rule}</li>
-            ))}
-          </ul>
+    <div className="min-h-screen bg-[#05050a] selection:bg-[#e8a000]/30 pb-20">
+      {/* Hero Header */}
+      <div className="relative h-[400px] w-full overflow-hidden">
+        {tournament.banner ? (
+          <img src={tournament.banner} alt="" className="w-full h-full object-cover opacity-40 blur-[2px] transition-all duration-1000" />
         ) : (
-          <p className="text-sm text-[#777]">No rules set for this tournament.</p>
+          <div className="w-full h-full bg-linear-to-br from-[#1a1a2e] to-[#05050a]" />
         )}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#05050a] via-[#05050a]/80 to-[#05050a]/20" />
+        
+        <div className="absolute inset-0 max-w-6xl mx-auto px-6 flex flex-col justify-end pb-12">
+           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+              <Link href="/dashboard/tournaments" className="group flex items-center gap-2 text-[#e8a000] text-xs font-black uppercase tracking-[0.2em] transition-all hover:gap-3">
+                <ChevronLeft size={16} /> Dashboard
+              </Link>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <Trophy size={20} className="text-[#e8a000]" />
+                  <span className="text-[10px] font-black text-[#e8a000] uppercase tracking-[0.3em]">{tournament.status}</span>
+                  <span className="h-1 w-1 bg-white/20 rounded-full" />
+                  <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.3em]">{tournament.format.replace(/_/g, " ")}</span>
+                </div>
+                <h1 className="text-6xl font-black text-white uppercase tracking-tighter leading-tight">{tournament.name}</h1>
+                {tournament.subtitle && <p className="text-white/40 text-lg font-medium tracking-wide">{tournament.subtitle}</p>}
+              </div>
+
+              <div className="flex items-center gap-3 pt-4">
+                 <Link href={`/dashboard/tournaments/${tournament.id}/edit`} className="px-6 py-3 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-[#ffb800] transition-all shadow-xl shadow-[#e8a000]/10 flex items-center gap-2">
+                   <Edit size={14} /> Edit Tournament
+                 </Link>
+                 <Link href={`/dashboard/matches?tournamentId=${tournament.id}`} className="px-6 py-3 bg-white/5 border border-white/10 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-white/10 transition-all flex items-center gap-2">
+                   <Swords size={14} className="text-[#e8a000]" /> View Match Grid
+                 </Link>
+              </div>
+           </motion.div>
+        </div>
       </div>
 
-      <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Points System - MLBB 3/2/1/0</p>
-            <p className="text-xs text-[#888] mt-1">Recalculate all team standings from completed match results</p>
-          </div>
-          <button
-            onClick={handleRecalculatePoints}
-            disabled={recalculatingPoints || !tournament._count?.matches}
-            className="shrink-0 px-4 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50 inline-flex items-center justify-center gap-2 rounded transition"
-          >
-            {recalculatingPoints ? <Loader2 size={14} className="animate-spin" /> : null}
-            {recalculatingPoints ? "Recalculating..." : "Recalculate Points"}
-          </button>
+      <div className="max-w-6xl mx-auto px-6 -mt-10 relative z-10 grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Column: Quick Stats & Logistics */}
+        <div className="lg:col-span-1 space-y-8">
+           <GlassCard delay={0.1}>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-1.5 h-6 bg-[#e8a000] rounded-full" />
+                <h2 className="text-xs font-black text-white uppercase tracking-widest">Event Logistics</h2>
+              </div>
+              <div className="space-y-6">
+                 {[
+                   { label: 'Commencement', val: new Date(tournament.date).toLocaleString(), icon: Calendar },
+                   { label: 'Venue Environment', val: tournament.location + (tournament.isOnline ? " (Online)" : ""), icon: MapPin },
+                   { label: 'Max Capacity', val: `${tournament.slots} Teams`, icon: Users },
+                   { label: 'Prize Allocation', val: tournament.prizePool || "Not Specified", icon: Trophy }
+                 ].map((item, i) => (
+                   <div key={i} className="flex items-start gap-4">
+                      <div className="p-2.5 rounded-xl bg-white/5 text-[#e8a000]"><item.icon size={16} /></div>
+                      <div>
+                        <p className="text-[9px] font-black text-[#555] uppercase tracking-wider mb-1">{item.label}</p>
+                        <p className="text-sm font-bold text-white uppercase">{item.val}</p>
+                      </div>
+                   </div>
+                 ))}
+              </div>
+           </GlassCard>
+
+           <GlassCard delay={0.2} className="border-[#e8a000]/20 bg-[#e8a000]/[0.02]">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-1.5 h-6 bg-[#e8a000] rounded-full" />
+                  <h2 className="text-xs font-black text-white uppercase tracking-widest leading-none">Standings Engine</h2>
+                </div>
+                <button onClick={handleRecalculatePoints} disabled={recalculatingPoints} className="p-2 rounded-lg bg-[#e8a000] text-black hover:bg-[#ffb800] transition-all active:scale-[0.9] disabled:opacity-50">
+                  {recalculatingPoints ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                 <p className="text-[10px] font-black text-[#e8a000] uppercase tracking-widest opacity-60">MLBB Standard Protocol</p>
+                 <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { l: '2-0 Clean Win', p: '+3 PTS' },
+                      { l: '2-1 Tight Win', p: '+2 PTS' },
+                      { l: '1-2 Close Loss', p: '+1 PT' },
+                      { l: '0-2 Defeat', p: '+0 PTS' }
+                    ].map((row, i) => (
+                      <div key={i} className="bg-black/40 border border-white/5 p-3 rounded-xl">
+                         <p className="text-[8px] font-black text-[#444] uppercase mb-1">{row.l}</p>
+                         <p className="text-xs font-bold text-white">{row.p}</p>
+                      </div>
+                    ))}
+                 </div>
+                 {pointsMessage && (
+                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[9px] font-black uppercase tracking-wider">
+                     {pointsMessage}
+                   </motion.div>
+                 )}
+              </div>
+           </GlassCard>
+
+           <GlassCard delay={0.3}>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-1.5 h-6 bg-[#e8a000] rounded-full" />
+                <h2 className="text-xs font-black text-white uppercase tracking-widest">Regulatory Assets</h2>
+              </div>
+              <div className="space-y-4">
+                 <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block">Hero Visual Asset</label>
+                 <div className="relative group aspect-video rounded-xl overflow-hidden border border-white/10">
+                   {tournament.banner ? (
+                     <img src={tournament.banner} alt="" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                   ) : (
+                     <div className="w-full h-full bg-white/[0.02] flex items-center justify-center text-[#222]"><Layout size={32} /></div>
+                   )}
+                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
+                      <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] ?? null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                      <p className="text-[10px] font-black text-white uppercase tracking-widest flex items-center gap-2"><Plus size={12} /> Replace Asset</p>
+                   </div>
+                 </div>
+                 {imageFile && (
+                   <button onClick={updateTournamentImage} disabled={savingImage} className="w-full py-3 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-[#ffb800] transition-all flex items-center justify-center gap-2">
+                     {savingImage ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />} Save Hero Asset
+                   </button>
+                 )}
+                 {imageMessage && <p className="text-[9px] text-[#555] font-black uppercase">{imageMessage}</p>}
+              </div>
+
+              <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
+                 <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block">Tournament Governance</label>
+                 {tournament.rules && tournament.rules.length > 0 ? (
+                    <div className="space-y-3">
+                       {tournament.rules.map((rule, idx) => (
+                         <div key={idx} className="flex gap-3 text-xs text-white/60">
+                            <span className="text-[#e8a000] font-black h-fit mt-1">•</span>
+                            <span className="font-medium leading-relaxed">{rule}</span>
+                         </div>
+                       ))}
+                    </div>
+                 ) : (
+                   <p className="text-xs text-[#444] italic">No governance rules provided.</p>
+                 )}
+              </div>
+           </GlassCard>
         </div>
 
-        {/* Points System Breakdown */}
-        <div className="grid grid-cols-2 gap-2 bg-[#000]/30 rounded p-3">
-          <div className="text-[11px]">
-            <span className="text-[#e8a000] font-bold">2-0 Win:</span>
-            <span className="text-[#ccc] ml-1">+3 pts</span>
-          </div>
-          <div className="text-[11px]">
-            <span className="text-[#e8a000] font-bold">2-1 Win:</span>
-            <span className="text-[#ccc] ml-1">+2 pts</span>
-          </div>
-          <div className="text-[11px]">
-            <span className="text-[#e8a000] font-bold">1-2 Loss:</span>
-            <span className="text-[#ccc] ml-1">+1 pt</span>
-          </div>
-          <div className="text-[11px]">
-            <span className="text-[#e8a000] font-bold">0-2 Loss:</span>
-            <span className="text-[#ccc] ml-1">+0 pts</span>
-          </div>
-        </div>
+        {/* Right Column: Registrations & Management */}
+        <div className="lg:col-span-2 space-y-8">
+           <GlassCard delay={0.4}>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-1.5 h-6 bg-[#e8a000] rounded-full" />
+                  <div>
+                    <h2 className="text-xl font-black text-white uppercase tracking-tighter">Participant <span className="text-[#e8a000]">Manifesto</span></h2>
+                    <p className="text-[10px] font-black text-[#555] uppercase tracking-widest mt-1">{registrations.length} Active Registrations</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={handleOpenBulkRegisterModal} className="px-5 py-3 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-[#ffb800] transition-all flex items-center gap-2">
+                    <Plus size={14} /> Add Participants
+                  </button>
+                  <Link href={`/dashboard/tournaments/setup?selectedId=${tournament.id}&step=configure`} className="px-5 py-3 bg-white/5 border border-white/10 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-white/10 transition-all flex items-center gap-2">
+                    <Layers size={14} className="text-[#e8a000]" /> Configure Groups
+                  </Link>
+                </div>
+              </div>
 
-        {pointsMessage && (
-          <div className={`rounded px-3 py-2 text-sm font-semibold ${pointsMessage.startsWith("✓") ? "bg-[#27ae60]/10 text-[#27ae60] border border-[#27ae60]/30" : "bg-red-500/10 text-red-300 border border-red-500/30"}`}>
-            {pointsMessage}
-          </div>
-        )}
-        
-        {!pointsMessage && tournament._count?.matches && (
-          <p className="text-xs text-[#666]">
-            Ready to recalculate. Found <strong>{tournament._count?.matches}</strong> matches.
-          </p>
-        )}
-        
-        {!tournament._count?.matches && (
-          <p className="text-xs text-[#999] bg-[#333]/30 rounded px-2 py-1.5">
-            ⚠️ No matches yet. Add completed matches before recalculating standings.
-          </p>
-        )}
+              {actionMessage && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-6 p-4 rounded-xl bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] font-black uppercase text-[10px] tracking-widest flex items-center gap-3"><CheckCircle size={16} /> {actionMessage}</motion.div>}
+              {actionError && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 font-black uppercase text-[10px] tracking-widest flex items-center gap-3"><AlertCircle size={16} /> {actionError}</motion.div>}
+
+              <div className="overflow-x-auto -mx-6 px-6">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="text-[9px] font-black uppercase tracking-[0.2em] text-[#444] border-b border-white/5">
+                      <th className="pb-4 pr-4">Manifest</th>
+                      <th className="pb-4 pr-4">Identity</th>
+                      <th className="pb-4 pr-4">Status</th>
+                      <th className="pb-4 pr-4">Seed</th>
+                      <th className="pb-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingRegistrations ? (
+                      <tr><td colSpan={5} className="py-12 text-center text-[10px] font-black text-[#333] uppercase tracking-[0.3em]">Querying Database...</td></tr>
+                    ) : registrations.length === 0 ? (
+                      <tr><td colSpan={5} className="py-12 text-center text-[10px] font-black text-[#333] uppercase tracking-[0.3em]">No Active Participants Found</td></tr>
+                    ) : (
+                      registrations.map((reg, idx) => (
+                        <tr key={reg.id} className="group border-b border-white/[0.03] last:border-0">
+                          <td className="py-5 pr-4">
+                             <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-[#e8a000] font-black uppercase tracking-tighter group-hover:border-[#e8a000]/50 transition-colors">
+                                  {reg.team.tag.substring(0, 2)}
+                                </div>
+                                <div className="space-y-0.5">
+                                   <p className="text-sm font-black text-white uppercase group-hover:text-[#e8a000] transition-colors">{reg.team.name}</p>
+                                   <p className="text-[10px] font-black text-[#555] uppercase tracking-widest">{reg.team.tag}</p>
+                                </div>
+                             </div>
+                          </td>
+                          <td className="py-5 pr-4">
+                             <div className="space-y-0.5">
+                               <p className="text-xs font-bold text-white/60">IGN: {reg.team.captain?.ign || "Anonymous"}</p>
+                               <p className="text-[9px] font-black text-[#444] uppercase tracking-widest">{reg.team._count?.players || 0} Operators</p>
+                             </div>
+                          </td>
+                          <td className="py-5 pr-4">
+                             <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                               reg.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' : 
+                               reg.status === 'PENDING' ? 'bg-[#e8a000]/10 text-[#e8a000]' : 
+                               'bg-white/5 text-[#555]'
+                             }`}>{reg.status}</span>
+                          </td>
+                          <td className="py-5 pr-4 font-mono text-xs font-bold text-white/40">#{reg.seed || "—"}</td>
+                          <td className="py-5 text-right">
+                             {reg.status === 'PENDING' ? (
+                               <div className="flex items-center justify-end gap-2">
+                                  <button onClick={() => handleRegistrationAction(reg.id, "approve")} disabled={actingRegistrationId === reg.id} className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all">
+                                    <CheckCircle size={14} />
+                                  </button>
+                                  <button onClick={() => handleRegistrationAction(reg.id, "reject")} disabled={actingRegistrationId === reg.id} className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500 hover:text-white transition-all">
+                                    <X size={14} />
+                                  </button>
+                               </div>
+                             ) : (
+                               <Link href={`/dashboard/teams/${reg.team.id}`} className="text-[#333] hover:text-[#e8a000] transition-colors"><ExternalLink size={16} /></Link>
+                             )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+           </GlassCard>
+        </div>
       </div>
 
       {/* Bulk Register Modal */}
-      {showBulkRegisterModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-[#0a0a0f] border border-white/10 rounded-lg p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h2 className="text-white font-black text-lg uppercase tracking-wider">Register Teams</h2>
-              <button
-                onClick={() => {
-                  setShowBulkRegisterModal(false);
-                  setBulkMessage(null);
-                }}
-                className="text-[#999] hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-wider text-[#666] mb-2">
-                  Available Teams ({selectedTeamIds.size} selected)
-                </label>
-                
-                {loadingAvailableTeams ? (
-                  <div className="text-center py-4 text-[#888]">
-                    <Loader2 size={16} className="animate-spin inline-block" />
-                    <p className="text-xs mt-2">Loading teams...</p>
+      <AnimatePresence>
+        {showBulkRegisterModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xl p-6">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-2xl bg-[#0a0a0f] border border-white/10 rounded-3xl overflow-hidden flex flex-col max-h-[90vh]">
+               <div className="p-8 border-b border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                     <div className="p-3 rounded-2xl bg-[#e8a000]/10 text-[#e8a000]"><Users size={24} /></div>
+                     <div>
+                       <h2 className="text-xl font-black text-white uppercase tracking-tighter">Manifest <span className="text-[#e8a000]">Synchronizer</span></h2>
+                       <p className="text-[10px] font-black text-[#555] uppercase tracking-widest mt-1">Multi-Team Registration Interface</p>
+                     </div>
                   </div>
-                ) : availableTeams.length === 0 ? (
-                  <div className="bg-[#0d0d14] border border-white/10 rounded px-3 py-4 text-center text-[#666] text-sm">
-                    No teams available to register
+                  <button onClick={() => setShowBulkRegisterModal(false)} className="text-[#333] hover:text-white transition-colors"><X size={24} /></button>
+               </div>
+
+               <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
+                  <div className="space-y-4">
+                     <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#555] block">Available Combatants ({availableTeams.length})</label>
+                     {loadingAvailableTeams ? (
+                       <div className="py-20 flex flex-col items-center gap-3 text-[#333]">
+                         <Loader2 size={32} className="animate-spin" />
+                         <p className="text-[10px] font-black uppercase tracking-widest">Compiling Team Archives...</p>
+                       </div>
+                     ) : (
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                         {availableTeams.map(team => (
+                           <button 
+                             key={team.id}
+                             onClick={() => {
+                               const next = new Set(selectedTeamIds);
+                               if (next.has(team.id)) next.delete(team.id);
+                               else next.add(team.id);
+                               setSelectedTeamIds(next);
+                             }}
+                             className={`flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${
+                               selectedTeamIds.has(team.id) 
+                                 ? 'bg-[#e8a000]/10 border-[#e8a000] text-white' 
+                                 : 'bg-white/[0.02] border-white/5 text-[#555] hover:bg-white/[0.05]'
+                             }`}
+                           >
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${selectedTeamIds.has(team.id) ? 'bg-[#e8a000] border-[#e8a000]' : 'border-white/20'}`}>
+                                {selectedTeamIds.has(team.id) && <CheckCircle size={10} className="text-black" />}
+                              </div>
+                              <div className="truncate">
+                                <p className="text-sm font-black uppercase transform tracking-tight">{team.name}</p>
+                                <p className="text-[9px] font-black opacity-60 uppercase">{team.tag}</p>
+                              </div>
+                           </button>
+                         ))}
+                       </div>
+                     )}
                   </div>
-                ) : (
-                  <div className="bg-[#0d0d14] border border-white/10 rounded max-h-64 overflow-y-auto">
-                    {availableTeams.map((team) => (
-                      <div
-                        key={team.id}
-                        className="flex items-center gap-2 px-3 py-2 border-b border-white/5 hover:bg-white/5 cursor-pointer"
-                        onClick={() => {
-                          const newSelected = new Set(selectedTeamIds);
-                          if (newSelected.has(team.id)) {
-                            newSelected.delete(team.id);
-                          } else {
-                            newSelected.add(team.id);
-                          }
-                          setSelectedTeamIds(newSelected);
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedTeamIds.has(team.id)}
-                          onChange={() => {}}
-                          className="w-4 h-4 accent-[#e8a000] cursor-pointer"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white font-semibold text-sm truncate">{team.name}</p>
-                          <p className="text-[#666] text-xs">{team.tag || "—"}</p>
-                        </div>
-                      </div>
-                    ))}
+
+                  <div className="grid grid-cols-2 gap-8 items-end">
+                    <div className="space-y-4">
+                       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#555] block">Auto-Permit Entry</label>
+                       <button onClick={() => setBulkAutoApprove(!bulkAutoApprove)} className={`w-full py-4 rounded-2xl border font-black text-[10px] uppercase tracking-widest transition-all ${bulkAutoApprove ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' : 'bg-white/5 border-white/10 text-[#444]'}`}>
+                         {bulkAutoApprove ? "ENABLED" : "DISABLED"}
+                       </button>
+                    </div>
+                    <div className="space-y-4">
+                       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#555] block">Seed Signature (Optional)</label>
+                       <input type="number" value={bulkSeed} onChange={(e) => setBulkSeed(e.target.value)} placeholder="01" className="w-full bg-white/[0.03] border border-white/10 text-white p-4 rounded-2xl outline-none focus:border-[#e8a000]/50 font-mono text-center" />
+                    </div>
                   </div>
-                )}
-              </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="autoApprove"
-                  checked={bulkAutoApprove}
-                  onChange={(e) => setBulkAutoApprove(e.target.checked)}
-                  className="w-4 h-4 accent-[#e8a000]"
-                />
-                <label htmlFor="autoApprove" className="text-sm text-[#ccc] cursor-pointer">
-                  Auto-approve registrations
-                </label>
-              </div>
+                  {bulkMessage && <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black uppercase text-[10px] tracking-widest text-center">{bulkMessage}</div>}
+               </div>
 
-              {bulkAutoApprove && (
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-[#666] mb-2">
-                    Starting Seed (optional)
-                  </label>
-                  <input
-                    type="number"
-                    value={bulkSeed}
-                    onChange={(e) => setBulkSeed(e.target.value)}
-                    placeholder="1"
-                    className="w-full bg-[#0d0d14] border border-white/10 rounded px-3 py-2 text-sm text-white placeholder-[#555] focus:outline-none focus:border-[#e8a000]/50"
-                  />
-                </div>
-              )}
-
-              {bulkMessage && (
-                <div className={`rounded px-3 py-2 text-sm ${bulkMessage.startsWith("✓") ? "bg-[#27ae60]/10 text-[#27ae60] border border-[#27ae60]/30" : "bg-red-500/10 text-red-300 border border-red-500/30"}`}>
-                  {bulkMessage}
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 pt-2">
-                <button
-                  onClick={handleBulkRegisterTeams}
-                  disabled={bulkLoading || selectedTeamIds.size === 0}
-                  className="flex-1 px-4 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50 inline-flex items-center justify-center gap-2 rounded"
-                >
-                  {bulkLoading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                  {bulkLoading ? "Registering..." : "Register Teams"}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowBulkRegisterModal(false);
-                    setBulkMessage(null);
-                  }}
-                  className="px-4 py-2 border border-white/20 text-[#aaa] text-xs font-bold uppercase tracking-wider hover:bg-white/5 rounded"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 p-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#666]">Registered teams</p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleOpenBulkRegisterModal}
-              className="px-3 py-1.5 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] inline-flex items-center gap-1 rounded"
-            >
-              <Plus size={14} />
-              Add Teams
-            </button>
-            <p className="text-[10px] text-[#888] uppercase tracking-wider">{registrations.length} total</p>
-          </div>
-        </div>
-
-        {actionError ? (
-          <div className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{actionError}</div>
-        ) : null}
-        {actionMessage ? (
-          <div className="rounded border border-[#e8a000]/30 bg-[#e8a000]/10 px-3 py-2 text-xs text-[#f5c15a]">{actionMessage}</div>
-        ) : null}
-
-        {loadingRegistrations ? (
-          <p className="text-sm text-[#777]">Loading registered teams...</p>
-        ) : registrations.length === 0 ? (
-          <p className="text-sm text-[#777]">No teams have registered yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-white/10 text-[10px] font-black uppercase tracking-wider text-[#666]">
-                  <th className="p-2">Team</th>
-                  <th className="p-2">Tag</th>
-                  <th className="p-2">Captain</th>
-                  <th className="p-2">Players</th>
-                  <th className="p-2">Status</th>
-                  <th className="p-2">Seed</th>
-                  <th className="p-2">Registered</th>
-                  <th className="p-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {registrations.map((registration) => (
-                  <tr key={registration.id} className="border-b border-white/5">
-                    <td className="p-2 text-white font-semibold">{registration.team.name}</td>
-                    <td className="p-2 text-[#aaa] text-sm">{registration.team.tag}</td>
-                    <td className="p-2 text-[#aaa] text-sm">{registration.team.captain?.ign ?? "—"}</td>
-                    <td className="p-2 text-[#aaa] text-sm">{registration.team._count?.players ?? 0}</td>
-                    <td className="p-2">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-white">
-                        {registration.status}
-                      </span>
-                    </td>
-                    <td className="p-2 text-[#aaa] text-sm">{registration.seed ?? "—"}</td>
-                    <td className="p-2 text-[#aaa] text-sm">{new Date(registration.registeredAt).toLocaleDateString()}</td>
-                    <td className="p-2">
-                      {registration.status === "PENDING" ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleRegistrationAction(registration.id, "approve")}
-                            disabled={actingRegistrationId === registration.id}
-                            className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide bg-[#27ae60]/20 text-[#27ae60] border border-[#27ae60]/30 hover:bg-[#27ae60]/30 disabled:opacity-50"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRegistrationAction(registration.id, "reject")}
-                            disabled={actingRegistrationId === registration.id}
-                            className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 disabled:opacity-50"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-[#666] uppercase tracking-wide">No action</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+               <div className="p-8 border-t border-white/5 bg-white/[0.02] flex items-center justify-between gap-6">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-[#444]">
+                    Payload: <span className="text-white">{selectedTeamIds.size} Participants Selected</span>
+                  </div>
+                  <div className="flex gap-4">
+                    <button onClick={() => setShowBulkRegisterModal(false)} className="px-8 py-4 bg-white/5 text-[#aaa] font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-white/10 transition-all">Cancel</button>
+                    <button onClick={handleBulkRegisterTeams} disabled={bulkLoading || selectedTeamIds.size === 0} className="px-8 py-4 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-[#ffb800] transition-all flex items-center gap-3 disabled:opacity-30">
+                       {bulkLoading ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />} Deploy Participants
+                    </button>
+                  </div>
+               </div>
+            </motion.div>
           </div>
         )}
-      </div>
+      </AnimatePresence>
     </div>
   );
 }
