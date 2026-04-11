@@ -87,8 +87,8 @@ export async function POST(
       return apiError("Tournament not found", 404);
     }
 
-    if (tournament.status !== TournamentStatus.OPEN && tournament.status !== TournamentStatus.UPCOMING) {
-      return apiError("Tournament is not accepting registrations");
+    if (tournament.status === TournamentStatus.COMPLETED) {
+      return apiError("Tournament is already completed");
     }
 
     if (new Date() > tournament.registrationDeadline) {
