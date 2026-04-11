@@ -351,8 +351,8 @@ export default function DashboardMatchesPage() {
               </thead>
               <tbody>
                 {matches.map((m) => (
-                  <>
-                    <tr key={m.id} className="border-b border-white/5 hover:bg-white/2">
+                  <React.Fragment key={m.id}>
+                    <tr className="border-b border-white/5 hover:bg-white/2">
                       <td className="p-3 text-[#aaa] text-sm">
                         <div className="flex items-center gap-2">
                           <span>{m.stage ?? "—"}</span>
@@ -438,7 +438,7 @@ export default function DashboardMatchesPage() {
                       </td>
                     </tr>
                     {resultMatchId === m.id && (
-                      <tr key={`${m.id}-result`} className="bg-[#0d0d14]">
+                      <tr className="bg-[#0d0d14]">
                         <td colSpan={7} className="p-4">
                           <div className="border border-[#e8a000]/30 rounded p-4 space-y-3">
                             <p className="text-[10px] font-black uppercase tracking-wider text-[#e8a000] mb-2">
@@ -546,7 +546,7 @@ export default function DashboardMatchesPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
