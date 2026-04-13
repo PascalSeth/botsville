@@ -197,6 +197,12 @@ export default function MyTeamPage() {
   const [manageError, setManageError] = useState<string | null>(null);
   const [manageSuccess, setManageSuccess] = useState<string | null>(null);
 
+  // ── Branding edit state ───────────────────────────────────
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+  const [brandingError, setBrandingError] = useState<string | null>(null);
+  const [brandingSuccess, setBrandingSuccess] = useState<string | null>(null);
+
   useEffect(() => {
     if (status === 'authenticated') {
       fetchMyTeam();
@@ -758,6 +764,66 @@ export default function MyTeamPage() {
     }
   }, [team, challengeTeamId, transferTargetTeamId]);
 
+  const handleBrandingUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'banner') => {
+    const file = event.target.files?.[0];
+    if (!file || !team) return;
+
+    // Validation
+    if (file.size > 5 * 1024 * 1024) {
+      setBrandingError('File size must be less than 5MB');
+      return;
+    }
+
+    setBrandingError(null);
+    setBrandingSuccess(null);
+    if (type === 'logo') setIsUploadingLogo(true);
+    else setIsUploadingBanner(true);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64 = e.target?.result as string;
+        
+        // 1. Upload to Supabase
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64, type, bucket: 'teams' }),
+        });
+        
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed');
+
+        // 2. Update Team record
+        const updateRes = await fetch(`/api/teams/${team.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [type]: uploadData.url }),
+        });
+
+        const updateData = await updateRes.json();
+        if (!updateRes.ok) throw new Error(updateData.error || 'Update failed');
+
+        // 3. Update local state
+        setTeam(prev => prev ? { ...prev, [type]: uploadData.url } : prev);
+        setBrandingSuccess(`${type.charAt(0).toUpperCase() + type.slice(1)} updated successfully!`);
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => setBrandingSuccess(null), 3000);
+      };
+      reader.onerror = () => {
+        throw new Error('Failed to read file');
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error(`Error uploading ${type}:`, err);
+      setBrandingError(err instanceof Error ? err.message : `Failed to upload ${type}`);
+    } finally {
+      if (type === 'logo') setIsUploadingLogo(false);
+      else setIsUploadingBanner(false);
+    }
+  };
+
   const submitChallenge = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!challengeTeamId) {
@@ -948,15 +1014,61 @@ export default function MyTeamPage() {
         )}
         <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0f] via-transparent to-transparent" />
         
+        {/* Banner Edit Overlay */}
+        {team.isCaptain && (
+          <div className="absolute top-4 right-4 z-10">
+            <label className="cursor-pointer group">
+              <input
+                type="file"
+                className="hidden"
+                accept="image/*"
+                onChange={(e) => handleBrandingUpload(e, 'banner')}
+                disabled={isUploadingBanner}
+              />
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-black/40 hover:bg-black/60 backdrop-blur-md border border-white/10 rounded-sm transition-all">
+                {isUploadingBanner ? (
+                  <Loader2 size={14} className="animate-spin text-[#e8a000]" />
+                ) : (
+                  <Camera size={14} className="text-white/70 group-hover:text-white" />
+                )}
+                <span className="text-[10px] font-bold tracking-widest uppercase text-white/70 group-hover:text-white">
+                  {isUploadingBanner ? 'Uploading...' : 'Change Banner'}
+                </span>
+              </div>
+            </label>
+          </div>
+        )}
+        
         {/* Logo overlapping banner */}
         <div className="absolute bottom-0 left-8 translate-y-1/2">
-          <div className="w-24 h-24 border-4 border-[#0a0a0f] bg-[#0d0d14] overflow-hidden">
+          <div className="relative w-24 h-24 border-4 border-[#0a0a0f] bg-[#0d0d14] overflow-hidden group">
             {team.logo ? (
               <img src={team.logo} alt="" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <Shield size={32} className="text-[#333]" />
               </div>
+            )}
+
+            {/* Logo Edit Overlay */}
+            {team.isCaptain && (
+              <label className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="image/*"
+                  onChange={(e) => handleBrandingUpload(e, 'logo')}
+                  disabled={isUploadingLogo}
+                />
+                {isUploadingLogo ? (
+                  <Loader2 size={20} className="animate-spin text-[#e8a000]" />
+                ) : (
+                  <>
+                    <Camera size={20} className="text-white mb-1" />
+                    <span className="text-[8px] font-black tracking-widest uppercase text-white">Edit</span>
+                  </>
+                )}
+              </label>
             )}
           </div>
         </div>
@@ -967,6 +1079,14 @@ export default function MyTeamPage() {
         {error && (
           <div className="mb-4 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
             {error}
+          </div>
+        )}
+        {(brandingError || brandingSuccess) && (
+          <div className={`mb-4 border px-3 py-2 text-sm flex items-center gap-2 ${
+            brandingError ? 'border-red-500/20 bg-red-500/10 text-red-300' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+          }`}>
+            {brandingError ? <AlertCircle size={14} /> : <Check size={14} />}
+            {brandingError || brandingSuccess}
           </div>
         )}
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
