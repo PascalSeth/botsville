@@ -21,7 +21,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (!match) return apiError('Match not found', 404);
     if (winnerId !== match.teamAId && winnerId !== match.teamBId) return apiError('winnerId must be one of the competing teams', 400);
 
-    const gm = parseInt(gameNumber as any);
+    const gm = typeof gameNumber === 'string' ? parseInt(gameNumber) : Number(gameNumber);
 
     // Determine which side corresponds to the winner team (teamA -> BLUE, teamB -> RED)
     const winnerSide = winnerId === match.teamAId ? TeamSide.BLUE : TeamSide.RED;

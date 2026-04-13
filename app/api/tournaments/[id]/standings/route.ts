@@ -31,7 +31,7 @@ export async function GET(
     });
 
     // Group the results by groupName
-    const standingsByGroup: Record<string, any[]> = {};
+    const standingsByGroup: Record<string, (typeof groupStandings[number] & { rank: number })[]> = {};
     groupStandings.forEach((s) => {
       if (!standingsByGroup[s.groupName]) {
         standingsByGroup[s.groupName] = [];

@@ -107,16 +107,16 @@ export async function GET(
     }
 
     // Transform to include filled count
-    const t = tournament as any;
+    const tournamentIdForCount = tournament.id;
     const filled = await prisma.tournamentRegistration.count({
       where: {
-        tournamentId: t.id,
+        tournamentId: tournament.id,
         status: { in: ['APPROVED', 'PENDING'] }
       }
     });
 
     return apiSuccess({
-      ...t,
+      ...tournament,
       filled
     });
   } catch (error: unknown) {

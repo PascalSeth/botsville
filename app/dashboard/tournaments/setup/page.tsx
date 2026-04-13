@@ -584,7 +584,7 @@ function SetupContent() {
                             <div key={item.label} className="space-y-3">
                                <label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#555]">{item.label}</label>
                                <select
-                                 value={(finalsForm as any)[item.state]}
+                                 value={finalsForm[item.state as keyof typeof finalsForm]}
                                  onChange={(e) => setFinalsForm({ ...finalsForm, [item.state]: parseInt(e.target.value) })}
                                  className="w-full bg-white/[0.03] border border-white/10 text-white p-4 rounded-xl font-black text-[10px] uppercase tracking-widest outline-none focus:border-[#e8a000]/50 appearance-none"
                                >

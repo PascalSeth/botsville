@@ -42,6 +42,27 @@ interface MonthlyRow {
 }
 interface ActiveSeason { id: string; name: string; status: string; }
 
+interface Tournament {
+  id: string;
+  name: string;
+  status: string;
+}
+
+interface TournamentStandingRow {
+  id: string;
+  wins: number;
+  losses: number;
+  draws: number;
+  groupPoints: number;
+  team: {
+    id: string;
+    name: string;
+    tag: string;
+    color: string | null;
+    logo: string | null;
+  };
+}
+
 // ── Helpers ────────────────────────────────────────────────
 const RankDelta = ({ curr, prev }: { curr: number; prev: number | null }) => {
   if (!prev || prev === 0) return <span className="text-[#333] text-[9px]"><Minus size={9} /></span>;
@@ -81,9 +102,9 @@ export default function LeaderboardPage() {
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>('');
 
   // Tournament data
-  const [tournaments, setTournaments] = useState<any[]>([]);
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [selectedTournamentId, setSelectedTournamentId] = useState<string>('');
-  const [tournamentStandings, setTournamentStandings] = useState<Record<string, any[]>>({});
+  const [tournamentStandings, setTournamentStandings] = useState<Record<string, TournamentStandingRow[]>>({});
   const [loadingTournament, setLoadingTournament] = useState(false);
 
   // Legacy leaderboard data

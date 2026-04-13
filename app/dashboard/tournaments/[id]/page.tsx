@@ -46,6 +46,12 @@ type TournamentRegistration = {
   };
 };
 
+type TeamShort = {
+  id: string;
+  name: string;
+  tag: string;
+};
+
 // Premium Glass Card Component
 const GlassCard = ({ children, className = "", delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) => (
   <motion.div
@@ -80,7 +86,7 @@ export default function TournamentDetailPage() {
   const [bulkSeed, setBulkSeed] = useState<string>("");
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
-  const [availableTeams, setAvailableTeams] = useState<any[]>([]);
+  const [availableTeams, setAvailableTeams] = useState<TeamShort[]>([]);
   const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
   const [loadingAvailableTeams, setLoadingAvailableTeams] = useState(false);
   const [recalculatingPoints, setRecalculatingPoints] = useState(false);
@@ -153,7 +159,7 @@ export default function TournamentDetailPage() {
 
       const registeredTeamIds = new Set(
         currentRegistrations
-          .filter((r: any) => r.status !== "REJECTED")
+          .filter((r) => r.status !== "REJECTED")
           .map((r) => r.team.id)
       );
 
@@ -161,7 +167,7 @@ export default function TournamentDetailPage() {
       const result = await response.json();
 
       if (Array.isArray(result.teams)) {
-        const unregisteredTeams = result.teams.filter((team: any) => !registeredTeamIds.has(team.id));
+        const unregisteredTeams = result.teams.filter((team: TeamShort) => !registeredTeamIds.has(team.id));
         setAvailableTeams(unregisteredTeams);
       }
     } catch (error) {

@@ -56,7 +56,7 @@ export async function POST(
       const teamWinCounts: Record<string, number> = {};
       for (const p of perfs) {
         // use player.teamId if available
-        const tid = (p.player && (p.player as any).teamId) || (p.player && (p.player as any).team?.id) || null;
+        const tid = p.player?.teamId || null;
         if (p.won && tid) {
           teamWinCounts[tid] = (teamWinCounts[tid] || 0) + 1;
         }

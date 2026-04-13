@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { Eye, Bell, Radio, Clock, Trophy, Swords, ChevronRight, Users, Crown, Skull } from 'lucide-react';
 import { motion, useInView, AnimatePresence } from 'framer-motion';
 import StartingFiveModal from './StartingFiveModal';
@@ -875,13 +876,13 @@ export const MatchSchedule = () => {
             </p>
           </div>
 
-          <a
+          <Link
             href="/tournaments"
             className="flex items-center gap-1 text-white/30 hover:text-[#e8a000] text-xs font-medium tracking-wide transition-colors duration-200 shrink-0"
           >
             View all schedules
             <ChevronRight size={14} />
-          </a>
+          </Link>
         </motion.div>
 
         {/* Filter tabs */}

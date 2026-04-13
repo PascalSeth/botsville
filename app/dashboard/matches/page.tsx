@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { dashboardFetch } from "../lib/api";
 import { Loader2, CheckCircle, RefreshCw, BarChart3, Trash2, Zap } from "lucide-react";
 import Link from "next/link";
@@ -351,8 +351,8 @@ export default function DashboardMatchesPage() {
               </thead>
               <tbody>
                 {matches.map((m) => (
-                  <React.Fragment key={m.id}>
-                    <tr className="border-b border-white/5 hover:bg-white/2">
+                  <Fragment key={m.id}>
+      <tr className="border-b border-white/5 hover:bg-white/2">
                       <td className="p-3 text-[#aaa] text-sm">
                         <div className="flex items-center gap-2">
                           <span>{m.stage ?? "—"}</span>
@@ -546,7 +546,7 @@ export default function DashboardMatchesPage() {
                         </td>
                       </tr>
                     )}
-                  </React.Fragment>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

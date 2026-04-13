@@ -8,6 +8,7 @@ export async function GET(request: Request) {
     const since = sinceParam ? new Date(sinceParam) : null;
 
     // fetch recent scheduled matches
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const matchWhere: any = {};
     if (since) matchWhere.OR = [{ scheduledTime: { gte: since } }, { updatedAt: { gte: since } }];
     const matches = await prisma.match.findMany({
@@ -16,6 +17,7 @@ export async function GET(request: Request) {
     });
 
     // fetch recent challenges (includes pending/accepted which indicate prior contact)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chalWhere: any = {};
     if (since) chalWhere.OR = [{ createdAt: { gte: since } }, { scheduledAt: { gte: since } }];
     const challenges = await prisma.matchChallenge.findMany({

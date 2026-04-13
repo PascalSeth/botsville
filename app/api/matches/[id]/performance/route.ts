@@ -76,20 +76,33 @@ export async function POST(
     // Only referees and tournament admins can record performance
     const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
 
+
     if (!isReferee) {
       return apiError("Only referees can record match performance", 403);
     }
 
+    interface PerformanceInput {
+      playerId: string;
+      hero: string;
+      kills: number;
+      deaths: number;
+      assists: number;
+      side: string;
+      won: boolean;
+      isMvp?: boolean;
+      gameNumber: string | number;
+    }
+
     // Group performances by gameNumber so we can apply upserts per game atomically
-    const byGame: Record<number, any[]> = {};
-    for (const perf of performances) {
+    const byGame: Record<number, PerformanceInput[]> = {};
+    for (const perf of performances as PerformanceInput[]) {
       const { gameNumber } = perf;
-      const g = parseInt(gameNumber);
+      const g = typeof gameNumber === 'string' ? parseInt(gameNumber) : gameNumber;
       if (!byGame[g]) byGame[g] = [];
       byGame[g].push(perf);
     }
 
-    const results: any[] = [];
+    const results: unknown[] = [];
 
     for (const gameNumStr of Object.keys(byGame)) {
       const gameNumber = parseInt(gameNumStr);
@@ -113,7 +126,7 @@ export async function POST(
       }
 
       // Run transaction: delete removed player performances for this game, then upsert incoming ones
-      const txOps: any[] = [];
+      const txOps = [];
 
       txOps.push(
         prisma.matchPerformance.deleteMany({
@@ -138,9 +151,9 @@ export async function POST(
             },
             update: {
               hero,
-              kills: parseInt(kills as any) || 0,
-              deaths: parseInt(deaths as any) || 0,
-              assists: parseInt(assists as any) || 0,
+              kills: typeof kills === 'string' ? parseInt(kills) : kills || 0,
+              deaths: typeof deaths === 'string' ? parseInt(deaths) : deaths || 0,
+              assists: typeof assists === 'string' ? parseInt(assists) : assists || 0,
               isMvp: Boolean(isMvp),
               side: side === "A" || side === "BLUE" ? TeamSide.BLUE : TeamSide.RED,
               won: Boolean(won),
@@ -150,9 +163,9 @@ export async function POST(
               gameNumber,
               playerId,
               hero,
-              kills: parseInt(kills as any) || 0,
-              deaths: parseInt(deaths as any) || 0,
-              assists: parseInt(assists as any) || 0,
+              kills: typeof kills === 'string' ? parseInt(kills) : kills || 0,
+              deaths: typeof deaths === 'string' ? parseInt(deaths) : deaths || 0,
+              assists: typeof assists === 'string' ? parseInt(assists) : assists || 0,
               isMvp: Boolean(isMvp),
               side: side === "A" || side === "BLUE" ? TeamSide.BLUE : TeamSide.RED,
               won: Boolean(won),
@@ -165,7 +178,7 @@ export async function POST(
       // collect upserted results (filter create/update results)
       for (const r of txResults) {
         if (Array.isArray(r)) continue;
-        if (r && r.id) results.push(r);
+        if (r && typeof r === 'object' && 'id' in r) results.push(r);
       }
     }
 

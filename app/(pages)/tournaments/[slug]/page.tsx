@@ -63,6 +63,17 @@ const Scanlines = ({ opacity = 0.025 }: { opacity?: number }) => (
 
 // ── Registration modal ────────────────────────────────────────
 const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () => void }) => {
+  interface Player {
+    role: string;
+  }
+  interface TeamData {
+    name: string;
+    logo: string | null;
+    banner: string | null;
+    isCaptain: boolean;
+    players: Player[];
+  }
+
   const [team,    setTeam]    = useState<string | null>(null);
   const [agreed,  setAgreed]  = useState(false);
   const [loading, setLoading] = useState(false);
@@ -72,7 +83,7 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const [registrationStatus, setRegistrationStatus] = useState<string | null>(null);
   const [registeredTeams, setRegisteredTeams] = useState<string[]>([]);
-  const [teamData, setTeamData] = useState<any>(null);
+  const [teamData, setTeamData] = useState<TeamData | null>(null);
 
   useEffect(() => {
     // Fetch user's teams
@@ -87,7 +98,7 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
         const registrationData = await registrationResponse.json();
 
         if (teamResponse.ok && teamJson) {
-          setTeamData(teamJson);
+          setTeamData(teamJson as TeamData);
           setRegisteredTeams([teamJson.name]);
           setIsCaptain(Boolean(teamJson.isCaptain));
           if (Boolean(teamJson.isCaptain)) {
@@ -115,7 +126,7 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
 
   // Eligibility Checks
   const hasMinPlayers = (teamData?.players?.length || 0) >= 5;
-  const roles = teamData?.players?.map((p: any) => p.role) || [];
+  const roles = teamData?.players?.map((p: Player) => p.role) || [];
   const requiredRolesList = ['EXP', 'JUNGLE', 'MID', 'GOLD', 'ROAM'];
   const hasAllRoles = requiredRolesList.every(r => roles.includes(r));
   const hasBranding = Boolean(teamData?.logo && teamData?.banner);
