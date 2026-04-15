@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2, Pencil, Check, Camera, Crown, ArrowUpDown } from 'lucide-react';
+import { Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2, Pencil, Check, Camera, Crown, ArrowUpDown, Send, ArrowUpCircle, ArrowDownCircle, ArrowRightLeft } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 
@@ -194,6 +194,7 @@ export default function MyTeamPage() {
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
+  const [reopenManageAfterTransfer, setReopenManageAfterTransfer] = useState(false);
   const [manageError, setManageError] = useState<string | null>(null);
   const [manageSuccess, setManageSuccess] = useState<string | null>(null);
 
@@ -202,6 +203,109 @@ export default function MyTeamPage() {
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
   const [brandingError, setBrandingError] = useState<string | null>(null);
   const [brandingSuccess, setBrandingSuccess] = useState<string | null>(null);
+
+  const renderPlayerEditRow = (player: Player) => (
+    <div className="p-3 space-y-3">
+      {/* Photo */}
+      <div className="flex items-center gap-3">
+        <label className="relative cursor-pointer group shrink-0">
+          <div className="w-12 h-12 border border-white/10 overflow-hidden bg-[#0a0a10]">
+            {editPhotoUploading
+              ? <div className="w-full h-full flex items-center justify-center"><Loader2 size={14} className="animate-spin text-[#e8a000]" /></div>
+              : editForm.photo
+                ? <img src={editForm.photo} alt="" className="w-full h-full object-cover" />
+                : <div className="w-full h-full flex items-center justify-center"><User size={14} className="text-[#333]" /></div>
+            }
+          </div>
+          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+            <Camera size={12} className="text-[#e8a000]" />
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleEditPhotoChange(f);
+            }}
+          />
+        </label>
+        <p className="text-[10px] text-[#555] tracking-wide">Click avatar to change photo</p>
+      </div>
+
+      {/* IGN */}
+      <input
+        type="text"
+        placeholder="In-game name"
+        value={editForm.ign}
+        onChange={(e) => setEditForm(prev => ({ ...prev, ign: e.target.value }))}
+        className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50 placeholder:text-[#444]"
+      />
+
+      {/* Role */}
+      <select
+        value={editForm.role}
+        onChange={(e) => setEditForm(prev => ({ ...prev, role: e.target.value }))}
+        className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50"
+      >
+        <option value="EXP">EXP Lane</option>
+        <option value="JUNGLE">Jungle</option>
+        <option value="MID">Mid Lane</option>
+        <option value="GOLD">Gold Lane</option>
+        <option value="ROAM">Roam</option>
+      </select>
+
+      {/* Starter/Sub Toggle */}
+      <div className="flex items-center justify-between p-2 bg-[#0a0a10] border border-white/10">
+        <span className="text-xs text-[#888]">Position</span>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => setEditForm(prev => ({ ...prev, isSubstitute: false }))}
+            className={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
+              !editForm.isSubstitute
+                ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
+                : 'border border-white/10 text-[#555] hover:text-white'
+            }`}
+          >
+            Starter
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditForm(prev => ({ ...prev, isSubstitute: true }))}
+            className={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
+              editForm.isSubstitute
+                ? 'bg-[#e8a000]/20 border border-[#e8a000]/40 text-[#e8a000]'
+                : 'border border-white/10 text-[#555] hover:text-white'
+            }`}
+          >
+            Sub
+          </button>
+        </div>
+      </div>
+
+      {editPlayerError && <p className="text-red-400 text-xs">{editPlayerError}</p>}
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <button
+          onClick={savePlayerEdit}
+          disabled={savingEditPlayer || !editForm.ign.trim() || editPhotoUploading}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-xs font-black tracking-widest uppercase hover:bg-[#e8a000]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {savingEditPlayer ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+          Save
+        </button>
+        <button
+          onClick={cancelEditPlayer}
+          disabled={savingEditPlayer}
+          className="px-4 py-2 border border-white/10 text-[#666] text-xs font-black tracking-widest uppercase hover:text-white transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -533,6 +637,10 @@ export default function MyTeamPage() {
   };
 
   const openTransferModal = (playerId: string) => {
+    if (showManageModal) {
+      setReopenManageAfterTransfer(true);
+      setShowManageModal(false);
+    }
     setTransferPlayerId(playerId);
     setTransferError(null);
     setTransferSuccess(null);
@@ -543,6 +651,11 @@ export default function MyTeamPage() {
     setTransferPlayerId(null);
     setTransferError(null);
     setTransferSuccess(null);
+    
+    if (reopenManageAfterTransfer) {
+      setShowManageModal(true);
+      setReopenManageAfterTransfer(false);
+    }
   };
 
   const confirmTransfer = async () => {
@@ -1111,48 +1224,81 @@ export default function MyTeamPage() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                  className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
                   onClick={() => closeTransferModal()}
                 >
                   <motion.div
-                    initial={{ scale: 0.95, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.95, opacity: 0 }}
+                    initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.95, opacity: 0, y: 20 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#0c0c12] border border-white/10 p-6 max-w-sm w-full"
+                    className="bg-[#0c0c12] border border-white/10 p-6 max-w-sm w-full relative overflow-hidden group"
                   >
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-black tracking-wider uppercase">Transfer Player</h3>
-                      <button onClick={() => closeTransferModal()} className="text-[#666] hover:text-white">
+                    {/* Decorative accent */}
+                    <div className="absolute top-0 left-0 w-full h-1 bg-linear-to-r from-blue-500/50 via-blue-400 to-blue-500/50" />
+                    
+                    <div className="flex items-center justify-between mb-5">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-blue-500/10 border border-blue-500/20 rounded-sm">
+                          <Send size={16} className="text-blue-400" />
+                        </div>
+                        <h3 className="text-lg font-black tracking-wider uppercase text-white/90">Transfer Player</h3>
+                      </div>
+                      <button onClick={() => closeTransferModal()} className="text-[#444] hover:text-white transition-colors">
                         <X size={20} />
                       </button>
                     </div>
 
-                    {transferError && <div className="mb-3 p-2 bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{transferError}</div>}
-                    {transferSuccess && <div className="mb-3 p-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">{transferSuccess}</div>}
+                    <p className="text-[11px] text-[#666] mb-4 leading-relaxed uppercase tracking-wider">
+                      Moving a player will immediately remove them from your roster and add them to the target team.
+                    </p>
 
-                    <div className="mb-3">
-                      <label className="text-xs text-[#888] uppercase tracking-wider">Select target team</label>
-                      <select
-                        value={transferTargetTeamId ?? ''}
-                        onChange={(e) => setTransferTargetTeamId(e.target.value)}
-                        className="w-full mt-2 bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none"
-                      >
-                        {teamOptions.map((opt) => (
-                          <option key={opt.id} value={opt.id}>{opt.name} [{opt.tag}]</option>
-                        ))}
-                      </select>
+                    {transferError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold">{transferError}</div>}
+                    {transferSuccess && <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold">{transferSuccess}</div>}
+
+                    <div className="mb-6">
+                      <label className="text-[10px] text-[#888] font-black uppercase tracking-[0.2em] mb-2 block">Target Destination</label>
+                      <div className="relative">
+                        <select
+                          value={transferTargetTeamId ?? ''}
+                          onChange={(e) => setTransferTargetTeamId(e.target.value)}
+                          className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-4 py-3 outline-none focus:border-blue-500/50 appearance-none transition-all"
+                        >
+                          <option value="" disabled>Select a team...</option>
+                          {teamOptions.map((opt) => (
+                            <option key={opt.id} value={opt.id}>{opt.name} [{opt.tag}]</option>
+                          ))}
+                        </select>
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[#444]">
+                          <ArrowUpDown size={12} />
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex gap-3">
                       <button
                         onClick={() => confirmTransfer()}
-                        disabled={transferLoading}
-                        className="flex-1 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-xs font-black tracking-widest uppercase hover:bg-[#e8a000]/20 disabled:opacity-50"
+                        disabled={transferLoading || !transferTargetTeamId}
+                        className="flex-1 py-3 bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[10px] font-black tracking-[0.2em] uppercase hover:bg-blue-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
                       >
-                        {transferLoading ? 'Transferring...' : 'Confirm Transfer'}
+                        {transferLoading ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            Transferring...
+                          </>
+                        ) : (
+                          <>
+                            <ArrowRightLeft size={14} />
+                            Confirm Move
+                          </>
+                        )}
                       </button>
-                      <button onClick={() => closeTransferModal()} className="px-4 py-2 border border-white/10 text-[#666] text-xs font-black tracking-widest uppercase hover:text-white">Cancel</button>
+                      <button 
+                        onClick={() => closeTransferModal()} 
+                        className="px-5 py-3 border border-white/5 text-[#555] text-[10px] font-black tracking-[0.2em] uppercase hover:text-white hover:bg-white/5 transition-all"
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </motion.div>
                 </motion.div>
@@ -1855,203 +2001,202 @@ export default function MyTeamPage() {
                 </div>
               )}
               
-              <div className="space-y-2">
-                {team.players.map((player) => {
-                  const isEditing = editingPlayerId === player.id;
-                  const isCaptain = player.user?.id === team.captainId;
-                  const canMakeCaptain = team.isCaptain && player.user?.id && !isCaptain;
-                  return (
-                    <div key={player.id} className="border border-white/5 bg-[#0d0d14]">
-                      {/* View row */}
-                      {!isEditing && (
-                        <div className="flex items-center justify-between p-3">
-                          <div className="flex items-center gap-3">
-                            <div className="relative w-8 h-8 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
-                              {player.photo
-                                ? <img src={player.photo} alt="" className="w-full h-full object-cover" />
-                                : <div className="w-full h-full flex items-center justify-center"><User size={12} className="text-[#333]" /></div>}
-                              {isCaptain && (
-                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#e8a000] rounded-full flex items-center justify-center">
-                                  <Crown size={8} className="text-black" />
+              <div className="space-y-6">
+                {/* ── Starters Section ───────────────────────────────────── */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3 px-1">
+                    <div className="w-1.5 h-4 bg-emerald-500 rounded-full" />
+                    <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-emerald-500/80">Starting Five</h4>
+                  </div>
+                  <div className="space-y-2">
+                    {team.players.filter(p => !p.isSubstitute).map((player) => {
+                      const isEditing = editingPlayerId === player.id;
+                      const isCaptain = player.user?.id === team.captainId;
+                      const canMakeCaptain = team.isCaptain && player.user?.id && !isCaptain;
+                      return (
+                        <div key={player.id} className="border border-white/5 bg-[#0d0d14]/40 backdrop-blur-sm group hover:border-emerald-500/20 transition-colors">
+                          {!isEditing ? (
+                            <div className="flex items-center justify-between p-3">
+                              <div className="flex items-center gap-3">
+                                <div className="relative w-8 h-8 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
+                                  {player.photo
+                                    ? <img src={player.photo} alt="" className="w-full h-full object-cover" />
+                                    : <div className="w-full h-full flex items-center justify-center"><User size={12} className="text-[#333]" /></div>}
+                                  {isCaptain && (
+                                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#e8a000] rounded-full flex items-center justify-center">
+                                      <Crown size={8} className="text-black" />
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <p className="text-white font-bold text-sm">{player.ign}</p>
-                                {isCaptain && <span className="text-[8px] text-[#e8a000] font-black tracking-wider">CAPTAIN</span>}
+                                <div>
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-white font-bold text-sm">{player.ign}</p>
+                                    {isCaptain && <span className="text-[8px] text-[#e8a000] font-black tracking-wider">CAPTAIN</span>}
+                                  </div>
+                                  <p className="text-[9px] text-emerald-500/60 font-bold uppercase tracking-widest">{player.role}</p>
+                                </div>
                               </div>
-                              <p className="text-[10px] text-[#666] uppercase">
-                                {player.role}
-                                {player.isSubstitute ? <span className="ml-1 text-[#444]">(sub)</span> : <span className="ml-1 text-emerald-600">(starter)</span>}
-                              </p>
+                              <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                                {team.isCaptain && (
+                                  <button
+                                    onClick={() => togglePlayerSubstitute(player)}
+                                    disabled={togglingSubPlayerId === player.id}
+                                    className="text-emerald-500/40 hover:text-emerald-400 hover:bg-emerald-500/10 p-1.5 rounded-sm transition-all disabled:opacity-50"
+                                    title="Demote to substitute"
+                                  >
+                                    {togglingSubPlayerId === player.id
+                                      ? <Loader2 size={13} className="animate-spin" />
+                                      : <ArrowDownCircle size={13} />}
+                                  </button>
+                                )}
+                                {canMakeCaptain && (
+                                  <button
+                                    onClick={() => player.user?.id && transferCaptaincy(player.user.id, player.ign)}
+                                    disabled={transferringCaptain}
+                                    className="text-[#555] hover:text-[#e8a000] hover:bg-[#e8a000]/10 p-1.5 rounded-sm transition-all disabled:opacity-50"
+                                    title="Make captain"
+                                  >
+                                    {transferringCaptain ? <Loader2 size={13} className="animate-spin" /> : <Crown size={13} />}
+                                  </button>
+                                )}
+                                {team.isCaptain && (
+                                  <button
+                                    onClick={() => openTransferModal(player.id)}
+                                    className="text-blue-500/40 hover:text-blue-400 hover:bg-blue-500/10 p-1.5 rounded-sm transition-all"
+                                    title="Transfer to another team"
+                                  >
+                                    <Send size={13} />
+                                  </button>
+                                )}
+                                {team.isCaptain && (
+                                  <button
+                                    onClick={() => startEditPlayer(player)}
+                                    className="text-[#555] hover:text-[#e8a000] hover:bg-[#e8a000]/10 p-1.5 rounded-sm transition-all"
+                                    title="Edit player profile"
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
+                                )}
+                                {player.user?.id !== session?.user?.id && (
+                                  <button
+                                    onClick={() => removePlayer(player.id)}
+                                    disabled={removingPlayerId === player.id}
+                                    className="text-[#333] hover:text-red-500/80 hover:bg-red-500/10 p-1.5 rounded-sm transition-all disabled:opacity-50"
+                                    title="Remove from roster"
+                                  >
+                                    {removingPlayerId === player.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {/* Toggle Starter/Sub */}
-                            {team.isCaptain && (
-                              <button
-                                onClick={() => togglePlayerSubstitute(player)}
-                                disabled={togglingSubPlayerId === player.id}
-                                className="text-[#555] hover:text-[#4a90d9] transition-colors p-1 disabled:opacity-50"
-                                title={player.isSubstitute ? 'Promote to starter' : 'Move to substitute'}
-                              >
-                                {togglingSubPlayerId === player.id
-                                  ? <Loader2 size={14} className="animate-spin" />
-                                  : <ArrowUpDown size={14} />}
-                              </button>
-                            )}
-                            {/* Make Captain */}
-                            {canMakeCaptain && (
-                              <button
-                                onClick={() => player.user?.id && transferCaptaincy(player.user.id, player.ign)}
-                                disabled={transferringCaptain}
-                                className="text-[#555] hover:text-[#e8a000] transition-colors p-1 disabled:opacity-50"
-                                title="Make captain"
-                              >
-                                {transferringCaptain ? <Loader2 size={14} className="animate-spin" /> : <Crown size={14} />}
-                              </button>
-                            )}
-                            {/* Transfer player to another team */}
-                            {team.isCaptain && (
-                              <button
-                                onClick={() => openTransferModal(player.id)}
-                                className="text-[#555] hover:text-[#4a90d9] transition-colors p-1"
-                                title="Transfer player"
-                              >
-                                <ArrowUpDown size={14} />
-                              </button>
-                            )}
-                            {/* Edit player */}
-                            {team.isCaptain && (
-                              <button
-                                onClick={() => startEditPlayer(player)}
-                                className="text-[#555] hover:text-[#e8a000] transition-colors p-1"
-                                title="Edit player"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                            )}
-                            {/* Remove player */}
-                            {player.user?.id !== session?.user?.id && (
-                              <button
-                                onClick={() => removePlayer(player.id)}
-                                disabled={removingPlayerId === player.id}
-                                className="text-[#555] hover:text-red-400 transition-colors p-1 disabled:opacity-50"
-                              >
-                                {removingPlayerId === player.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                              </button>
-                            )}
-                          </div>
+                          ) : (
+                            renderPlayerEditRow(player)
+                          )}
                         </div>
-                      )}
+                      );
+                    })}
+                  </div>
+                </div>
 
-                      {/* Edit row */}
-                      {isEditing && (
-                        <div className="p-3 space-y-3">
-                          {/* Photo */}
-                          <div className="flex items-center gap-3">
-                            <label className="relative cursor-pointer group shrink-0">
-                              <div className="w-12 h-12 border border-white/10 overflow-hidden bg-[#0a0a10]">
-                                {editPhotoUploading
-                                  ? <div className="w-full h-full flex items-center justify-center"><Loader2 size={14} className="animate-spin text-[#e8a000]" /></div>
-                                  : editForm.photo
-                                    ? <img src={editForm.photo} alt="" className="w-full h-full object-cover" />
-                                    : <div className="w-full h-full flex items-center justify-center"><User size={14} className="text-[#333]" /></div>
-                                }
+                {/* ── Substitutes Section ────────────────────────────────── */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3 px-1">
+                    <div className="w-1.5 h-4 bg-amber-500/60 rounded-full" />
+                    <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-amber-500/60">Substitutes</h4>
+                  </div>
+                  <div className="space-y-2">
+                    {team.players.filter(p => p.isSubstitute).length === 0 ? (
+                      <p className="text-[10px] text-[#444] italic px-4 py-2 border border-dashed border-white/5">No substitutes registered</p>
+                    ) : (
+                      team.players.filter(p => p.isSubstitute).map((player) => {
+                        const isEditing = editingPlayerId === player.id;
+                        const isCaptain = player.user?.id === team.captainId;
+                        const canMakeCaptain = team.isCaptain && player.user?.id && !isCaptain;
+                        return (
+                          <div key={player.id} className="border border-white/5 bg-[#0d0d14]/40 backdrop-blur-sm group hover:border-amber-500/20 transition-colors">
+                            {!isEditing ? (
+                              <div className="flex items-center justify-between p-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="relative w-8 h-8 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
+                                    {player.photo
+                                      ? <img src={player.photo} alt="" className="w-full h-full object-cover" />
+                                      : <div className="w-full h-full flex items-center justify-center"><User size={12} className="text-[#333]" /></div>}
+                                    {isCaptain && (
+                                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#e8a000] rounded-full flex items-center justify-center">
+                                        <Crown size={8} className="text-black" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-1.5">
+                                      <p className="text-white/80 font-bold text-sm">{player.ign}</p>
+                                      {isCaptain && <span className="text-[8px] text-[#e8a000] font-black tracking-wider">CAPTAIN</span>}
+                                    </div>
+                                    <p className="text-[9px] text-amber-500/50 font-bold uppercase tracking-widest">{player.role}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                                  {team.isCaptain && (
+                                    <button
+                                      onClick={() => togglePlayerSubstitute(player)}
+                                      disabled={togglingSubPlayerId === player.id}
+                                      className="text-amber-500/40 hover:text-amber-400 hover:bg-amber-500/10 p-1.5 rounded-sm transition-all disabled:opacity-50"
+                                      title="Promote to starter"
+                                    >
+                                      {togglingSubPlayerId === player.id
+                                        ? <Loader2 size={13} className="animate-spin" />
+                                        : <ArrowUpCircle size={13} />}
+                                    </button>
+                                  )}
+                                  {canMakeCaptain && (
+                                    <button
+                                      onClick={() => player.user?.id && transferCaptaincy(player.user.id, player.ign)}
+                                      disabled={transferringCaptain}
+                                      className="text-[#555] hover:text-[#e8a000] hover:bg-[#e8a000]/10 p-1.5 rounded-sm transition-all disabled:opacity-50"
+                                      title="Make captain"
+                                    >
+                                      {transferringCaptain ? <Loader2 size={13} className="animate-spin" /> : <Crown size={13} />}
+                                    </button>
+                                  )}
+                                  {team.isCaptain && (
+                                    <button
+                                      onClick={() => openTransferModal(player.id)}
+                                      className="text-blue-500/40 hover:text-blue-400 hover:bg-blue-500/10 p-1.5 rounded-sm transition-all"
+                                      title="Transfer to another team"
+                                    >
+                                      <Send size={13} />
+                                    </button>
+                                  )}
+                                  {team.isCaptain && (
+                                    <button
+                                      onClick={() => startEditPlayer(player)}
+                                      className="text-[#555] hover:text-[#e8a000] hover:bg-[#e8a000]/10 p-1.5 rounded-sm transition-all"
+                                      title="Edit player profile"
+                                    >
+                                      <Pencil size={13} />
+                                    </button>
+                                  )}
+                                  {player.user?.id !== session?.user?.id && (
+                                    <button
+                                      onClick={() => removePlayer(player.id)}
+                                      disabled={removingPlayerId === player.id}
+                                      className="text-[#333] hover:text-red-500/80 hover:bg-red-500/10 p-1.5 rounded-sm transition-all disabled:opacity-50"
+                                      title="Remove from roster"
+                                    >
+                                      {removingPlayerId === player.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                <Camera size={12} className="text-[#e8a000]" />
-                              </div>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const f = e.target.files?.[0];
-                                  if (f) handleEditPhotoChange(f);
-                                }}
-                              />
-                            </label>
-                            <p className="text-[10px] text-[#555] tracking-wide">Click avatar to change photo</p>
+                            ) : (
+                              renderPlayerEditRow(player)
+                            )}
                           </div>
-
-                          {/* IGN */}
-                          <input
-                            type="text"
-                            placeholder="In-game name"
-                            value={editForm.ign}
-                            onChange={(e) => setEditForm(prev => ({ ...prev, ign: e.target.value }))}
-                            className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50 placeholder:text-[#444]"
-                          />
-
-                          {/* Role */}
-                          <select
-                            value={editForm.role}
-                            onChange={(e) => setEditForm(prev => ({ ...prev, role: e.target.value }))}
-                            className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50"
-                          >
-                            <option value="EXP">EXP Lane</option>
-                            <option value="JUNGLE">Jungle</option>
-                            <option value="MID">Mid Lane</option>
-                            <option value="GOLD">Gold Lane</option>
-                            <option value="ROAM">Roam</option>
-                          </select>
-
-                          {/* Starter/Sub Toggle */}
-                          <div className="flex items-center justify-between p-2 bg-[#0a0a10] border border-white/10">
-                            <span className="text-xs text-[#888]">Position</span>
-                            <div className="flex gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setEditForm(prev => ({ ...prev, isSubstitute: false }))}
-                                className={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
-                                  !editForm.isSubstitute
-                                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
-                                    : 'border border-white/10 text-[#555] hover:text-white'
-                                }`}
-                              >
-                                Starter
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditForm(prev => ({ ...prev, isSubstitute: true }))}
-                                className={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
-                                  editForm.isSubstitute
-                                    ? 'bg-[#e8a000]/20 border border-[#e8a000]/40 text-[#e8a000]'
-                                    : 'border border-white/10 text-[#555] hover:text-white'
-                                }`}
-                              >
-                                Sub
-                              </button>
-                            </div>
-                          </div>
-
-                          {editPlayerError && <p className="text-red-400 text-xs">{editPlayerError}</p>}
-
-                          {/* Actions */}
-                          <div className="flex gap-2">
-                            <button
-                              onClick={savePlayerEdit}
-                              disabled={savingEditPlayer || !editForm.ign.trim() || editPhotoUploading}
-                              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-xs font-black tracking-widest uppercase hover:bg-[#e8a000]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                              {savingEditPlayer ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                              Save
-                            </button>
-                            <button
-                              onClick={cancelEditPlayer}
-                              disabled={savingEditPlayer}
-                              className="px-4 py-2 border border-white/10 text-[#666] text-xs font-black tracking-widest uppercase hover:text-white transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Add Player Form */}
