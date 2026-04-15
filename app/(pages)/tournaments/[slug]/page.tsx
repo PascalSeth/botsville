@@ -11,9 +11,28 @@ import {
   Swords, Medal, Zap, AlertCircle,
   Share2, Heart, Loader2, Clock, 
   ChevronLeft, Layout, Shield, Target,
-  Lock, ArrowRight, CheckCircle, X
+  Lock, ArrowRight, CheckCircle, X, Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from "framer-motion";
+
+type Standing = {
+  rank: number;
+  team: { id: string; name: string; tag: string; logo: string | null };
+  wins: number;
+  losses: number;
+  points: number;
+};
+
+type TournamentRegistration = {
+  id: string;
+  seed: number | null;
+  team: {
+    id: string;
+    name: string;
+    tag: string;
+    logo: string | null;
+  };
+};
 
 type Tournament = {
   id: string;
@@ -34,14 +53,7 @@ type Tournament = {
   prizePool?: string | null;
   rules?: string[];
   color?: string | null;
-};
-
-type Standing = {
-  rank: number;
-  team: { id: string; name: string; tag: string; logo: string | null };
-  wins: number;
-  losses: number;
-  points: number;
+  registrations?: TournamentRegistration[];
 };
 
 // Premium Glass Card Component
@@ -558,6 +570,90 @@ const CompetitionBrief = ({ delay = 0.4 }: { delay?: number }) => {
   );
 };
 
+// ── Registered Teams Component ────────────────────────────────
+const RegisteredTeams = ({ registrations = [], slots = 0, accentColor = '#e8a000', delay = 0.4 }: { registrations?: TournamentRegistration[]; slots?: number; accentColor?: string; delay?: number }) => {
+  const container = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1, delayChildren: delay }
+    }
+  };
+
+  const item = {
+    hidden: { opacity: 0, scale: 0.9, y: 20 },
+    show: { opacity: 1, scale: 1, y: 0, transition: { type: 'spring' as const, damping: 20 } }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-1.5 h-6 rounded-full" style={{ backgroundColor: accentColor }} />
+          <div>
+            <h2 className="text-xl font-black text-white uppercase tracking-tighter">Registered <span style={{ color: accentColor }}>Factions</span></h2>
+            <p className="text-[10px] font-black text-[#555] uppercase tracking-widest mt-1">{registrations.length} of {slots} Slots Occupied</p>
+          </div>
+        </div>
+      </div>
+
+      {registrations.length === 0 ? (
+        <div className="py-20 text-center border border-dashed border-white/10 rounded-3xl bg-white/[0.01]">
+          <Users size={40} className="mx-auto text-white/10 mb-4" />
+          <p className="text-[10px] font-black uppercase text-[#333] tracking-[0.3em]">No Combatants Registered Yet</p>
+        </div>
+      ) : (
+        <motion.div 
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"
+        >
+          {registrations.map((reg, idx) => (
+            <motion.div 
+              key={reg.id}
+              variants={item}
+              className="group relative"
+            >
+              <div className="absolute -inset-0.5 rounded-2xl opacity-0 group-hover:opacity-100 transition duration-500 blur-sm" style={{ background: `linear-gradient(45deg, ${accentColor}40, transparent, ${accentColor}20)` }} />
+              <div className="relative aspect-square rounded-2xl bg-white/[0.03] border border-white/10 p-4 flex flex-col items-center justify-center text-center overflow-hidden hover:border-white/20 transition-all group">
+                <div className="absolute top-2 right-3 text-[10px] font-black text-white/5 group-hover:text-white/20 transition-colors font-mono tracking-tighter">
+                  #{String(reg.seed || idx + 1).padStart(2, '0')}
+                </div>
+                
+                <div className="w-16 h-16 rounded-xl bg-black/40 border border-white/5 p-2 mb-3 flex items-center justify-center group-hover:scale-110 transition-transform duration-500 shadow-2xl">
+                  {reg.team.logo ? (
+                    <img src={reg.team.logo} alt={reg.team.name} className="w-full h-full object-contain" />
+                  ) : (
+                    <Shield size={24} className="text-white/10 group-hover:text-[#e8a000]/30 transition-colors" />
+                  )}
+                </div>
+
+                <div className="space-y-0.5">
+                  <p className="text-[11px] font-black text-white uppercase truncate max-w-full px-2 group-hover:text-[#e8a000] transition-colors">{reg.team.name}</p>
+                  <p className="text-[9px] font-black text-[#444] uppercase tracking-widest">{reg.team.tag}</p>
+                </div>
+
+                {/* Shimmer Effect */}
+                <div className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 bg-linear-to-r from-transparent via-white/[0.05] to-transparent pointer-events-none" />
+              </div>
+            </motion.div>
+          ))}
+
+          {/* Empty Slots */}
+          {Array.from({ length: Math.max(0, slots - registrations.length) }).slice(0, 5).map((_, i) => (
+            <div key={`empty-${i}`} className="aspect-square rounded-2xl bg-white/[0.01] border border-dashed border-white/5 flex items-center justify-center opacity-40">
+               <div className="w-8 h-8 rounded-lg border border-white/5 border-dashed flex items-center justify-center">
+                  <Plus size={16} className="text-white/5" />
+               </div>
+            </div>
+          ))}
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
 export default function TournamentDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const [tournament, setTournament] = useState<Tournament | null>(null);
@@ -759,6 +855,15 @@ export default function TournamentDetailPage() {
         {/* Right: Insights & Competition Brief */}
         <div className="lg:col-span-2 space-y-12">
            <CompetitionBrief />
+           
+           {/* Registered Teams Grid */}
+           <RegisteredTeams 
+             registrations={tournament.registrations} 
+             slots={tournament.slots} 
+             accentColor={tournament.color || '#e8a000'}
+             delay={0.6}
+           />
+
            {/* Standings Preview */}
            {standings.length > 0 && (
              <GlassCard delay={0.4}>
