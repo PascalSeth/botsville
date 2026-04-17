@@ -20,7 +20,7 @@ async function main() {
       where: { tournamentId: tournament.id },
       select: { teamAId: true, teamBId: true },
     });
-    const teamIds = Array.from(new Set(matches.flatMap(m => [m.teamAId, m.teamBId])));
+    const teamIds = Array.from(new Set(matches.flatMap(m => [m.teamAId, m.teamBId]))).filter((id): id is string => id !== null);
     if (teamIds.length === 0) continue;
 
     // Get already registered teams
@@ -48,7 +48,7 @@ async function main() {
       where: { tournament: { seasonId: season.id } },
       select: { teamAId: true, teamBId: true, scheduledTime: true },
     });
-    const teamIds = Array.from(new Set(matches.flatMap(m => [m.teamAId, m.teamBId])));
+    const teamIds = Array.from(new Set(matches.flatMap(m => [m.teamAId, m.teamBId]))).filter((id): id is string => id !== null);
     for (const teamId of teamIds) {
       for (const match of matches.filter(m => m.teamAId === teamId || m.teamBId === teamId)) {
         const date = new Date(match.scheduledTime);

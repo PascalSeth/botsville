@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     // Normalize pairs and keep the latest seen timestamp per pair
     const pairMap = new Map<string, { teamAId: string; teamBId: string; lastMetAt: string }>();
 
-    const addPair = (a: string, b: string, time?: string | Date | null) => {
+    const addPair = (a: string, b: string | null, time?: string | Date | null) => {
       if (!a || !b) return;
       const ida = a < b ? a : b;
       const idb = a < b ? b : a;

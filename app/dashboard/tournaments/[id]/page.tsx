@@ -14,6 +14,23 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { dashboardFetch } from "../../lib/api";
+import OrchestratorControl from "../../components/OrchestratorControl";
+
+type TournamentGroupTeam = {
+  id: string;
+  team: {
+    id: string;
+    name: string;
+    tag: string;
+    logo: string | null;
+  };
+};
+
+type TournamentGroup = {
+  id: string;
+  name: string;
+  teams: TournamentGroupTeam[];
+};
 
 type Tournament = {
   id: string;
@@ -30,7 +47,13 @@ type Tournament = {
   _count?: { registrations: number; matches: number };
   banner?: string | null;
   rules?: string[];
+  pointSystem: string;
+  tiebreakerSequence: string[];
+  defaultBestOf: number;
+  groups?: TournamentGroup[];
 };
+
+
 
 type TournamentRegistration = {
   id: string;
@@ -92,6 +115,75 @@ export default function TournamentDetailPage() {
   const [recalculatingPoints, setRecalculatingPoints] = useState(false);
   const [pointsMessage, setPointsMessage] = useState<string | null>(null);
 
+  
+  // Advance to Playoffs State
+  const [advancing, setAdvancing] = useState(false);
+  const [advanceMessage, setAdvanceMessage] = useState<string | null>(null);
+
+  // Tournament Settings State
+  const [pointSystem, setPointSystem] = useState<string>("STANDARD");
+  const [tiebreakers, setTiebreakers] = useState<string[]>([]);
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  
+  // Orchestrator State
+  const [orchDate, setOrchDate] = useState(tournament?.date ? new Date(tournament.date).toISOString().split('T')[0] : "");
+  const [orchPlayDays, setOrchPlayDays] = useState<number[]>([3, 4, 5, 6, 0]); // Wed-Sun default
+  const [orchMatchesPerDay, setOrchMatchesPerDay] = useState(6);
+  const [orchestrating, setOrchestrating] = useState(false);
+  const [orchMessage, setOrchMessage] = useState<string | null>(null);
+  const [orchMatchesExist, setOrchMatchesExist] = useState(tournament?._count?.matches ? tournament._count.matches > 0 : false);
+  const [orchRoundsLimit, setOrchRoundsLimit] = useState<number | "">("");
+
+  // ─── Blueprint Projection Logic ───────────────────────────────────────────
+  const projection = useMemo(() => {
+    const approvedTeams = registrations.filter(r => r.status === "APPROVED");
+    const n = approvedTeams.length;
+    if (n < 2) return null;
+
+    // Circle Method Mechanics
+    const schedulerN = n % 2 === 0 ? n : n + 1;
+    let totalRounds = schedulerN - 1;
+
+    if (typeof orchRoundsLimit === "number" && orchRoundsLimit > 0 && orchRoundsLimit < totalRounds) {
+      totalRounds = orchRoundsLimit;
+    }
+
+    const matchesPerRound = schedulerN / 2;
+    const totalMatches = totalRounds * matchesPerRound;
+    
+    // Scheduling Mechanics
+    const matchesPerWeek = orchPlayDays.length * orchMatchesPerDay;
+    if (matchesPerWeek === 0) return null;
+
+    const totalDaysNeeded = Math.ceil(totalMatches / orchMatchesPerDay);
+    
+    // Estimate completion date
+    let estimateDate = orchDate ? new Date(orchDate) : new Date();
+    let scheduledMatches = 0;
+    let daysPassed = 0;
+
+    while (scheduledMatches < totalMatches && daysPassed < 365) {
+      if (orchPlayDays.includes(estimateDate.getDay())) {
+        scheduledMatches += orchMatchesPerDay;
+      }
+      if (scheduledMatches < totalMatches) {
+        estimateDate.setDate(estimateDate.getDate() + 1);
+        daysPassed++;
+      }
+    }
+
+    return {
+      n,
+      totalMatches,
+      totalRounds,
+      matchesPerWeek,
+      totalDays: daysPassed + 1,
+      totalWeeks: Math.ceil((daysPassed + 1) / 7),
+      completionDate: estimateDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    };
+  }, [registrations, orchDate, orchPlayDays, orchMatchesPerDay]);
+
   const fileToDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -132,9 +224,14 @@ export default function TournamentDetailPage() {
         setRegistrations([]);
       }
 
-      setTournament(data ?? null);
+      if (data) {
+        setTournament(data);
+        setPointSystem(data.pointSystem || "STANDARD");
+        setTiebreakers(data.tiebreakerSequence || []);
+      }
     })();
   }, [id]);
+
 
   const refreshRegistrations = async () => {
     if (!id) return;
@@ -329,6 +426,99 @@ export default function TournamentDetailPage() {
     }
   };
 
+  const handleSaveSettings = async () => {
+    if (!id) return;
+    setSavingSettings(true);
+    try {
+      const { error: err } = await dashboardFetch(`/api/tournaments/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          pointSystem,
+          tiebreakerSequence: tiebreakers
+        })
+      });
+      if (err) throw new Error(err);
+      setPointsMessage("✅ Settings Updated");
+    } catch (err) {
+      setPointsMessage(`❌ ${err instanceof Error ? err.message : 'Save Failed'}`);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleAdvanceToPlayoffs = async () => {
+    if (!id) return;
+    if (!confirm("🚀 This will seed the Top 4 teams into the Semi-Finals. Proceed?")) return;
+
+    setAdvancing(true);
+    setAdvanceMessage(null);
+
+    try {
+      const res = await fetch(`/api/tournaments/${id}/advance-to-playoffs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Failed to advance");
+
+      setAdvanceMessage(`🏆 ${result.message}`);
+      // Refresh
+      const { data } = await dashboardFetch<Tournament>(`/api/tournaments/${id}`);
+      if (data) setTournament(data);
+    } catch (err) {
+      setAdvanceMessage(`⚠️ ${err instanceof Error ? err.message : 'Transition failed'}`);
+    } finally {
+      setAdvancing(false);
+    }
+  };
+
+
+  const handleOrchestrate = async () => {
+    if (!id || !orchDate || orchPlayDays.length === 0) {
+      setOrchMessage("⚠️ Missing date or play days selection");
+      return;
+    }
+
+    if (!confirm("⚠️ This will WIPE and REGENERATE all group stage matches for this tournament. Proceed?")) return;
+
+    setOrchMessage(null);
+    setOrchestrating(true);
+
+    try {
+      const res = await fetch(`/api/tournaments/${id}/initialize-orchestrator`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startDate: orchDate,
+          playDays: orchPlayDays,
+          matchesPerDay: orchMatchesPerDay,
+          roundsLimit: orchRoundsLimit !== "" ? orchRoundsLimit : undefined
+        })
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Orchestration failed");
+
+      setOrchMessage(`🚀 Successfully deployed ${result.matchCount} matches across ${result.daysSpanned} days.`);
+      setOrchMatchesExist(true);
+      
+      // Refresh statistics
+      const updatedTournament = await (await fetch(`/api/tournaments/${id}`)).json();
+      setTournament(updatedTournament);
+    } catch (err) {
+      setOrchMessage(err instanceof Error ? err.message : "Failed to orchestrate roadmap");
+    } finally {
+      setOrchestrating(false);
+    }
+  };
+
+  const toggleOrchDay = (day: number) => {
+    setOrchPlayDays(prev => 
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort()
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#05050a] flex flex-col items-center justify-center gap-4">
@@ -425,29 +615,226 @@ export default function TournamentDetailPage() {
               </div>
 
               <div className="space-y-4">
-                 <p className="text-[10px] font-black text-[#e8a000] uppercase tracking-widest opacity-60">MLBB Standard Protocol</p>
-                 <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { l: '2-0 Clean Win', p: '+3 PTS' },
-                      { l: '2-1 Tight Win', p: '+2 PTS' },
-                      { l: '1-2 Close Loss', p: '+1 PT' },
-                      { l: '0-2 Defeat', p: '+0 PTS' }
-                    ].map((row, i) => (
-                      <div key={i} className="bg-black/40 border border-white/5 p-3 rounded-xl">
-                         <p className="text-[8px] font-black text-[#444] uppercase mb-1">{row.l}</p>
-                         <p className="text-xs font-bold text-white">{row.p}</p>
-                      </div>
-                    ))}
+                 <div>
+                   <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block mb-2">Points Protocol</label>
+                   <select 
+                     value={pointSystem}
+                     onChange={(e) => setPointSystem(e.target.value)}
+                     className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs outline-none focus:border-[#e8a000]"
+                   >
+                     <option value="STANDARD">Standard (3/1/0)</option>
+                     <option value="MLBB_WEIGHTED">MLBB Weighted (3/2/1/0)</option>
+                   </select>
                  </div>
+
+                 <div>
+                   <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block mb-2">Tie-Breaker Hierarchy</label>
+                   <div className="flex flex-wrap gap-2">
+                     {["H2H", "GD", "TIME"].map(tb => (
+                       <button
+                         key={tb}
+                         onClick={() => setTiebreakers(prev => prev.includes(tb) ? prev.filter(t => t !== tb) : [...prev, tb])}
+                         className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
+                           tiebreakers.includes(tb) ? "bg-[#e8a000] text-black" : "bg-white/5 text-[#555]"
+                         }`}
+                       >
+                         {tb === "H2H" ? "Head-to-Head" : tb === "GD" ? "Game Diff" : "Fastest Win"}
+                       </button>
+                     ))}
+                   </div>
+                   <p className="text-[8px] text-[#444] mt-2 font-bold uppercase tracking-widest leading-none">Order: {tiebreakers.join(" → ") || "Default (Wins)"}</p>
+                 </div>
+
+                 <button 
+                  onClick={handleSaveSettings}
+                  disabled={savingSettings}
+                  className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-white font-black text-[9px] uppercase tracking-widest hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                 >
+                   {savingSettings ? <Loader2 size={12} className="animate-spin" /> : <Settings size={12} />} Save Standings Config
+                 </button>
+
                  {pointsMessage && (
                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[9px] font-black uppercase tracking-wider">
                      {pointsMessage}
                    </motion.div>
                  )}
               </div>
-           </GlassCard>
+            </GlassCard>
 
-           <GlassCard delay={0.3}>
+            <GlassCard delay={0.21} className="border-white/5">
+               <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-3">
+                    <div className="w-1.5 h-6 bg-[#e8a000] rounded-full" />
+                    <h2 className="text-xs font-black text-white uppercase tracking-widest leading-none">Competitive Groups</h2>
+                  </div>
+                  <Link href={`/dashboard/tournaments/setup?id=${tournament.id}&step=configure`} className="p-2 rounded-lg bg-white/5 border border-white/10 text-white/40 hover:text-[#e8a000] hover:border-[#e8a000]/30 transition-all">
+                     <Edit size={14} />
+                  </Link>
+               </div>
+               
+               {(!tournament.groups || tournament.groups.length === 0) ? (
+                 <div className="py-10 text-center border border-dashed border-white/5 rounded-2xl bg-white/[0.01]">
+                    <Layers size={24} className="mx-auto text-white/5 mb-2" />
+                    <p className="text-[9px] font-black text-white/20 uppercase tracking-widest">No group allocation detected</p>
+                    <Link href={`/dashboard/tournaments/setup?id=${tournament.id}&step=configure`} className="inline-block mt-4 text-[9px] font-black text-[#e8a000] uppercase tracking-widest hover:underline">Setup Groups →</Link>
+                 </div>
+               ) : (
+                 <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
+                    {tournament.groups.map(group => (
+                       <div key={group.id} className="space-y-3">
+                          <div className="flex items-center justify-between px-1">
+                             <span className="text-[9px] font-black text-[#555] uppercase tracking-[0.2em]">{group.name}</span>
+                             <span className="text-[8px] font-bold text-white/20 uppercase">{group.teams.length} Teams</span>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2">
+                             {group.teams.map(gt => (
+                               <div key={gt.id} className="flex items-center gap-3 p-2 bg-white/[0.02] border border-white/[0.05] rounded-xl">
+                                  <div className="w-6 h-6 rounded-lg bg-black/40 border border-white/10 p-1 flex items-center justify-center">
+                                     {gt.team.logo ? <img src={gt.team.logo} alt="" className="w-full h-full object-contain" /> : <Shield size={10} className="text-white/10" />}
+                                  </div>
+                                  <div className="min-w-0">
+                                     <p className="text-[10px] font-black text-white uppercase truncate">{gt.team.name}</p>
+                                     <p className="text-[8px] font-bold text-[#444] uppercase tracking-widest leading-none">{gt.team.tag}</p>
+                                  </div>
+                               </div>
+                             ))}
+                          </div>
+                       </div>
+                    ))}
+                 </div>
+               )}
+            </GlassCard>
+
+            <GlassCard delay={0.22} className="border-indigo-500/20 bg-indigo-500/[0.02]">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-1.5 h-6 bg-indigo-500 rounded-full" />
+                <h2 className="text-xs font-black text-white uppercase tracking-widest leading-none">Stage Progression</h2>
+              </div>
+              
+              <div className="space-y-4">
+                <p className="text-[9px] font-medium text-white/40 leading-relaxed uppercase tracking-wider">Once all group matches are finalized, advance the top 4 teams to the Semi-Finals automatically.</p>
+                <button 
+                  onClick={handleAdvanceToPlayoffs}
+                  disabled={advancing || tournament.status === "COMPLETED"}
+                  className="w-full py-4 bg-indigo-500 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-indigo-600 transition-all shadow-xl shadow-indigo-500/10 flex items-center justify-center gap-3 disabled:opacity-30"
+                >
+                  {advancing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} 
+                  Advance to Playoffs
+                </button>
+                {advanceMessage && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-[9px] font-black uppercase text-center">
+                    {advanceMessage}
+                  </motion.div>
+                )}
+              </div>
+             </GlassCard>
+ 
+             <GlassCard delay={0.25} className="border-emerald-500/20 bg-emerald-500/[0.02]">
+                 <div className="flex items-center gap-3 mb-6">
+                   <div className="w-1.5 h-6 bg-[#e8a000] rounded-full" />
+                   <h2 className="text-xs font-black text-white uppercase tracking-widest">Orchestrator Deployment</h2>
+                </div>
+                
+                <div className="space-y-6">
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block mb-2">Commencement Date</label>
+                    <input 
+                      type="date" 
+                      value={orchDate} 
+                      onChange={(e) => setOrchDate(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs outline-none focus:border-emerald-500/30" 
+                    />
+                  </div>
+
+                  <div>
+                     <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block mb-2">Scheduled Play Days (Weekly)</label>
+                     <div className="grid grid-cols-7 gap-1">
+                        {['S','M','T','W','T','F','S'].map((day, i) => (
+                          <button 
+                            key={i} 
+                            onClick={() => toggleOrchDay(i)}
+                            className={`py-2 rounded-lg text-[10px] font-bold transition-all border ${
+                              orchPlayDays.includes(i) 
+                                ? 'bg-[#e8a000] border-[#e8a000] text-black shadow-lg shadow-[#e8a000]/20' 
+                                : 'bg-white/5 border-white/10 text-[#555] hover:bg-white/10'
+                            }`}
+                          >
+                            {day}
+                          </button>
+                        ))}
+                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block mb-2">Matches / Day</label>
+                      <input 
+                        type="number" 
+                        value={orchMatchesPerDay} 
+                        onChange={(e) => setOrchMatchesPerDay(parseInt(e.target.value))}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-center text-xs outline-none focus:border-emerald-500/30" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block mb-2">Rounds (Full: {registrations.filter(r => r.status === "APPROVED").length % 2 === 0 ? registrations.filter(r => r.status === "APPROVED").length - 1 : registrations.filter(r => r.status === "APPROVED").length})</label>
+                      <input 
+                        type="number" 
+                        placeholder="MAX"
+                        value={orchRoundsLimit} 
+                        onChange={(e) => setOrchRoundsLimit(e.target.value === "" ? "" : parseInt(e.target.value))}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-center text-xs outline-none focus:border-emerald-500/30" 
+                      />
+                    </div>
+                  </div>
+
+                  {/* Projection Report */}
+                  {projection && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Sparkles size={12} className="text-[#e8a000]" />
+                        <span className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em]">Projected Roadmap</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[8px] font-black text-[#555] uppercase tracking-widest mb-0.5">Total Matches</p>
+                          <p className="text-xs font-bold text-white uppercase">{projection.totalMatches} Games</p>
+                        </div>
+                        <div>
+                          <p className="text-[8px] font-black text-[#555] uppercase tracking-widest mb-0.5">Estimated Span</p>
+                          <p className="text-xs font-bold text-white uppercase">{projection.totalWeeks} Weeks</p>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-white/[0.03]">
+                        <p className="text-[8px] font-black text-[#555] uppercase tracking-widest mb-0.5">Conclusion Target</p>
+                        <p className="text-[11px] font-black text-[#e8a000] uppercase tracking-tighter">{projection.completionDate}</p>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <button 
+                    onClick={handleOrchestrate}
+                    disabled={orchestrating || !projection}
+                    className="w-full py-4 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-[#ffb800] transition-all shadow-xl shadow-[#e8a000]/10 flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {orchestrating ? <Loader2 size={16} className="animate-spin" /> : <Gauge size={16} />} 
+                    {orchMatchesExist ? "Regenerate Roadmap" : "Deploy Roadmap"}
+                  </button>
+
+                  {orchMessage && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[9px] font-black uppercase leading-relaxed text-center">
+                      {orchMessage}
+                    </motion.div>
+                  )}
+                </div>
+            </GlassCard>
+
+            <GlassCard delay={0.3}>
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-1.5 h-6 bg-[#e8a000] rounded-full" />
                 <h2 className="text-xs font-black text-white uppercase tracking-widest">Regulatory Assets</h2>
@@ -493,6 +880,18 @@ export default function TournamentDetailPage() {
 
         {/* Right Column: Registrations & Management */}
         <div className="lg:col-span-2 space-y-8">
+           <GlassCard delay={0.25} className="border-emerald-500/20 bg-emerald-500/[0.02]">
+              <OrchestratorControl 
+                tournamentId={id || ""} 
+                onRefresh={() => {
+                  (async () => {
+                    const updatedTournament = await (await fetch(`/api/tournaments/${id}`)).json();
+                    setTournament(updatedTournament);
+                  })();
+                }} 
+              />
+           </GlassCard>
+
            <GlassCard delay={0.4}>
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
                 <div className="flex items-center gap-3">
@@ -506,7 +905,7 @@ export default function TournamentDetailPage() {
                   <button onClick={handleOpenBulkRegisterModal} className="px-5 py-3 bg-[#e8a000] text-black font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-[#ffb800] transition-all flex items-center gap-2">
                     <Plus size={14} /> Add Participants
                   </button>
-                  <Link href={`/dashboard/tournaments/setup?selectedId=${tournament.id}&step=configure`} className="px-5 py-3 bg-white/5 border border-white/10 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-white/10 transition-all flex items-center gap-2">
+                  <Link href={`/dashboard/tournaments/setup?selectedId=${tournament?.id}&step=configure`} className="px-5 py-3 bg-white/5 border border-white/10 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-white/10 transition-all flex items-center gap-2">
                     <Layers size={14} className="text-[#e8a000]" /> Configure Groups
                   </Link>
                 </div>

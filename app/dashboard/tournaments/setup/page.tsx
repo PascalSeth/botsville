@@ -54,7 +54,8 @@ function SetupContent() {
   const [success, setSuccess] = useState<string | null>(null);
 
   // Tournament setup wizard state
-  const [setupStep, setSetupStep] = useState<'select' | 'configure' | 'bracket' | 'finals'>('select');
+  const [setupStep, setSetupStep] = useState<'select' | 'configure' | 'allocate' | 'bracket' | 'finals'>('select');
+
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
 
   // Group stage configuration
@@ -83,6 +84,13 @@ function SetupContent() {
   const [playoffsForm, setPlayoffsForm] = useState({
     playoffsStartDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   });
+
+  // Group Allocation State
+  const [approvedTeams, setApprovedTeams] = useState<Team[]>([]);
+  const [proposedGroups, setProposedGroups] = useState<{ name: string; teams: Team[] }[]>([]);
+  const [savingGroups, setSavingGroups] = useState(false);
+  const [orchestrating, setOrchestrating] = useState(false);
+
 
   useEffect(() => {
     fetchData();
@@ -176,15 +184,94 @@ function SetupContent() {
         throw new Error(data.error || 'Failed to configure group stage');
       }
 
-      setSuccess(`✅ Group stage configured! Standings will trigger bracket at ${expectedMatches} matches.`);
+      setSuccess(`✅ Group stage configured! Proposed total matches: ${expectedMatches}.`);
       setTimeout(() => setSuccess(null), 3000);
-      setSetupStep('bracket');
+      
+      // Fetch approved teams for allocation
+      const regRes = await fetch(`/api/tournaments/${selectedTournament.id}/registrations?status=APPROVED`);
+      if (regRes.ok) {
+        const regs = await regRes.json();
+        setApprovedTeams(regs.map((r: any) => ({ id: r.team.id, name: r.team.name, tag: r.team.tag })));
+      }
+      
+      setSetupStep('allocate');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to configure group stage');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleAutoMatch = () => {
+    if (approvedTeams.length === 0) return;
+    
+    // Shuffle teams
+    const shuffled = [...approvedTeams].sort(() => Math.random() - 0.5);
+    
+    // Split into groups
+    const newGroups = Array.from({ length: groupConfig.numGroups }, (_, i) => ({
+      name: `Group ${String.fromCharCode(65 + i)}`,
+      teams: [] as Team[]
+    }));
+    
+    shuffled.forEach((team, idx) => {
+      newGroups[idx % groupConfig.numGroups].teams.push(team);
+    });
+    
+    setProposedGroups(newGroups);
+  };
+
+  const handleConfirmAllocation = async () => {
+    if (!selectedTournament || proposedGroups.length === 0) return;
+
+    setSavingGroups(true);
+    try {
+      // 1. Clear existing groups
+      await fetch(`/api/tournaments/${selectedTournament.id}/groups`, { method: 'DELETE' });
+
+      // 2. Create new groups sequentially
+      for (const group of proposedGroups) {
+        const res = await fetch(`/api/tournaments/${selectedTournament.id}/groups`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: group.name,
+            teams: group.teams.map(t => t.id)
+          })
+        });
+        if (!res.ok) throw new Error(`Failed to create ${group.name}`);
+      }
+
+      setSuccess(`✅ Groups successfully deployed! ${approvedTeams.length} teams assigned. Initializing match roadmap...`);
+      
+      // 3. Trigger Orchestrator (Zero-Config)
+      setOrchestrating(true);
+      const orchRes = await fetch(`/api/tournaments/${selectedTournament.id}/initialize-orchestrator`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // We rely on API fallbacks for StartDate and PlayDays
+        })
+      });
+
+      if (!orchRes.ok) {
+        const orchData = await orchRes.json();
+        throw new Error(orchData.error || 'Groups saved, but failed to initialize match roadmap');
+      }
+
+      const orchResult = await orchRes.json();
+      setSuccess(`✅ Setup Complete! Groups saved and ${orchResult.matchCount} matches generated.`);
+      setTimeout(() => setSuccess(null), 5000);
+      
+      setSetupStep('bracket');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to finalize group setup');
+    } finally {
+      setSavingGroups(false);
+      setOrchestrating(false);
+    }
+  };
+
 
   const handleAutoGenerateBracket = async () => {
     if (!selectedTournament) return;
@@ -372,13 +459,17 @@ function SetupContent() {
                   [
                     { id: 'select', label: 'Select', icon: Play },
                     { id: 'configure', label: 'Config', icon: Settings },
+                    { id: 'allocate', label: 'Match', icon: Users },
                     { id: 'bracket', label: 'Autofill', icon: Zap },
                     { id: 'finals', label: 'Finalize', icon: Trophy },
                   ] as const
                 ).map((step, idx) => {
-                  const stepIndex = ['select', 'configure', 'bracket', 'finals'].indexOf(setupStep);
+
+                  const stepIds = ['select', 'configure', 'allocate', 'bracket', 'finals'] as const;
+                  const stepIndex = stepIds.indexOf(setupStep);
                   const isActive = setupStep === step.id;
                   const isCompleted = stepIndex > idx;
+
                   
                   return (
                     <div key={step.id} className="relative z-10 flex flex-col items-center gap-3">
@@ -471,6 +562,7 @@ function SetupContent() {
                                onChange={(e) => setGroupConfig({ ...groupConfig, numGroups: parseInt(e.target.value, 10) || 1 })}
                                className="w-full bg-white/[0.03] border border-white/10 text-white p-4 rounded-xl font-mono text-center focus:border-[#e8a000]/50 outline-none"
                              />
+                             <p className="text-[9px] text-[#444] font-medium leading-tight px-1">How many separate pools of teams will compete.</p>
                           </div>
                           <div className="space-y-3">
                              <label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#555]">Teams Per Group</label>
@@ -481,6 +573,7 @@ function SetupContent() {
                                onChange={(e) => setGroupConfig({ ...groupConfig, teamsPerGroup: parseInt(e.target.value, 10) || 4 })}
                                className="w-full bg-white/[0.03] border border-white/10 text-white p-4 rounded-xl font-mono text-center focus:border-[#e8a000]/50 outline-none"
                              />
+                             <p className="text-[9px] text-[#444] font-medium leading-tight px-1">The maximum number of teams in each pool.</p>
                           </div>
                           <div className="space-y-3">
                              <label className="text-[10px] font-black uppercase tracking-[0.1em] text-[#555]">Encounters Per Team</label>
@@ -491,6 +584,7 @@ function SetupContent() {
                                onChange={(e) => setGroupConfig({ ...groupConfig, matchesPerTeam: parseInt(e.target.value, 10) || 3 })}
                                className="w-full bg-white/[0.03] border border-white/10 text-white p-4 rounded-xl font-mono text-center focus:border-[#e8a000]/50 outline-none"
                              />
+                             <p className="text-[9px] text-[#444] font-medium leading-tight px-1">How many times each team plays every other team.</p>
                           </div>
                        </div>
 
@@ -516,6 +610,81 @@ function SetupContent() {
                             Synchronize Blueprint
                           </button>
                        </div>
+                    </GlassCard>
+                  </motion.div>
+                )}
+
+                {setupStep === 'allocate' && selectedTournament && (
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} className="max-w-4xl mx-auto w-full">
+                    <GlassCard>
+                      <div className="flex items-center gap-4 mb-10 pb-6 border-b border-white/5">
+                        <div className="p-4 rounded-2xl bg-indigo-500/10 text-indigo-400"><Users size={28} /></div>
+                        <div>
+                          <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">Phase 1.5: Allocation</p>
+                          <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Match Teams <span className="text-indigo-400">to Groups</span></h3>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between mb-8">
+                        <div>
+                          <h4 className="text-sm font-black text-white uppercase flex items-center gap-2">
+                             <CheckCircle size={14} className="text-emerald-400" />
+                             {approvedTeams.length} Approved Teams Found
+                          </h4>
+                          <p className="text-[10px] text-[#555] font-black uppercase tracking-widest mt-1">Ready for group distribution</p>
+                        </div>
+                        <button 
+                          onClick={handleAutoMatch}
+                          className="px-6 py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase text-white hover:bg-white/10 transition-all flex items-center gap-2"
+                        >
+                          <Zap size={14} className="text-[#e8a000]" /> Shuffle Teams
+                        </button>
+                      </div>
+
+                      {proposedGroups.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+                           {proposedGroups.map((group, idx) => (
+                             <motion.div 
+                                key={group.name}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: idx * 0.05 }}
+                                className="bg-white/[0.02] border border-white/5 rounded-2xl p-6"
+                             >
+                                <div className="flex items-center justify-between mb-4">
+                                  <span className="text-xs font-black text-indigo-400 uppercase tracking-widest">{group.name}</span>
+                                  <span className="text-[9px] font-bold text-white/20 uppercase">{group.teams.length} Teams</span>
+                                </div>
+                                <div className="space-y-2">
+                                   {group.teams.map(team => (
+                                     <div key={team.id} className="flex items-center gap-3 p-2 bg-black/20 rounded-lg border border-white/5">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500/40" />
+                                        <span className="text-[10px] font-black text-[#888] uppercase tracking-wider">{team.tag}</span>
+                                        <span className="text-[10px] text-white/40 truncate">{team.name}</span>
+                                     </div>
+                                   ))}
+                                </div>
+                             </motion.div>
+                           ))}
+                        </div>
+                      ) : (
+                        <div className="py-20 text-center bg-white/[0.01] border border-dashed border-white/5 rounded-3xl mb-12">
+                           <Layout size={40} className="text-white/5 mx-auto mb-4" />
+                           <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Click Shuffle to generate preview</p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-4">
+                        <button onClick={() => setSetupStep('configure')} className="px-8 py-4 bg-white/5 text-[#aaa] font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-white/10 transition-all">Back</button>
+                         <button 
+                          onClick={handleConfirmAllocation} 
+                          disabled={savingGroups || orchestrating || proposedGroups.length === 0} 
+                          className="flex-1 px-8 py-4 bg-indigo-500 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-xl hover:bg-indigo-600 shadow-xl shadow-indigo-500/10 flex items-center justify-center gap-3 active:scale-[0.98] transition-all disabled:opacity-30"
+                        >
+                          {(savingGroups || orchestrating) ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />}
+                          {orchestrating ? 'Generating Roadmap...' : 'Save & Confirm Assignments'}
+                        </button>
+                      </div>
                     </GlassCard>
                   </motion.div>
                 )}

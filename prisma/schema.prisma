@@ -126,6 +126,7 @@ enum MatchStatus {
   COMPLETED
   FORFEITED  // one team no-showed
   DISPUTED   // result contested, under review
+  RESTING    // Selection V2: Team is resting for the day (Bye)
 }
 
 enum MatchChallengeStatus {
@@ -174,6 +175,12 @@ enum NotificationType {
   FAN_ART_REJECTED
   ACCOUNT_SUSPENDED
   ACCOUNT_BANNED
+}
+
+// Selection Lobbies
+enum Lobby {
+  LOBBY_A
+  LOBBY_B
 }
 
 // News publication state
@@ -251,6 +258,12 @@ enum TriviaCategory {
   EMOJI_GUESS       // 🧩 Emoji guess the hero
   GENERAL           // General trivia
 }
+
+enum PointSystem {
+  STANDARD          // 3 for win, 1 for draw, 0 for loss
+  MLBB_WEIGHTED     // 3/2/1/0 system for BO3
+}
+
 
 // ═══════════════════════════════════════════════════════════
 // CORE — USERS & AUTH
@@ -612,6 +625,15 @@ model Tournament {
   teamsPerGroup        Int?
   matchesPerTeam       Int?
   matchesBeforeBracket Int?
+  
+  // Dynamic Orchestration Parameters
+  playDaysPerWeek      Int[]            @default([]) // e.g., [3, 4, 5, 6, 0] for Wed-Sun
+  matchesPerDay        Int?
+  
+  // Scoring & Tie-breakers
+  pointSystem          PointSystem      @default(STANDARD)
+  tiebreakerSequence   String[]         @default([]) // e.g., ["H2H", "GD", "TIME"]
+  defaultBestOf        Int              @default(3)
 
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
@@ -661,6 +683,7 @@ model TournamentRegistration {
   status         RegistrationStatus @default(PENDING)
   rejectionReason String?
   seed           Int?
+  isEliminated   Boolean            @default(false)
   updatedAt      DateTime           @updatedAt
 
   tournament Tournament @relation(fields: [tournamentId], references: [id])
@@ -700,11 +723,14 @@ model Match {
   tournamentId  String
   refereeId     String?      // assigned referee userId
   teamAId       String
-  teamBId       String
+  teamBId       String?
   scheduledTime DateTime
   status        MatchStatus  @default(UPCOMING)
-  scoreA        Int          @default(0) // games won in the series
+  scoreA        Int          @default(0) // games won in the series (MLBB V2 maps to team1Score)
   scoreB        Int          @default(0)
+  team1Score    Int          @default(0) // Granular game win tracking
+  team2Score    Int          @default(0)
+  isDraw        Boolean      @default(false)
   stage         String?      // e.g. "Group A — Match 3", "Grand Finals — Game 2"
   bestOf        Int          @default(3)
   round         Int?         // round number in round-robin (1 = Week 1, 2 = Week 2…); null for playoff knockout matches
@@ -712,6 +738,10 @@ model Match {
   winnerId      String?
   forfeitedById String?      // which team forfeited, if applicable
   statsFinalized Boolean     @default(false) // tracks if finalize endpoint was called
+  
+  // Orchestration Tracking
+  lobby         Lobby        @default(LOBBY_B)
+  playDay       Int?         // e.g. Day 1, Day 2...
   
   // ═══════════════════════════════════════════
   // BRACKET PROGRESSION FIELDS
@@ -726,7 +756,7 @@ model Match {
 
   tournament     Tournament       @relation(fields: [tournamentId], references: [id])
   teamA          Team             @relation("TeamA", fields: [teamAId], references: [id])
-  teamB          Team             @relation("TeamB", fields: [teamBId], references: [id])
+  teamB          Team?            @relation("TeamB", fields: [teamBId], references: [id])
   winner         Team?            @relation("Winner", fields: [winnerId], references: [id])
   nextMatch      Match?           @relation("MatchProgression", fields: [nextMatchId], references: [id])
   loserNextMatch Match?           @relation("LoserBracketProgression", fields: [loserNextId], references: [id])
@@ -754,6 +784,7 @@ model MatchGameResult {
   matchId     String
   gameNumber  Int      // game 1, 2, 3 within the series
   winnerTeamId String
+  durationSeconds Int? // Duration of the game in seconds
   createdAt   DateTime @default(now())
 
   match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
@@ -1048,6 +1079,12 @@ model GroupStageStanding {
   losses          Int    @default(0)
   draws           Int    @default(0)
   groupPoints     Int    @default(0)
+  
+  // Tie-breaker Stats
+  gameWins        Int    @default(0)
+  gameLosses      Int    @default(0)
+  fastestWinSeconds Int? // Store the shortest win duration for tie-breaking
+  
   tiebreakerScore Int    @default(0)
 
   tournament Tournament @relation(fields: [tournamentId], references: [id])

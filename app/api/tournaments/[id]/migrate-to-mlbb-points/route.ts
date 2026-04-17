@@ -126,7 +126,7 @@ export async function POST(
         completedMatches.push(match);
 
         const teamA = teamStatsMap[match.teamAId];
-        const teamB = teamStatsMap[match.teamBId];
+        const teamB = match.teamBId ? teamStatsMap[match.teamBId] : null;
 
         if (!teamA || !teamB) continue;
 

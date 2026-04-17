@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import Image from 'next/image';
-import { X, Crown, Swords, Users, Shield, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Crown, Swords, Users, Shield, ChevronLeft, ChevronRight, Axe, Zap, Coins } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 /* ───────────────────────────────────────────────────────── */
@@ -23,12 +23,17 @@ type ScheduleMatch = {
 /* ───────────────────────────────────────────────────────── */
 /*  Constants                                                */
 /* ───────────────────────────────────────────────────────── */
-const ROLE_ICONS: Record<string, string> = {
-  JUNGLE: '/roles/jungle.png',
-  MID: '/roles/mid.png',
-  GOLD: '/roles/gold.png',
-  EXP: '/roles/exp.png',
-  ROAM: '/roles/roam.png',
+const ROLE_ICON_MAP: Record<string, any> = {
+  EXP: Swords,
+  JUNGLE: Axe,
+  MID: Zap,
+  ROAM: Shield,
+  GOLD: Coins,
+};
+
+const RoleIcon = ({ role, size = 10, className = "" }: { role: string; size?: number; className?: string }) => {
+  const Icon = ROLE_ICON_MAP[role.toUpperCase()] || Users;
+  return <Icon size={size} className={className} strokeWidth={2.5} />;
 };
 const ROLE_SHORT: Record<string, string> = {
   JUNGLE: 'JG',
@@ -52,6 +57,8 @@ const STATUS_CFG = {
   COMPLETED: { label: 'Completed', color: '#22c55e' },
   FORFEITED: { label: 'Forfeited', color: '#71717a' },
   DISPUTED:  { label: 'Disputed',  color: '#f97316' },
+  RESTING:   { label: 'Resting',   color: '#a1a1aa' },
+  BANNED:    { label: 'Banned',    color: '#ef4444' },
 } as const;
 
 const getPhoto = (p: PlayerData | null) => p?.photo || p?.user?.photo || null;
@@ -267,11 +274,9 @@ const TeamSpotlight: React.FC<TeamSpotlightProps> = ({
                   className="flex items-center gap-1 px-2 py-0.5 rounded-md"
                   style={{ background: roleColor + 'cc', backdropFilter: 'blur(4px)' }}
                 >
-                  {ROLE_ICONS[player?.role ?? ''] ? (
-                    <Image src={ROLE_ICONS[player!.role]} alt={player!.role} width={10} height={10} />
-                  ) : null}
+                  <RoleIcon role={player?.role ?? ''} size={8} className="text-white" />
                   <span className="text-[8px] font-black text-white leading-none">
-                    {ROLE_SHORT[player?.role ?? ''] ?? player?.role?.slice(0,3) ?? '?'}
+                    {ROLE_SHORT[player?.role?.toUpperCase() ?? ''] ?? player?.role?.slice(0,3) ?? '?'}
                   </span>
                 </div>
                 {isWinner && (
@@ -392,7 +397,7 @@ const CenterDivider: React.FC<{
   teamBWon: boolean;
 }> = ({ match, isLive, isCompleted, teamAWon, teamBWon }) => {
   const hasScore = isLive || isCompleted;
-  const cfg = STATUS_CFG[match.status];
+  const cfg = STATUS_CFG[match.status as keyof typeof STATUS_CFG] || STATUS_CFG.UPCOMING;
 
   return (
     <div className="flex flex-col items-center justify-center shrink-0 z-20 relative px-1" style={{ width: 72 }}>
@@ -479,7 +484,7 @@ const MobileScoreStrip: React.FC<{
   teamAWon: boolean;
   teamBWon: boolean;
 }> = ({ match, isLive, isCompleted, teamAWon, teamBWon }) => {
-  const cfg = STATUS_CFG[match.status];
+  const cfg = STATUS_CFG[match.status as keyof typeof STATUS_CFG] || STATUS_CFG.UPCOMING;
   return (
     <div
       className="flex items-center justify-between px-4 py-2.5 shrink-0"
@@ -894,8 +899,8 @@ const MobileLayout: React.FC<{
             <motion.div key={`m-info-${activeIdx}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.26 }}>
               <div className="flex items-center gap-1.5 mb-1.5">
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-md" style={{ background: roleColor + 'cc', backdropFilter: 'blur(4px)' }}>
-                  {ROLE_ICONS[player?.role ?? ''] ? <Image src={ROLE_ICONS[player!.role]} alt={player!.role} width={10} height={10} /> : null}
-                  <span className="text-[8px] font-black text-white">{ROLE_SHORT[player?.role ?? ''] ?? player?.role?.slice(0,3) ?? '?'}</span>
+                  <RoleIcon role={player?.role ?? ''} size={8} className="text-white" />
+                  <span className="text-[8px] font-black text-white">{ROLE_SHORT[player?.role?.toUpperCase() ?? ''] ?? player?.role?.slice(0,3) ?? '?'}</span>
                 </div>
                 {isWinner && (
                   <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex items-center gap-1 px-2 py-0.5 rounded-md" style={{ background: 'rgba(245,158,11,0.9)' }}>

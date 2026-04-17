@@ -24,8 +24,9 @@ export async function POST(
           },
         },
         tournament: {
-          select: { id: true, seasonId: true },
+          select: { id: true, seasonId: true, pointSystem: true },
         },
+
         teamA: { select: { id: true } },
         teamB: { select: { id: true } },
       },
@@ -404,21 +405,58 @@ async function updateStandings(matchId: string) {
     const match = await prisma.match.findUnique({
       where: { id: matchId },
       include: {
-        tournament: {
-          select: { id: true, seasonId: true }
-        },
         teamA: true,
         teamB: true,
         winner: true,
+        gameResults: true,
+        tournament: {
+          select: { id: true, seasonId: true, pointSystem: true }
+        },
       }
     });
 
+
     if (!match || !match.tournament) return;
 
-    const { id: tournamentId, seasonId } = match.tournament;
+    const { id: tournamentId, seasonId, pointSystem } = match.tournament;
     const teamAId = match.teamAId;
     const teamBId = match.teamBId;
     const winnerId = match.winnerId;
+
+    // Calculate Points based on system
+    const scoreA = match.scoreA || 0;
+    const scoreB = match.scoreB || 0;
+    
+    let pointsToAddA = 0;
+    let pointsToAddB = 0;
+
+    if (pointSystem === 'MLBB_WEIGHTED') {
+      // 3/2/1/0 system
+      if (winnerId === teamAId) {
+        pointsToAddA = (scoreA === 2 && scoreB === 0) ? 3 : 2;
+        pointsToAddB = (scoreA === 2 && scoreB === 1) ? 1 : 0;
+      } else if (winnerId === teamBId) {
+        pointsToAddB = (scoreB === 2 && scoreA === 0) ? 3 : 2;
+        pointsToAddA = (scoreB === 2 && scoreA === 1) ? 1 : 0;
+      }
+    } else {
+      // Standard 3/1/0
+      pointsToAddA = winnerId === teamAId ? 3 : (!winnerId ? 1 : 0);
+      pointsToAddB = winnerId === teamBId ? 3 : (!winnerId ? 1 : 0);
+    }
+
+    // New stats calculation
+    const gamesWonByA = scoreA;
+    const gamesWonByB = scoreB;
+    
+    const minWinTimeA = match.gameResults
+      .filter(gr => gr.winnerTeamId === teamAId && gr.durationSeconds)
+      .reduce((min, gr) => Math.min(min, gr.durationSeconds!), Infinity);
+    
+    const minWinTimeB = match.gameResults
+      .filter(gr => gr.winnerTeamId === teamBId && gr.durationSeconds)
+      .reduce((min, gr) => Math.min(min, gr.durationSeconds!), Infinity);
+
 
     // ── 1. Update Group Stage Standings (Tournament Level) ──
     // Only if match is tagged as a group stage match
@@ -427,9 +465,11 @@ async function updateStandings(matchId: string) {
       const groupA = await prisma.tournamentGroup.findFirst({
         where: { tournamentId, teams: { some: { id: teamAId } } }
       });
-      const groupB = await prisma.tournamentGroup.findFirst({
-        where: { tournamentId, teams: { some: { id: teamBId } } }
-      });
+      const groupB = teamBId 
+        ? await prisma.tournamentGroup.findFirst({
+            where: { tournamentId, teams: { some: { id: teamBId } } }
+          })
+        : null;
 
       // Usually they are in the same group
       if (groupA && groupB && groupA.id === groupB.id) {
@@ -439,10 +479,12 @@ async function updateStandings(matchId: string) {
         await prisma.groupStageStanding.upsert({
           where: { tournamentId_groupName_teamId: { tournamentId, groupName, teamId: teamAId } },
           update: {
-            wins: { increment: winnerId === teamAId ? 1 : 0 },
             losses: { increment: winnerId === teamBId ? 1 : 0 },
             draws: { increment: !winnerId ? 1 : 0 },
-            groupPoints: { increment: winnerId === teamAId ? 3 : (!winnerId ? 1 : 0) },
+            groupPoints: { increment: pointsToAddA },
+            gameWins: { increment: gamesWonByA },
+            gameLosses: { increment: gamesWonByB },
+            fastestWinSeconds: minWinTimeA !== Infinity ? { set: minWinTimeA } : undefined, // Simplification: we'll handle actual min check in Standings API or here
           },
           create: {
             tournamentId,
@@ -451,36 +493,48 @@ async function updateStandings(matchId: string) {
             wins: winnerId === teamAId ? 1 : 0,
             losses: winnerId === teamBId ? 1 : 0,
             draws: !winnerId ? 1 : 0,
-            groupPoints: winnerId === teamAId ? 3 : (!winnerId ? 1 : 0),
+            groupPoints: pointsToAddA,
+            gameWins: gamesWonByA,
+            gameLosses: gamesWonByB,
+            fastestWinSeconds: minWinTimeA !== Infinity ? minWinTimeA : null,
           }
         });
 
+
         // Upsert for Team B
-        await prisma.groupStageStanding.upsert({
-          where: { tournamentId_groupName_teamId: { tournamentId, groupName, teamId: teamBId } },
-          update: {
-            wins: { increment: winnerId === teamBId ? 1 : 0 },
-            losses: { increment: winnerId === teamAId ? 1 : 0 },
-            draws: { increment: !winnerId ? 1 : 0 },
-            groupPoints: { increment: winnerId === teamBId ? 3 : (!winnerId ? 1 : 0) },
-          },
-          create: {
-            tournamentId,
-            groupName,
-            teamId: teamBId,
-            wins: winnerId === teamBId ? 1 : 0,
-            losses: winnerId === teamAId ? 1 : 0,
-            draws: !winnerId ? 1 : 0,
-            groupPoints: winnerId === teamBId ? 3 : (!winnerId ? 1 : 0),
-          }
-        });
+        if (teamBId) {
+          await prisma.groupStageStanding.upsert({
+            where: { tournamentId_groupName_teamId: { tournamentId, groupName, teamId: teamBId } },
+            update: {
+              losses: { increment: winnerId === teamAId ? 1 : 0 },
+              draws: { increment: !winnerId ? 1 : 0 },
+              groupPoints: { increment: pointsToAddB },
+              gameWins: { increment: gamesWonByB },
+              gameLosses: { increment: gamesWonByA },
+              fastestWinSeconds: minWinTimeB !== Infinity ? { set: minWinTimeB } : undefined,
+            },
+            create: {
+              tournamentId,
+              groupName,
+              teamId: teamBId,
+              wins: winnerId === teamBId ? 1 : 0,
+              losses: winnerId === teamAId ? 1 : 0,
+              draws: !winnerId ? 1 : 0,
+              groupPoints: pointsToAddB,
+              gameWins: gamesWonByB,
+              gameLosses: gamesWonByA,
+              fastestWinSeconds: minWinTimeB !== Infinity ? minWinTimeB : null,
+            }
+          });
+
+        }
       }
     }
 
     // ── 2. Update Team Standings (Season Level) ──
     // Points count 1-1 to the season ranking as requested
-    const pointsToAddA = winnerId === teamAId ? 3 : (!winnerId ? 1 : 0);
-    const pointsToAddB = winnerId === teamBId ? 3 : (!winnerId ? 1 : 0);
+    // (using the same point system logic as above)
+
 
     // Update Team A Season Standing
     await prisma.teamStanding.upsert({
@@ -501,22 +555,24 @@ async function updateStandings(matchId: string) {
     });
 
     // Update Team B Season Standing
-    await prisma.teamStanding.upsert({
-      where: { teamId_seasonId: { seasonId, teamId: teamBId } },
-      update: {
-        wins: { increment: winnerId === teamBId ? 1 : 0 },
-        losses: { increment: winnerId === teamAId ? 1 : 0 },
-        points: { increment: pointsToAddB },
-      },
-      create: {
-        seasonId,
-        teamId: teamBId,
-        wins: winnerId === teamBId ? 1 : 0,
-        losses: winnerId === teamAId ? 1 : 0,
-        points: pointsToAddB,
-        rank: 0,
-      }
-    });
+    if (teamBId) {
+      await prisma.teamStanding.upsert({
+        where: { teamId_seasonId: { seasonId, teamId: teamBId } },
+        update: {
+          wins: { increment: winnerId === teamBId ? 1 : 0 },
+          losses: { increment: winnerId === teamAId ? 1 : 0 },
+          points: { increment: pointsToAddB },
+        },
+        create: {
+          seasonId,
+          teamId: teamBId,
+          wins: winnerId === teamBId ? 1 : 0,
+          losses: winnerId === teamAId ? 1 : 0,
+          points: pointsToAddB,
+          rank: 0,
+        }
+      });
+    }
 
     // Finally, refresh ranks
     await updateSeasonPlayerRankings(seasonId);

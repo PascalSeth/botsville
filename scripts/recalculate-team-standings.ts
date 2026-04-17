@@ -77,9 +77,6 @@ async function main() {
       if (!teamStats.has(winnerId)) {
         teamStats.set(winnerId, { wins: 0, losses: 0, forfeits: 0, points: 0, streak: "" });
       }
-      if (!teamStats.has(loserId)) {
-        teamStats.set(loserId, { wins: 0, losses: 0, forfeits: 0, points: 0, streak: "" });
-      }
 
       // Update winner
       const winnerStats = teamStats.get(winnerId)!;
@@ -87,27 +84,34 @@ async function main() {
       winnerStats.points += 2;
       winnerStats.streak = updateStreak(winnerStats.streak, true);
 
-      // Update loser
-      const loserStats = teamStats.get(loserId)!;
-      loserStats.losses += 1;
-      if (isForfeit) {
-        loserStats.forfeits += 1;
-        loserStats.points -= 1;
-      }
-      loserStats.streak = updateStreak(loserStats.streak, false);
+      if (loserId) {
+        if (!teamStats.has(loserId)) {
+          teamStats.set(loserId, { wins: 0, losses: 0, forfeits: 0, points: 0, streak: "" });
+        }
 
-      // Update H2H
-      const [teamAId, teamBId] = winnerId < loserId ? [winnerId, loserId] : [loserId, winnerId];
-      const h2hKey = `${teamAId}_${teamBId}`;
-      if (!h2hStats.has(h2hKey)) {
-        h2hStats.set(h2hKey, { teamAId, teamBId, teamAWins: 0, teamBWins: 0 });
+        // Update loser
+        const loserStats = teamStats.get(loserId)!;
+        loserStats.losses += 1;
+        if (isForfeit) {
+          loserStats.forfeits += 1;
+          loserStats.points -= 1;
+        }
+        loserStats.streak = updateStreak(loserStats.streak, false);
+
+        // Update H2H
+        const [teamAId, teamBId] = winnerId < loserId ? [winnerId, loserId] : [loserId, winnerId];
+        const h2hKey = `${teamAId}_${teamBId}`;
+        if (!h2hStats.has(h2hKey)) {
+          h2hStats.set(h2hKey, { teamAId, teamBId, teamAWins: 0, teamBWins: 0 });
+        }
+        const h2h = h2hStats.get(h2hKey)!;
+        if (winnerId === teamAId) {
+          h2h.teamAWins += 1;
+        } else {
+          h2h.teamBWins += 1;
+        }
       }
-      const h2h = h2hStats.get(h2hKey)!;
-      if (winnerId === teamAId) {
-        h2h.teamAWins += 1;
-      } else {
-        h2h.teamBWins += 1;
-      }
+
     }
 
     // Sort teams by points (desc), wins (desc), forfeits (asc) for ranking

@@ -1442,72 +1442,11 @@ export default function MyTeamPage() {
               )}
             </div>
 
-            <div className="bg-[#0c0c12] border border-white/[0.07] p-4 sm:p-5 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">Captain Availability</h2>
-                <span className={`px-2 py-1 text-[10px] uppercase tracking-wider border font-bold ${availabilityStatusStyle[availabilityStatus]}`}>
-                  {availabilityStatusLabel[availabilityStatus]}
-                </span>
-              </div>
-
-              {availabilityLoading ? (
-                <p className="text-[#666] text-sm">Loading availability…</p>
-              ) : !weeklyPing ? (
-                <p className="text-[#666] text-sm">No weekly ping yet. Availability opens after admin ping.</p>
-              ) : (
-                <>
-                  <p className="text-[#777] text-xs">
-                    Week of {new Date(weeklyPing.weekStart).toLocaleDateString()} · Scrim date {new Date(weeklyPing.scrimDate).toLocaleString()}
-                  </p>
-                  {weeklyAvailability?.updatedAt && (
-                    <p className="text-[11px] text-[#666]">
-                      Last updated: {new Date(weeklyAvailability.updatedAt).toLocaleString()}
-                    </p>
-                  )}
-                  <textarea
-                    value={availabilityNote}
-                    onChange={(event) => setAvailabilityNote(event.target.value)}
-                    maxLength={200}
-                    rows={2}
-                    placeholder="Optional note (e.g., available after 7pm)"
-                    className="w-full bg-[#0b0b12] border border-white/10 px-3 py-2 text-white text-sm"
-                  />
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {!weeklyAvailability?.isAvailable && (
-                      <button
-                        type="button"
-                        disabled={availabilitySaving}
-                        onClick={() => updateWeeklyAvailability(true)}
-                        className="text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 border text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50 bg-emerald-500/10 border-emerald-500/30"
-                      >
-                        {availabilitySaving ? 'Saving...' : 'Mark Available'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      disabled={availabilitySaving}
-                      onClick={() => updateWeeklyAvailability(false)}
-                      className={`text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 border text-red-400 hover:bg-red-500/20 disabled:opacity-50 ${
-                        weeklyAvailability && !weeklyAvailability.isAvailable
-                          ? 'bg-red-500/25 border-red-500/60'
-                          : 'bg-red-500/10 border-red-500/30'
-                      }`}
-                    >
-                      {availabilitySaving ? 'Saving...' : (weeklyAvailability && !weeklyAvailability.isAvailable ? 'Unavailable ✓' : 'Mark Unavailable')}
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-[#777]">
-                    This status is what admin uses to pair weekly scrims.
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
 
           <div className="bg-[#0c0c12] border border-white/[0.07] p-4 sm:p-5 space-y-3">
             <div>
-              <h3 className="text-sm font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">Create Weekly Challenge</h3>
-              <p className="text-[#666] text-xs mt-2">Challenge another team this week. Once accepted, an admin schedules the match date.</p>
+              <h3 className="text-sm font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">Create Friendly Challenge</h3>
+              <p className="text-[#666] text-xs mt-2">Challenge another team for a friendly match. Once accepted, an admin will schedule the final slot.</p>
             </div>
 
             <form onSubmit={submitChallenge} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1550,6 +1489,7 @@ export default function MyTeamPage() {
               </p>
             )}
           </div>
+        </div>
 
           <div className="bg-[#0c0c12] border border-white/[0.07] p-4 sm:p-5 space-y-3">
             <h3 className="text-sm font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">Challenge Queue</h3>
@@ -1558,7 +1498,7 @@ export default function MyTeamPage() {
               {loadingChallenges ? (
                 <p className="text-[#666] text-sm">Loading challenges...</p>
               ) : challenges.length === 0 ? (
-                <p className="text-[#666] text-sm">No weekly challenges yet.</p>
+                <p className="text-[#666] text-sm">No open challenges yet.</p>
               ) : (
                 challenges.map((challenge) => {
                   const isIncoming = challenge.challengedTeamId === team.id;

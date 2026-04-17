@@ -129,7 +129,7 @@ export async function PUT(
 
     // Check permissions
     const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
-    const isCaptain = match.teamA.captainId === user.id || match.teamB.captainId === user.id;
+    const isCaptain = match.teamA.captainId === user.id || match.teamB?.captainId === user.id;
 
     if (!isReferee && !isCaptain) {
       return apiError("Only referees and team captains can update matches", 403);
@@ -148,7 +148,7 @@ export async function PUT(
     if (scoreB !== undefined) updateData.scoreB = parseInt(scoreB);
     if (elapsed !== undefined) updateData.elapsed = elapsed;
     if (winnerId !== undefined) {
-      if (winnerId !== match.teamAId && winnerId !== match.teamBId) {
+      if (winnerId !== match.teamAId && (match.teamBId && winnerId !== match.teamBId)) {
         return apiError("Winner must be one of the competing teams");
       }
       updateData.winner = { connect: { id: winnerId } };
@@ -170,10 +170,12 @@ export async function PUT(
           where: { id: match.teamAId },
           select: { captainId: true },
         }),
-        prisma.team.findUnique({
-          where: { id: match.teamBId },
-          select: { captainId: true },
-        }),
+        match.teamBId 
+          ? prisma.team.findUnique({
+              where: { id: match.teamBId },
+              select: { captainId: true },
+            })
+          : Promise.resolve(null),
       ]);
 
       if (teamA?.captainId) {

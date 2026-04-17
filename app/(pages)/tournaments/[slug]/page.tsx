@@ -34,6 +34,22 @@ type TournamentRegistration = {
   };
 };
 
+type TournamentGroupTeam = {
+  id: string;
+  team: {
+    id: string;
+    name: string;
+    tag: string;
+    logo: string | null;
+  };
+};
+
+type TournamentGroup = {
+  id: string;
+  name: string;
+  teams: TournamentGroupTeam[];
+};
+
 type Tournament = {
   id: string;
   name: string;
@@ -54,6 +70,7 @@ type Tournament = {
   rules?: string[];
   color?: string | null;
   registrations?: TournamentRegistration[];
+  groups?: TournamentGroup[];
 };
 
 // Premium Glass Card Component
@@ -454,19 +471,25 @@ const CompetitionBrief = ({ delay = 0.4 }: { delay?: number }) => {
       icon: Medal,
       content: (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-             <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-center">
-                <p className="text-emerald-400 text-sm font-black uppercase">Win: 3 PTS</p>
+          <div className="grid grid-cols-2 gap-2">
+             <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                <p className="text-emerald-400 text-[10px] font-black uppercase">2-0 WIN: 3 PTS</p>
              </div>
-             <div className="p-4 rounded-xl bg-red-500/5 border border-red-500/20 text-center">
-                <p className="text-red-400 text-sm font-black uppercase">Loss: 0 PTS</p>
+             <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-center">
+                <p className="text-emerald-300/80 text-[10px] font-black uppercase">2-1 WIN: 2 PTS</p>
+             </div>
+             <div className="p-3 rounded-xl bg-red-500/5 border border-red-500/10 text-center">
+                <p className="text-red-400/80 text-[10px] font-black uppercase">1-2 LOSS: 1 PT</p>
+             </div>
+             <div className="p-3 rounded-xl bg-red-500/20 border border-red-500/30 text-center">
+                <p className="text-red-400 text-[10px] font-black uppercase">0-2 LOSS: 0 PT</p>
              </div>
           </div>
           <div className="space-y-2">
             <p className="text-[10px] font-black text-[#555] uppercase tracking-widest px-1">Tie-Breakers</p>
             <div className="space-y-1">
               {['Head-to-head result', 'Game difference (W-L)', 'Total game wins'].map((t, i) => (
-                <div key={i} className="flex items-center gap-2 text-[10px] text-white/60 px-2 font-medium">
+                <div key={i} className="flex items-center gap-2 text-[10px] text-white/40 px-2 font-medium">
                    <span className="text-[#e8a000]">{i+1}.</span> {t}
                 </div>
               ))}
@@ -513,55 +536,40 @@ const CompetitionBrief = ({ delay = 0.4 }: { delay?: number }) => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
              <div className="space-y-6">
                 <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                   <p className="text-sm font-black text-white uppercase tracking-tighter">WEEK 1: Group Matches (Part 1)</p>
-                   <span className="px-3 py-1 bg-white/5 rounded-lg text-[9px] font-black text-white/40 uppercase tracking-widest">12 Matches</span>
+                   <p className="text-sm font-black text-white uppercase tracking-tighter">PHASE 1: Round Robin (Selection)</p>
+                   <span className="px-3 py-1 bg-white/5 rounded-lg text-[9px] font-black text-white/40 uppercase tracking-widest">55 Matches</span>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
-                   {['FRIDAY', 'SATURDAY', 'SUNDAY'].map(day => (
-                     <div key={day} className="space-y-3">
-                        <p className="text-[9px] font-black text-[#e8a000] uppercase tracking-[0.2em]">{day}</p>
-                        <div className="space-y-1.5 opacity-50">
-                           {[1,2,3,4].map(m => (
-                             <div key={m} className="h-6 rounded-md bg-white/5 border border-white/5 flex items-center px-2">
-                                <span className="text-[7px] font-black text-white/30">M{(['FRIDAY', 'SATURDAY', 'SUNDAY'].indexOf(day) * 4) + m}</span>
-                             </div>
-                           ))}
-                        </div>
-                     </div>
-                   ))}
+                <div className="space-y-6">
+                   <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-3">
+                      <p className="text-[10px] font-black text-[#e8a000] uppercase tracking-[0.2em]">WEEK 1 (Days 1–5)</p>
+                      <p className="text-[11px] text-white/60 leading-relaxed uppercase">The initial evaluation surge. Matches 1–30 establish the foundational rankings for all 11 competing factions.</p>
+                   </div>
+                   <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-3">
+                      <p className="text-[10px] font-black text-[#e8a000] uppercase tracking-[0.2em]">WEEK 2 (Days 6–9)</p>
+                      <p className="text-[11px] text-white/60 leading-relaxed uppercase">Round Robin conclusion. Mid-week determination of the Elite Top 4 contenders.</p>
+                   </div>
                 </div>
              </div>
 
              <div className="space-y-6">
-                <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                   <p className="text-sm font-black text-white uppercase tracking-tighter">WEEK 2: Finish + Playoffs</p>
-                   <span className="px-3 py-1 bg-[#e8a000]/10 rounded-lg text-[9px] font-black text-[#e8a000] uppercase tracking-widest">Final Phase</span>
+                <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                   <p className="text-sm font-black text-white uppercase tracking-tighter">PHASE 2: The Semi-Finals & Grand Final</p>
+                   <span className="px-3 py-1 bg-[#e8a000]/20 rounded-lg text-[9px] font-black text-[#e8a000] uppercase tracking-widest">Day 10</span>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
-                   {[
-                     { day: 'FRIDAY', type: 'Matches 13-16' },
-                     { day: 'SATURDAY', type: 'Finish RR' },
-                     { day: 'SUNDAY', type: 'TOP 4 FINALS' }
-                   ].map(d => (
-                     <div key={d.day} className="space-y-3">
-                        <p className="text-[9px] font-black text-[#e8a000] uppercase tracking-[0.2em]">{d.day}</p>
-                        <div className="space-y-1.5">
-                           {d.day === 'SUNDAY' ? (
-                             <>
-                               {['Semi Final 1', 'Semi Final 2', 'Grand Final'].map(f => (
-                                 <div key={f} className="h-6 rounded-md bg-[#e8a000]/10 border border-[#e8a000]/20 flex items-center px-2">
-                                    <span className="text-[7px] font-black text-[#e8a000]">{f}</span>
-                                 </div>
-                               ))}
-                             </>
-                           ) : (
-                             <div className="p-3 rounded-lg bg-white/5 border border-white/5 h-[84px] flex items-center justify-center">
-                                <span className="text-[8px] font-black text-white/20 uppercase text-center leading-tight">{d.type}</span>
-                             </div>
-                           )}
+                <div className="p-6 rounded-2xl bg-linear-to-br from-[#e8a000]/10 to-transparent border border-[#e8a000]/30 space-y-6 relative overflow-hidden group">
+                   <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <Trophy size={48} />
+                   </div>
+                   <p className="text-sm font-black text-white uppercase tracking-tighter pt-2">THE CHAMPIONSHIP SUNDAY</p>
+                   <div className="space-y-3">
+                      {['SEMI-FINAL 1', 'SEMI-FINAL 2', 'GRAND FINAL'].map((stage, i) => (
+                        <div key={stage} className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest text-[#e8a000]">
+                           <span className="w-1.5 h-1.5 rounded-full bg-[#e8a000]" />
+                           {stage}
                         </div>
-                     </div>
-                   ))}
+                      ))}
+                   </div>
+                   <p className="text-[9px] text-[#e8a000]/60 uppercase tracking-widest leading-relaxed">Top 4 factions engage in a single-elimination gauntlet to determine the National Representatives.</p>
                 </div>
              </div>
           </div>
@@ -589,10 +597,10 @@ const RegisteredTeams = ({ registrations = [], slots = 0, accentColor = '#e8a000
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-1.5 h-6 rounded-full" style={{ backgroundColor: accentColor }} />
+          <div className="w-1.5 h-6 rounded-full bg-linear-to-b from-[#ff4b2b] via-[#e8a000] to-[rgb(16,185,129)]" />
           <div>
-            <h2 className="text-xl font-black text-white uppercase tracking-tighter">Registered <span style={{ color: accentColor }}>Factions</span></h2>
-            <p className="text-[10px] font-black text-[#555] uppercase tracking-widest mt-1">{registrations.length} of {slots} Slots Occupied</p>
+            <h2 className="text-xl font-black text-white uppercase tracking-tighter">Contending <span style={{ color: accentColor }}>National Factions</span></h2>
+            <p className="text-[10px] font-black text-[#555] uppercase tracking-widest mt-1">THE TOP 4 ADVANCE TO THE PLAYOFFS</p>
           </div>
         </div>
       </div>
@@ -616,9 +624,11 @@ const RegisteredTeams = ({ registrations = [], slots = 0, accentColor = '#e8a000
               className="group relative"
             >
               <div className="absolute -inset-0.5 rounded-2xl opacity-0 group-hover:opacity-100 transition duration-500 blur-sm" style={{ background: `linear-gradient(45deg, ${accentColor}40, transparent, ${accentColor}20)` }} />
-              <div className="relative aspect-square rounded-2xl bg-white/[0.03] border border-white/10 p-4 flex flex-col items-center justify-center text-center overflow-hidden hover:border-white/20 transition-all group">
+              <div className={`relative aspect-square rounded-2xl bg-white/[0.03] border p-4 flex flex-col items-center justify-center text-center overflow-hidden hover:border-white/20 transition-all group ${
+                idx < 4 ? 'border-[#e8a000]/30 shadow-[0_0_20px_rgba(232,160,0,0.05)]' : 'border-white/10 opacity-60 grayscale-[0.5]'
+              }`}>
                 <div className="absolute top-2 right-3 text-[10px] font-black text-white/5 group-hover:text-white/20 transition-colors font-mono tracking-tighter">
-                  #{String(reg.seed || idx + 1).padStart(2, '0')}
+                   {idx < 4 ? 'QUALIFIED' : `#${String(reg.seed || idx + 1).padStart(2, '0')}`}
                 </div>
                 
                 <div className="w-16 h-16 rounded-xl bg-black/40 border border-white/5 p-2 mb-3 flex items-center justify-center group-hover:scale-110 transition-transform duration-500 shadow-2xl">
@@ -650,6 +660,63 @@ const RegisteredTeams = ({ registrations = [], slots = 0, accentColor = '#e8a000
           ))}
         </motion.div>
       )}
+    </div>
+  );
+};
+
+// ── Groups Section ───────────────────────────────────────────
+const GroupsSection = ({ groups = [], accentColor = '#e8a000', delay = 0.4 }: { groups?: TournamentGroup[]; accentColor?: string; delay?: number }) => {
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="space-y-12">
+      <div className="flex items-center gap-4">
+        <div className="w-1.5 h-8 rounded-full bg-[#e8a000] shadow-[0_0_15px_#e8a00050]" />
+        <div>
+          <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Faction <span style={{ color: accentColor }}>Distribution</span></h2>
+          <p className="text-[10px] font-black text-[#666] uppercase tracking-[0.3em] mt-1">Official Group Seeding</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-12">
+        {groups.map((group, gIdx) => (
+          <motion.div 
+            key={group.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: delay + (gIdx * 0.1) }}
+            className="space-y-6"
+          >
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+               <div className="flex items-center gap-3">
+                  <span className="w-2 h-2 rounded-full bg-[#e8a000]" />
+                  <span className="text-sm font-black text-white uppercase tracking-widest">{group.name}</span>
+               </div>
+               <span className="text-[9px] font-bold text-white/20 uppercase tracking-widest">{group.teams.length} Teams</span>
+            </div>
+
+            <div className="space-y-1">
+              {group.teams.map((gt) => (
+                <div key={gt.id} className="group flex items-center gap-4 p-3 rounded-xl hover:bg-white/[0.03] transition-all border border-transparent hover:border-white/5">
+                   <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 p-1.5 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform duration-500">
+                      {gt.team.logo ? (
+                        <img src={gt.team.logo} alt="" className="w-full h-full object-contain" />
+                      ) : (
+                        <Shield size={16} className="text-white/10" />
+                      )}
+                   </div>
+                   <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[12px] font-black text-white/80 uppercase truncate group-hover:text-white transition-colors">{gt.team.name}</p>
+                        <span className="text-[9px] font-mono text-[#e8a000]/50 group-hover:text-[#e8a000] transition-colors">[{gt.team.tag}]</span>
+                      </div>
+                   </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        ))}
+      </div>
     </div>
   );
 };
@@ -856,6 +923,11 @@ export default function TournamentDetailPage() {
         <div className="lg:col-span-2 space-y-12">
            <CompetitionBrief />
            
+           {/* New Groups Section */}
+           {tournament.groups && tournament.groups.length > 0 && (
+             <GroupsSection groups={tournament.groups} accentColor={tournament.color || '#e8a000'} />
+           )}
+
            {/* Registered Teams Grid */}
            <RegisteredTeams 
              registrations={tournament.registrations} 

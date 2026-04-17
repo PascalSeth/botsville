@@ -50,6 +50,22 @@ export async function GET(
           },
           orderBy: { seed: "asc" },
         },
+        groups: {
+          include: {
+            teams: {
+              include: {
+                team: {
+                  select: {
+                    id: true,
+                    name: true,
+                    tag: true,
+                    logo: true,
+                  },
+                },
+              },
+            },
+          },
+        },
         _count: {
           select: {
             registrations: true,
@@ -90,6 +106,22 @@ export async function GET(
               },
             },
             orderBy: { seed: "asc" },
+          },
+          groups: {
+            include: {
+              teams: {
+                include: {
+                  team: {
+                    select: {
+                      id: true,
+                      name: true,
+                      tag: true,
+                      logo: true,
+                    },
+                  },
+                },
+              },
+            },
           },
           _count: {
             select: {
@@ -195,6 +227,12 @@ export async function PUT(
     if (body.teamsPerGroup !== undefined) updateData.teamsPerGroup = body.teamsPerGroup;
     if (body.matchesPerTeam !== undefined) updateData.matchesPerTeam = body.matchesPerTeam;
     if (body.matchesBeforeBracket !== undefined) updateData.matchesBeforeBracket = body.matchesBeforeBracket;
+
+    // Advanced Seeding & Points
+    if (body.pointSystem !== undefined) updateData.pointSystem = body.pointSystem;
+    if (body.tiebreakerSequence !== undefined) updateData.tiebreakerSequence = body.tiebreakerSequence;
+    if (body.defaultBestOf !== undefined) updateData.defaultBestOf = body.defaultBestOf;
+
 
     if (Object.keys(updateData).length === 0) {
       return apiError("No fields to update");

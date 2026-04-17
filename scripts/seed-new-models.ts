@@ -143,27 +143,31 @@ async function seedNewModels() {
       const seasonId = tournament.seasonId;
 
       for (const match of tournament.matches) {
-        const key = `${match.teamAId}:${seasonId}`;
-        const keyB = `${match.teamBId}:${seasonId}`;
+        const seasonId = tournament.seasonId;
 
-        if (!teamStats[key]) teamStats[key] = { wins: 0, losses: 0, forfeits: 0 };
-        if (!teamStats[keyB]) teamStats[keyB] = { wins: 0, losses: 0, forfeits: 0 };
+        // Process Team A
+        const keyA = `${match.teamAId}:${seasonId}`;
+        if (!teamStats[keyA]) teamStats[keyA] = { wins: 0, losses: 0, forfeits: 0 };
+
+        // Process Team B if it exists
+        const keyB = match.teamBId ? `${match.teamBId}:${seasonId}` : null;
+        if (keyB && !teamStats[keyB]) teamStats[keyB] = { wins: 0, losses: 0, forfeits: 0 };
 
         if (match.forfeitedById) {
           if (match.forfeitedById === match.teamAId) {
-            teamStats[keyB]!.wins++;
-            teamStats[key]!.forfeits++;
+            if (keyB) teamStats[keyB]!.wins++;
+            teamStats[keyA]!.forfeits++;
           } else {
-            teamStats[key]!.wins++;
-            teamStats[keyB]!.forfeits++;
+            teamStats[keyA]!.wins++;
+            if (keyB) teamStats[keyB]!.forfeits++;
           }
         } else if (match.winnerId) {
           if (match.winnerId === match.teamAId) {
-            teamStats[key]!.wins++;
-            teamStats[keyB]!.losses++;
+            teamStats[keyA]!.wins++;
+            if (keyB) teamStats[keyB]!.losses++;
           } else {
-            teamStats[keyB]!.wins++;
-            teamStats[key]!.losses++;
+            if (keyB) teamStats[keyB]!.wins++;
+            teamStats[keyA]!.losses++;
           }
         }
       }

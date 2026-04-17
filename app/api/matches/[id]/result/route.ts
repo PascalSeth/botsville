@@ -86,6 +86,46 @@ async function recalculateSeasonRanks(seasonId: string, tx: Tx) {
   );
 }
 
+/**
+ * Orchestrator: Check if any team is mathematically eliminated from Top 4
+ */
+async function updateSelectionContention(tournamentId: string, tx: Tx) {
+  // 1. Get standings
+  const standings = await tx.groupStageStanding.findMany({
+    where: { tournamentId },
+    orderBy: [{ groupPoints: "desc" }, { wins: "desc" }]
+  });
+
+  if (standings.length === 0) return;
+
+  // 2. Get total RR matches per team (11 teams = 10 matches)
+  const tournament = await tx.tournament.findUnique({
+    where: { id: tournamentId },
+    include: { _count: { select: { registrations: true } } }
+  });
+  
+  const totalTeams = tournament?._count.registrations || 0;
+  const matchesPerTeam = totalTeams - 1;
+
+  // 3. For each team, calculate "Max Possible Points"
+  for (const s of standings) {
+    const gamesPlayed = s.wins + s.losses + s.draws;
+    const remainingGames = matchesPerTeam - gamesPlayed;
+    const maxPoints = s.groupPoints + (remainingGames * 3); // Assuming 3 pts for clear win
+
+    // Threshold Check: If maxPoints < the points of the 4th place team currently, they are cut
+    // (A bit more complex in real math, but this is the idea)
+    const fourthPlacePoints = standings[3]?.groupPoints || 0;
+    
+    if (maxPoints < fourthPlacePoints) {
+      await tx.tournamentRegistration.update({
+        where: { tournamentId_teamId: { tournamentId, teamId: s.teamId } },
+        data: { isEliminated: true }
+      });
+    }
+  }
+}
+
 async function recalculateMonthlyRanks(seasonId: string, year: number, month: number, tx: Tx) {
   const standings = await tx.monthlyStanding.findMany({ where: { seasonId, year, month } });
   const sorted = [...standings].sort((a, b) => {
@@ -257,6 +297,9 @@ export async function POST(
       forfeitedTeamId,
       overridePoints = false,
       gameWinners,
+      team1Score: manualTeam1Score,
+      team2Score: manualTeam2Score,
+      isDraw: manualIsDraw = false,
     }: {
       winnerId: string;
       scoreA: number;
@@ -264,8 +307,12 @@ export async function POST(
       forfeit?: boolean;
       forfeitedTeamId?: string;
       overridePoints?: boolean;
-      gameWinners?: { gameNumber: number; winnerTeamId: string }[];
+      gameWinners?: { gameNumber: number; winnerTeamId: string; durationSeconds?: number }[];
+      team1Score?: number;
+      team2Score?: number;
+      isDraw?: boolean;
     } = body;
+
 
     if (!winnerId || scoreA === undefined || scoreB === undefined) {
       return apiError("winnerId, scoreA, and scoreB are required");
@@ -291,7 +338,7 @@ export async function POST(
       return apiError("forfeitedTeamId cannot be the winner");
     }
 
-    const loserId = winnerId === match.teamAId ? match.teamBId : match.teamAId;
+    const loserId: string | null = winnerId === match.teamAId ? match.teamBId : match.teamAId;
     const isForfeit = forfeit === true;
     const actualForfeitedId = isForfeit ? (forfeitedTeamId ?? loserId) : null;
 
@@ -315,6 +362,9 @@ export async function POST(
           status: isForfeit ? MatchStatus.FORFEITED : MatchStatus.COMPLETED,
           scoreA: Number(scoreA),
           scoreB: Number(scoreB),
+          team1Score: manualTeam1Score ?? Number(scoreA),
+          team2Score: manualTeam2Score ?? Number(scoreB),
+          isDraw: manualIsDraw,
           winner: { connect: { id: winnerId } },
           forfeitedById: actualForfeitedId,
         },
@@ -332,9 +382,11 @@ export async function POST(
               matchId,
               gameNumber: gw.gameNumber,
               winnerTeamId: gw.winnerTeamId,
+              durationSeconds: gw.durationSeconds || null,
             },
           });
         }
+
       }
 
       // determine if this match was scheduled from a challenge (friendly)
@@ -368,18 +420,20 @@ export async function POST(
         );
 
         // ─── Upsert LOSER's TeamStanding ────────────────────
-        await upsertTeamStanding(
-          tx as Tx,
-          {
-            teamId: loserId,
-            seasonId,
-            won: false,
-            forfeit: isForfeit,
-            teamScore: loserScore,
-            opponentScore: winnerScore,
-          },
-          existingStandings
-        );
+        if (loserId) {
+          await upsertTeamStanding(
+            tx as Tx,
+            {
+              teamId: loserId,
+              seasonId,
+              won: false,
+              forfeit: isForfeit,
+              teamScore: loserScore,
+              opponentScore: winnerScore,
+            },
+            existingStandings
+          );
+        }
 
         // ─── MonthlyStanding for both teams ─────────────────
         if (seasonId) {
@@ -393,30 +447,37 @@ export async function POST(
             teamScore: winnerScore,
             opponentScore: loserScore,
           });
-          await upsertMonthly(tx as Tx, {
-            teamId: loserId,
-            seasonId,
-            year,
-            month,
-            won: false,
-            forfeit: isForfeit,
-            teamScore: loserScore,
-            opponentScore: winnerScore,
-          });
+          if (loserId) {
+            await upsertMonthly(tx as Tx, {
+              teamId: loserId,
+              seasonId,
+              year,
+              month,
+              won: false,
+              forfeit: isForfeit,
+              teamScore: loserScore,
+              opponentScore: winnerScore,
+            });
 
-          // ─── HeadToHead ─────────────────────────────────────
-          await upsertH2H(tx as Tx, seasonId, winnerId, loserId);
+            // ─── HeadToHead ─────────────────────────────────────
+            await upsertH2H(tx as Tx, seasonId, winnerId, loserId);
+          }
 
           // ─── Recalculate ranks ───────────────────────────────
           await recalculateSeasonRanks(seasonId, tx as Tx);
           await recalculateMonthlyRanks(seasonId, year, month, tx as Tx);
+          
+          // Selection V2: Update Contention Flags
+          await updateSelectionContention(match.tournamentId, tx as Tx);
         }
       }
 
       // ─── Notify both captains ────────────────────────────
       const [teamA, teamB] = await Promise.all([
         tx.team.findUnique({ where: { id: match.teamAId }, select: { captainId: true, name: true } }),
-        tx.team.findUnique({ where: { id: match.teamBId }, select: { captainId: true, name: true } }),
+        match.teamBId 
+          ? tx.team.findUnique({ where: { id: match.teamBId }, select: { captainId: true, name: true } })
+          : Promise.resolve(null),
       ]);
 
       const winnerTeam = winnerId === match.teamAId ? teamA : teamB;
@@ -499,61 +560,45 @@ export async function POST(
         if (groupStageComplete) {
           try {
             // Get standings for seeding
-            const standings = await prisma.teamStanding.findMany({
-              where: { seasonId: match.tournament.seasonId },
+            const standings = await prisma.groupStageStanding.findMany({
+              where: { tournamentId: match.tournamentId },
               include: {
                 team: { select: { id: true, name: true, tag: true } },
               },
-              orderBy: [{ points: "desc" }, { wins: "desc" }],
-              take: 8,
+              orderBy: [{ groupPoints: "desc" }, { wins: "desc" }],
+              take: 4, // Exactly 4 for V2
             });
 
-            if (standings.length >= 2) {
-              // Auto-generate bracket
-              const seeds = standings
-                .filter((s) => s.team)
-                .map((s, idx) => ({
-                  seedPosition: idx + 1,
-                  teamId: s.teamId,
-                  teamName: s.team.name,
-                  teamTag: s.team.tag || s.team.name,
-                }));
+            if (standings.length === 4) {
+              // Create Selection V2 Playoffs: 1v4, 2v3
+              const matchups = [
+                { seed1: standings[0], seed2: standings[3] },
+                { seed1: standings[1], seed2: standings[2] },
+              ];
 
-              // Create first round bracket matches
-              const bracketMatchups = generateBracketMatchups(seeds);
-              if (bracketMatchups.length > 0) {
-                await prisma.$transaction(async (tx) => {
-                  for (let i = 0; i < bracketMatchups.length; i++) {
-                    const matchup = bracketMatchups[i];
-                    await tx.match.create({
-                      data: {
-                        tournamentId: match.tournamentId,
-                        teamAId: matchup.seed1.teamId,
-                        teamBId: matchup.seed2.teamId,
-                        scheduledTime: new Date(Date.now() + (i + 1) * 24 * 60 * 60 * 1000),
-                        status: MatchStatus.UPCOMING,
-                        bestOf: 3,
-                        stage: `Bracket Round 1: #${matchup.seed1.seedPosition} vs #${matchup.seed2.seedPosition}`,
-                        bracketType: "WINNER_BRACKET",
-                        bracketPosition: i + 1,
-                      },
-                    });
-                  }
-                });
+              await prisma.$transaction(async (tx) => {
+                for (let i = 0; i < matchups.length; i++) {
+                  const m = matchups[i];
+                  await tx.match.create({
+                    data: {
+                      tournamentId: match.tournamentId,
+                      teamAId: m.seed1.teamId,
+                      teamBId: m.seed2.teamId,
+                      scheduledTime: new Date(Date.now() + (i + 1) * 24 * 60 * 60 * 1000),
+                      status: MatchStatus.UPCOMING,
+                      bestOf: 3,
+                      stage: `Semi-Finals`,
+                      bracketType: "WINNER_BRACKET",
+                      bracketPosition: i + 1,
+                    },
+                  });
+                }
+              });
 
-                messages.push("Group stage complete! Bracket automatically generated.");
-                await createAuditLog(
-                  admin.id,
-                  "AUTO_GENERATE_BRACKET",
-                  "Tournament",
-                  match.tournamentId,
-                  "Bracket auto-generated from match result submission"
-                );
-              }
+              messages.push("Group stage complete! Top 4 Selection Bracket generated.");
             }
           } catch (autoBracketError) {
             console.warn("Auto-bracket generation failed (non-blocking):", autoBracketError);
-            // Don't fail the match result submission if bracket generation fails
           }
         }
       } catch (detectionError) {
@@ -625,6 +670,9 @@ export async function PUT(
       forfeitedTeamId,
       overridePoints = false,
       gameWinners,
+      team1Score: manualTeam1Score,
+      team2Score: manualTeam2Score,
+      isDraw: manualIsDraw = false,
     }: {
       winnerId: string;
       scoreA: number;
@@ -632,8 +680,12 @@ export async function PUT(
       forfeit?: boolean;
       forfeitedTeamId?: string;
       overridePoints?: boolean;
-      gameWinners?: { gameNumber: number; winnerTeamId: string }[];
+      gameWinners?: { gameNumber: number; winnerTeamId: string; durationSeconds?: number }[];
+      team1Score?: number;
+      team2Score?: number;
+      isDraw?: boolean;
     } = body;
+
 
     if (!winnerId || scoreA === undefined || scoreB === undefined) {
       return apiError("winnerId, scoreA, and scoreB are required");
@@ -711,22 +763,24 @@ export async function PUT(
         }
 
         // Revert old loser's standings
-        const oldLoserStanding = await tx.teamStanding.findUnique({
-          where: { teamId_seasonId: { teamId: oldLoserId, seasonId } },
-        });
-        if (oldLoserStanding) {
-          const oldLoserLosses = oldLoserStanding.losses - 1;
-          const oldLoserPointsAdjust = oldLoserStanding.points - oldLoserPoints; // Subtract the MLBB points
-          await tx.teamStanding.update({
-            where: { id: oldLoserStanding.id },
-            data: {
-              losses: Math.max(0, oldLoserLosses),
-              forfeits: oldWasForfeited
-                ? Math.max(0, oldLoserStanding.forfeits - 1)
-                : oldLoserStanding.forfeits,
-              points: Math.max(0, oldLoserPointsAdjust),
-            },
+        if (oldLoserId) {
+          const oldLoserStanding = await tx.teamStanding.findUnique({
+            where: { teamId_seasonId: { teamId: oldLoserId, seasonId } },
           });
+          if (oldLoserStanding) {
+            const oldLoserLosses = oldLoserStanding.losses - 1;
+            const oldLoserPointsAdjust = oldLoserStanding.points - oldLoserPoints; // Subtract the MLBB points
+            await tx.teamStanding.update({
+              where: { id: oldLoserStanding.id },
+              data: {
+                losses: Math.max(0, oldLoserLosses),
+                forfeits: oldWasForfeited
+                  ? Math.max(0, oldLoserStanding.forfeits - 1)
+                  : oldLoserStanding.forfeits,
+                points: Math.max(0, oldLoserPointsAdjust),
+              },
+            });
+          }
         }
 
         // Revert old monthly standings
@@ -750,43 +804,47 @@ export async function PUT(
           });
         }
 
-        const oldLoserMonthly = await tx.monthlyStanding.findUnique({
-          where: {
-            seasonId_teamId_year_month: {
-              seasonId,
-              teamId: oldLoserId,
-              year,
-              month,
-            },
-          },
-        });
-        if (oldLoserMonthly) {
-          await tx.monthlyStanding.update({
-            where: { id: oldLoserMonthly.id },
-            data: {
-              losses: Math.max(0, oldLoserMonthly.losses - 1),
-              forfeits: oldWasForfeited
-                ? Math.max(0, oldLoserMonthly.forfeits - 1)
-                : oldLoserMonthly.forfeits,
-              points: Math.max(0, oldLoserMonthly.points - oldLoserPoints),
+        if (oldLoserId) {
+          const oldLoserMonthly = await tx.monthlyStanding.findUnique({
+            where: {
+              seasonId_teamId_year_month: {
+                seasonId,
+                teamId: oldLoserId,
+                year,
+                month,
+              },
             },
           });
+          if (oldLoserMonthly) {
+            await tx.monthlyStanding.update({
+              where: { id: oldLoserMonthly.id },
+              data: {
+                losses: Math.max(0, oldLoserMonthly.losses - 1),
+                forfeits: oldWasForfeited
+                  ? Math.max(0, oldLoserMonthly.forfeits - 1)
+                  : oldLoserMonthly.forfeits,
+                points: Math.max(0, oldLoserMonthly.points - oldLoserPoints),
+              },
+            });
+          }
         }
 
-        // Revert old H2H
-        const h2hKey =
-          oldWinnerId < oldLoserId
-            ? { seasonId_teamAId_teamBId: { seasonId, teamAId: oldWinnerId, teamBId: oldLoserId } }
-            : { seasonId_teamAId_teamBId: { seasonId, teamAId: oldLoserId, teamBId: oldWinnerId } };
-        const oldH2H = await tx.headToHead.findUnique({ where: h2hKey });
-        if (oldH2H) {
-          const isWinnerTeamA = oldWinnerId === oldH2H.teamAId;
-          await tx.headToHead.update({
-            where: { id: oldH2H.id },
-            data: isWinnerTeamA
-              ? { teamAWins: Math.max(0, oldH2H.teamAWins - 1) }
-              : { teamBWins: Math.max(0, oldH2H.teamBWins - 1) },
-          });
+        // Revert old H2H (only if both existed)
+        if (oldLoserId) {
+          const h2hKey =
+            oldWinnerId < oldLoserId
+              ? { seasonId_teamAId_teamBId: { seasonId, teamAId: oldWinnerId, teamBId: oldLoserId } }
+              : { seasonId_teamAId_teamBId: { seasonId, teamAId: oldLoserId, teamBId: oldWinnerId } };
+          const oldH2H = await tx.headToHead.findUnique({ where: h2hKey });
+          if (oldH2H) {
+            const isWinnerTeamA = oldWinnerId === oldH2H.teamAId;
+            await tx.headToHead.update({
+              where: { id: oldH2H.id },
+              data: isWinnerTeamA
+                ? { teamAWins: Math.max(0, oldH2H.teamAWins - 1) }
+                : { teamBWins: Math.max(0, oldH2H.teamBWins - 1) },
+            });
+          }
         }
 
         // ─── APPLY NEW RESULT ──────────────────────────────────
@@ -806,18 +864,20 @@ export async function PUT(
         }
 
         // Apply new loser's standings
-        const newLoserStanding = await tx.teamStanding.findUnique({
-          where: { teamId_seasonId: { teamId: newLoserId, seasonId } },
-        });
-        if (newLoserStanding) {
-          await tx.teamStanding.update({
-            where: { id: newLoserStanding.id },
-            data: {
-              losses: { increment: 1 },
-              forfeits: newIsForfeit ? { increment: 1 } : newLoserStanding.forfeits,
-              points: { increment: newLoserPoints },
-            },
+        if (newLoserId) {
+          const newLoserStanding = await tx.teamStanding.findUnique({
+            where: { teamId_seasonId: { teamId: newLoserId, seasonId } },
           });
+          if (newLoserStanding) {
+            await tx.teamStanding.update({
+              where: { id: newLoserStanding.id },
+              data: {
+                losses: { increment: 1 },
+                forfeits: newIsForfeit ? { increment: 1 } : newLoserStanding.forfeits,
+                points: { increment: newLoserPoints },
+              },
+            });
+          }
         }
 
         // Apply new monthly standings
@@ -855,66 +915,70 @@ export async function PUT(
           });
         }
 
-        const newLoserMonthly = await tx.monthlyStanding.findUnique({
-          where: {
-            seasonId_teamId_year_month: {
-              seasonId,
-              teamId: newLoserId,
-              year,
-              month,
-            },
-          },
-        });
-        if (newLoserMonthly) {
-          await tx.monthlyStanding.update({
-            where: { id: newLoserMonthly.id },
-            data: {
-              losses: { increment: 1 },
-              forfeits: newIsForfeit ? { increment: 1 } : newLoserMonthly.forfeits,
-              points: { increment: newLoserPoints },
+        if (newLoserId) {
+          const newLoserMonthly = await tx.monthlyStanding.findUnique({
+            where: {
+              seasonId_teamId_year_month: {
+                seasonId,
+                teamId: newLoserId,
+                year,
+                month,
+              },
             },
           });
-        } else {
-          await tx.monthlyStanding.create({
-            data: {
-              seasonId,
-              teamId: newLoserId,
-              year,
-              month,
-              wins: 0,
-              losses: 1,
-              forfeits: newIsForfeit ? 1 : 0,
-              points: newLoserPoints,
-              rank: 0,
-            },
-          });
+          if (newLoserMonthly) {
+            await tx.monthlyStanding.update({
+              where: { id: newLoserMonthly.id },
+              data: {
+                losses: { increment: 1 },
+                forfeits: newIsForfeit ? { increment: 1 } : newLoserMonthly.forfeits,
+                points: { increment: newLoserPoints },
+              },
+            });
+          } else {
+            await tx.monthlyStanding.create({
+              data: {
+                seasonId,
+                teamId: newLoserId,
+                year,
+                month,
+                wins: 0,
+                losses: 1,
+                forfeits: newIsForfeit ? 1 : 0,
+                points: newLoserPoints,
+                rank: 0,
+              },
+            });
+          }
         }
 
         // Apply new H2H
-        const newH2hKey =
-          winnerId < newLoserId
-            ? { seasonId_teamAId_teamBId: { seasonId, teamAId: winnerId, teamBId: newLoserId } }
-            : { seasonId_teamAId_teamBId: { seasonId, teamAId: newLoserId, teamBId: winnerId } };
-        const newH2H = await tx.headToHead.findUnique({ where: newH2hKey });
-        if (newH2H) {
-          const isWinnerTeamA = winnerId === newH2H.teamAId;
-          await tx.headToHead.update({
-            where: { id: newH2H.id },
-            data: isWinnerTeamA
-              ? { teamAWins: { increment: 1 } }
-              : { teamBWins: { increment: 1 } },
-          });
-        } else {
-          const isWinnerTeamA = winnerId < newLoserId;
-          await tx.headToHead.create({
-            data: {
-              seasonId,
-              teamAId: isWinnerTeamA ? winnerId : newLoserId,
-              teamBId: isWinnerTeamA ? newLoserId : winnerId,
-              teamAWins: isWinnerTeamA ? 1 : 0,
-              teamBWins: isWinnerTeamA ? 0 : 1,
-            },
-          });
+        if (newLoserId) {
+          const newH2hKey =
+            winnerId < newLoserId
+              ? { seasonId_teamAId_teamBId: { seasonId, teamAId: winnerId, teamBId: newLoserId } }
+              : { seasonId_teamAId_teamBId: { seasonId, teamAId: newLoserId, teamBId: winnerId } };
+          const newH2H = await tx.headToHead.findUnique({ where: newH2hKey });
+          if (newH2H) {
+            const isWinnerTeamA = winnerId === newH2H.teamAId;
+            await tx.headToHead.update({
+              where: { id: newH2H.id },
+              data: isWinnerTeamA
+                ? { teamAWins: { increment: 1 } }
+                : { teamBWins: { increment: 1 } },
+            });
+          } else {
+            const isWinnerTeamA = winnerId < newLoserId;
+            await tx.headToHead.create({
+              data: {
+                seasonId,
+                teamAId: isWinnerTeamA ? winnerId : newLoserId,
+                teamBId: isWinnerTeamA ? newLoserId : winnerId,
+                teamAWins: isWinnerTeamA ? 1 : 0,
+                teamBWins: isWinnerTeamA ? 0 : 1,
+              },
+            });
+          }
         }
 
         // Recalculate ranks

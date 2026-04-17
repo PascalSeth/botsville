@@ -104,6 +104,43 @@ export async function POST(
 }
 
 /**
+ * DELETE /api/tournaments/[id]/groups
+ * Clear all groups for a tournament
+ * Admin only
+ */
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Verify admin role
+    const adminRole = await prisma.adminRole.findUnique({
+      where: { userId: session.user.id },
+    });
+    if (!adminRole || (adminRole.role !== 'TOURNAMENT_ADMIN' && adminRole.role !== 'SUPER_ADMIN')) {
+      return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
+    }
+
+    const { id: tournamentId } = await params;
+
+    // Delete all groups (cascades to TournamentGroupTeam)
+    await prisma.tournamentGroup.deleteMany({
+      where: { tournamentId },
+    });
+
+    return NextResponse.json({ success: true, message: 'All groups cleared' }, { status: 200 });
+  } catch (err) {
+    console.error('[TOURNAMENT GROUPS DELETE ERROR]', err);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+/**
  * GET /api/tournaments/[id]/groups
  * Get all groups for a tournament
  * Public endpoint
@@ -143,3 +180,4 @@ export async function GET(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+

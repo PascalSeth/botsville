@@ -99,7 +99,7 @@ const organizeBracket = (matches: BracketMatch[]): BracketBranch[] => {
       bracketType: 'GRAND_FINAL',
       rounds: grouped,
       title: 'Grand Finals',
-      color: 'from-purple-500/20 to-purple-600/20',
+      color: 'from-amber-400/30 to-[#e8a000]/10',
     });
   }
 
@@ -245,25 +245,13 @@ const BracketMatchSlot = ({ match }: { match: BracketMatch }) => {
             className="flex flex-col gap-2 pt-2 border-t border-white/10 text-[11px]"
           >
             <div className="flex justify-between">
+              <span className="text-white/50">Format:</span>
+              <span className="text-[#e8a000] font-black uppercase tracking-tighter">BEST OF {match.bracketType === 'GRAND_FINAL' ? '5' : '3'}</span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-white/50">Match ID:</span>
               <span className="text-white/70 font-mono text-[10px]">{match.id.slice(0, 8)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-white/50">Round:</span>
-              <span className="text-white/70 font-semibold">{match.round}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-white/50">Type:</span>
-              <span className="text-white/70 font-semibold">{match.bracketType.replace('_', ' ')}</span>
-            </div>
-            {match.scheduledTime && (
-              <div className="flex justify-between">
-                <span className="text-white/50">Scheduled:</span>
-                <span className="text-white/70 font-mono">
-                  {new Date(match.scheduledTime).toLocaleDateString()}
-                </span>
-              </div>
-            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -317,11 +305,18 @@ const BracketBranchView = ({ branch }: { branch: BracketBranch }) => {
         </span>
       </div>
 
-      {/* Rounds horizontal scroll */}
-      <div className="overflow-x-auto pb-2 -mr-6 pr-6">
-        <div className="flex gap-6 min-w-min">
+      {/* Rounds: Responsive Layout (Vertical on mobile, horizontal scroll on desktop) */}
+      <div className="lg:overflow-x-auto lg:pb-2 lg:-mr-6 lg:pr-6">
+        <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 min-w-min">
           {branch.rounds.map(round => (
-            <BracketRoundColumn key={`round-${round.roundNumber}`} round={round} bracketType={branch.bracketType} />
+            <div key={`round-${round.roundNumber}`} className="relative flex-1">
+              <BracketRoundColumn round={round} bracketType={branch.bracketType} />
+              
+              {/* Vertical Divider for Mobile */}
+              <div className="lg:hidden h-8 flex items-center justify-center">
+                 <div className="w-px h-full bg-linear-to-b from-white/10 to-transparent" />
+              </div>
+            </div>
           ))}
         </div>
       </div>

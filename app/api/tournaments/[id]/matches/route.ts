@@ -225,19 +225,22 @@ export async function POST(
         where: { id: teamAId },
         select: { captainId: true },
       }),
-      prisma.team.findUnique({
-        where: { id: teamBId },
-        select: { captainId: true },
-      }),
+      teamBId 
+        ? prisma.team.findUnique({
+            where: { id: teamBId },
+            select: { captainId: true },
+          })
+        : Promise.resolve(null),
     ]);
 
     if (teamA?.captainId) {
+      const opponentName = match.teamB?.name || "RESTING";
       await prisma.notification.create({
         data: {
           userId: teamA.captainId,
           type: "MATCH_SCHEDULED",
           title: "Match Scheduled",
-          message: `Your match against ${match.teamB.name} is scheduled for ${scheduled.toLocaleString()}`,
+          message: `Your match against ${opponentName} is scheduled for ${scheduled.toLocaleString()}`,
           linkUrl: `/matches/${match.id}`,
         },
       });

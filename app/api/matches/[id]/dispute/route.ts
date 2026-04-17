@@ -48,7 +48,7 @@ export async function POST(
     }
 
     // Check if user is captain of one of the teams
-    const isCaptain = match.teamA.captainId === user.id || match.teamB.captainId === user.id;
+    const isCaptain = match.teamA.captainId === user.id || match.teamB?.captainId === user.id;
     if (!isCaptain) {
       return apiError("Only team captains can raise disputes", 403);
     }
@@ -212,7 +212,7 @@ export async function PUT(
       });
     }
 
-    if (match.teamB.captainId) {
+    if (match.teamB?.captainId) {
       await prisma.notification.create({
         data: {
           userId: match.teamB.captainId,
