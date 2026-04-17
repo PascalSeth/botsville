@@ -13,7 +13,7 @@ import StartingFiveModal from './StartingFiveModal';
 type MatchTeam = { id?: string; name: string; tag: string; logo: string | null };
 type PlayerData = { id: string; ign: string; role: string; photo: string | null; isSubstitute: boolean; user?: { photo: string | null }; };
 type ScheduleMatch = { id: string; time: string; scheduledAt: string; elapsed: string | null; teamA: MatchTeam & { isEliminated?: boolean }; teamB: MatchTeam & { isEliminated?: boolean }; status: 'LIVE' | 'UPCOMING' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED'; scoreA: number; scoreB: number; stage: string; lobby?: 'LOBBY_A' | 'LOBBY_B'; playDay?: number; isChallenge?: boolean; };
-type TournamentListItem = { id: string; name: string; status: string; _count?: { matches?: number } };
+type TournamentListItem = { id: string; name: string; status: string; createdAt?: string; _count?: { matches?: number } };
 type ApiMatch = { id: string; scheduledTime: string; elapsed: string | null; status: 'LIVE' | 'UPCOMING' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED'; scoreA: number; scoreB: number; stage: string | null; lobby: 'LOBBY_A' | 'LOBBY_B' | null; playDay: number | null; teamA: { id: string; name: string; tag: string | null; logo: string | null; registrations?: { isEliminated: boolean }[] }; teamB: { id: string; name: string; tag: string | null; logo: string | null; registrations?: { isEliminated: boolean }[] }; challengeRequest?: { id: string } | null; };
 
 /* ────────────────────────────────────────────────────────── */
@@ -22,6 +22,10 @@ type ApiMatch = { id: string; scheduledTime: string; elapsed: string | null; sta
 const formatMatchTime = (value: string) => {
   const d = new Date(value);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+};
+const formatMatchDate = (value: string) => {
+  const d = new Date(value);
+  return d.toLocaleDateString([], { day: '2-digit', month: 'short' });
 };
 
 const buildTeamTag = (name: string, tag?: string | null) => {
@@ -45,7 +49,10 @@ const useRealtimeMatches = () => {
         const res = await fetch('/api/tournaments?limit=20', { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
-        const list = (Array.isArray(data?.tournaments) ? data.tournaments : []).filter((t: TournamentListItem) => (t._count?.matches ?? 0) > 0);
+        const list = (Array.isArray(data?.tournaments) ? data.tournaments : [])
+          .filter((t: TournamentListItem) => (t._count?.matches ?? 0) > 0)
+          .sort((a: TournamentListItem, b: TournamentListItem) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          
         setTournaments(list);
         if (list.length > 0 && !initialSelectionDone.current) {
           const prioritize = list.find((t: TournamentListItem) => t.status === 'LIVE') || list.find((t: TournamentListItem) => t.status === 'UPCOMING') || list[0];
@@ -137,6 +144,7 @@ const MatchCard = ({ match, onClick }: { match: ScheduleMatch, onClick: () => vo
       <div className="flex flex-col lg:flex-row items-stretch">
         {/* Time Slot */}
         <div className="lg:w-24 bg-white/[0.02] border-b lg:border-b-0 lg:border-r border-white/5 flex flex-row lg:flex-col items-center justify-between lg:justify-center p-3 lg:p-0">
+          <span className="text-[10px] font-bold text-[#e8a000]/70 lg:mb-0.5">{formatMatchDate(match.scheduledAt)}</span>
           <span className="text-sm font-black text-white italic">{match.time}</span>
           <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.2em] lg:mt-1">{match.stage.split(' - ')[0]}</span>
         </div>
@@ -231,10 +239,22 @@ export const MatchSchedule = () => {
   const days = useMemo(() => Array.from(new Set(matches.map(m => m.playDay || 0))).sort((a, b) => a - b), [matches]);
 
   useEffect(() => {
-    if (days.length > 0 && !days.includes(activeDay)) {
-      setActiveDay(days[0]);
-    }
-  }, [days, activeDay]);
+    if (days.length === 0) return;
+    
+    // Smart Day Selection: Priority: Live > Today > First Upcoming > Day 1
+    const today = new Date().toDateString();
+    const liveMatch = matches.find(m => m.status === 'LIVE');
+    const todayMatch = matches.find(m => m.scheduledAt && new Date(m.scheduledAt).toDateString() === today);
+    const upcomingMatch = matches.find(m => m.status === 'UPCOMING');
+
+    let smartDay = activeDay;
+    if (liveMatch?.playDay) smartDay = liveMatch.playDay;
+    else if (todayMatch?.playDay) smartDay = todayMatch.playDay;
+    else if (upcomingMatch?.playDay) smartDay = upcomingMatch.playDay;
+    else if (!days.includes(activeDay)) smartDay = days[0];
+
+    setActiveDay(smartDay);
+  }, [matches, days]); // Trigger on matches load
 
   const filteredMatches = matches.filter(m => {
     const isDay = m.playDay === activeDay;
