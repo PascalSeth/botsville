@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { dashboardFetch } from "../lib/api";
-import { Loader2, CheckCircle, RefreshCw, BarChart3, Trash2, Zap } from "lucide-react";
+import { Loader2, CheckCircle, RefreshCw, BarChart3, Trash2, Zap, Clock, Edit2 } from "lucide-react";
 import Link from "next/link";
 import { BracketVisualization } from "@/app/components/sections/BracketVisualization";
 
@@ -47,6 +47,10 @@ export default function DashboardMatchesPage() {
   const [bracketMatches, setBracketMatches] = useState<Match[]>([]);
   const [loadingBracket, setLoadingBracket] = useState(false);
   const [viewMode, setViewMode] = useState<'table' | 'bracket'>('table');
+  // Metadata edit (time/date)
+  const [editingMetadataId, setEditingMetadataId] = useState<string | null>(null);
+  const [editScheduledTime, setEditScheduledTime] = useState("");
+  const [updatingMetadata, setUpdatingMetadata] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -140,6 +144,7 @@ export default function DashboardMatchesPage() {
     
     setResultSuccess(null);
     setError(null);
+    setEditingMetadataId(null);
   };
 
   const submitResult = async (match: Match) => {
@@ -212,6 +217,62 @@ export default function DashboardMatchesPage() {
       }
       return updated;
     });
+  };
+
+  const openMetadataPanel = (m: Match) => {
+    if (editingMetadataId === m.id) {
+      setEditingMetadataId(null);
+      return;
+    }
+    setEditingMetadataId(m.id);
+    setResultMatchId(null); // Close result panel if open
+    
+    // Format date for datetime-local input (YYYY-MM-DDTHH:mm)
+    if (m.scheduledTime) {
+      // Use local timezone for the input value
+      const date = new Date(m.scheduledTime);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      setEditScheduledTime(`${year}-${month}-${day}T${hours}:${minutes}`);
+    } else {
+      setEditScheduledTime("");
+    }
+    setError(null);
+    setResultSuccess(null);
+  };
+
+  const submitMetadataUpdate = async (matchId: string) => {
+    if (!editScheduledTime) {
+      setError("Please select a valid date and time");
+      return;
+    }
+
+    setUpdatingMetadata(true);
+    setError(null);
+    setResultSuccess(null);
+
+    const { data, error: err } = await dashboardFetch<{ message: string }>(
+      `/api/matches/${matchId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          scheduledTime: new Date(editScheduledTime).toISOString(),
+        }),
+      }
+    );
+
+    setUpdatingMetadata(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+
+    setResultSuccess(data?.message ?? "Match updated successfully");
+    setEditingMetadataId(null);
+    await loadMatches();
   };
 
   const handleDeleteMatch = async (match: Match) => {
@@ -435,6 +496,18 @@ export default function DashboardMatchesPage() {
                           {deletingId === m.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={10} />}
                           Delete
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => openMetadataPanel(m)}
+                          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 border transition-colors ${
+                            editingMetadataId === m.id
+                              ? "border-[#e8a000] text-[#e8a000] bg-[#e8a000]/10"
+                              : "border-white/20 text-[#aaa] hover:border-[#e8a000] hover:text-[#e8a000]"
+                          }`}
+                        >
+                          <Edit2 size={10} className="inline mr-1" />
+                          {editingMetadataId === m.id ? "Cancel" : "Edit"}
+                        </button>
                       </td>
                     </tr>
                     {resultMatchId === m.id && (
@@ -542,6 +615,41 @@ export default function DashboardMatchesPage() {
                                 )}
                               </div>
                             )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {editingMetadataId === m.id && (
+                      <tr className="bg-[#0d0d14]">
+                        <td colSpan={7} className="p-4">
+                          <div className="border border-[#e8a000]/30 rounded p-4 space-y-3">
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[#e8a000] mb-2">
+                              Edit Match Details — {m.stage ?? m.id}
+                            </p>
+                            <div className="flex flex-wrap gap-4 items-end">
+                              <div className="flex-1 max-w-sm">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-[#666] block mb-2">
+                                  Scheduled Time & Date
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type="datetime-local"
+                                    value={editScheduledTime}
+                                    onChange={(e) => setEditScheduledTime(e.target.value)}
+                                    className="w-full bg-[#0a0a0f] border border-white/10 text-white px-3 py-2.5 text-sm outline-none focus:border-[#e8a000] transition-colors"
+                                  />
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={updatingMetadata}
+                                onClick={() => submitMetadataUpdate(m.id)}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] transition-all disabled:opacity-50 active:scale-95"
+                              >
+                                {updatingMetadata ? <Loader2 size={14} className="animate-spin" /> : <Clock size={14} />}
+                                Save Changes
+                              </button>
+                            </div>
                           </div>
                         </td>
                       </tr>

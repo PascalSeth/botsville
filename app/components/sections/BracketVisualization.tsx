@@ -25,7 +25,7 @@ type BracketMatch = {
   scoreA: number;
   scoreB: number;
   winnerId: string | null;
-  status: 'UPCOMING' | 'LIVE' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED';
+  status: 'UPCOMING' | 'LIVE' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED' | 'RESTING';
   scheduledTime: string;
   bracketType: BracketType;
   bracketPosition: number;
@@ -189,15 +189,16 @@ const BracketMatchSlot = ({ match }: { match: BracketMatch }) => {
   const teamAWon = isCompleted && match.winnerId === match.teamA?.id;
   const teamBWon = isCompleted && match.winnerId === match.teamB?.id;
 
-  const statusConfig = {
+  const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
     UPCOMING: { label: 'Upcoming', color: 'text-amber-400', bg: 'bg-amber-500/10' },
     LIVE: { label: 'LIVE', color: 'text-red-400', bg: 'bg-red-500/10' },
     COMPLETED: { label: 'Completed', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
     FORFEITED: { label: 'Forfeited', color: 'text-slate-400', bg: 'bg-slate-500/10' },
     DISPUTED: { label: 'Disputed', color: 'text-orange-400', bg: 'bg-orange-500/10' },
+    RESTING: { label: 'Bye / Resting', color: 'text-indigo-400', bg: 'bg-indigo-500/10' },
   };
 
-  const status = statusConfig[match.status];
+  const status = statusConfig[match.status] || { label: match.status || 'TBD', color: 'text-white/40', bg: 'bg-white/5' };
 
   return (
     <motion.div

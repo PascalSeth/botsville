@@ -109,7 +109,7 @@ export async function PUT(
     const user = await requireActiveUser();
     const { id } = await context.params;
     const body = await request.json();
-    const { status, scoreA, scoreB, elapsed, winnerId } = body;
+    const { status, scoreA, scoreB, elapsed, winnerId, scheduledTime } = body;
 
     const match = await prisma.match.findUnique({
       where: { id },
@@ -152,6 +152,10 @@ export async function PUT(
         return apiError("Winner must be one of the competing teams");
       }
       updateData.winner = { connect: { id: winnerId } };
+    }
+
+    if (scheduledTime !== undefined) {
+      updateData.scheduledTime = new Date(scheduledTime);
     }
 
     if (Object.keys(updateData).length === 0) {
