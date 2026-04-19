@@ -180,9 +180,11 @@ async function upsertGroupStageStanding(
     if (winnerId === teamAId) {
       pointsA = scoreB === 0 ? 3 : 2;
       pointsB = scoreB > 0 ? 1 : 0;
-    } else {
+    } else if (winnerId === teamBId) {
       pointsB = scoreA === 0 ? 3 : 2;
       pointsA = scoreA > 0 ? 1 : 0;
+    } else {
+      pointsA = 1; pointsB = 1;
     }
   } else {
     // Standard 3/1/0

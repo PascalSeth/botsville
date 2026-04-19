@@ -81,10 +81,13 @@ export async function GET(request: NextRequest) {
         const rightStanding = standingByTeamId.get(right.id);
 
         if (leftStanding && rightStanding) {
-          if (leftStanding.rank !== rightStanding.rank) {
-            return leftStanding.rank - rightStanding.rank;
+          if (leftStanding.points !== rightStanding.points) {
+            return rightStanding.points - leftStanding.points;
           }
-          return rightStanding.points - leftStanding.points;
+          if (leftStanding.wins !== rightStanding.wins) {
+            return rightStanding.wins - leftStanding.wins;
+          }
+          return leftStanding.rank - rightStanding.rank;
         }
 
         if (leftStanding) return -1;

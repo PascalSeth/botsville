@@ -43,6 +43,21 @@ export async function POST(
       return NextResponse.json({ error: "At least 2 teams required to orchestrate." }, { status: 400 });
     }
 
+    // Safety constraint: Prevent orchestrating if there are already completed matches
+    const existingCompleted = await prisma.match.count({
+      where: {
+        tournamentId,
+        status: { in: ["COMPLETED", "FORFEITED"] }
+      }
+    });
+
+    if (existingCompleted > 0) {
+      return NextResponse.json(
+        { error: "This tournament already has completed matches. Orchestrating it again would delete existing matches and result stats. If you want to fix standings, go to the Matches tab and use 'Recalc Group Standings' instead." },
+        { status: 400 }
+      );
+    }
+
     // 2. Group Allocation Logic
     // If no groups exist, we create them based on expected numGroups (minimum 1)
     let groups = tournament.groups;

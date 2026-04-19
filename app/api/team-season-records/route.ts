@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
         team: { select: { id: true, name: true, tag: true, logo: true } },
         season: { select: { id: true, name: true } },
       },
-      orderBy: [{ seasonId: 'desc' }, { rank: 'asc' }],
+      orderBy: [{ seasonId: 'desc' }, { points: 'desc' }, { wins: 'desc' }, { rank: 'asc' }],
     });
 
     const formatted = records.map(r => ({

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireAdmin, apiError, apiSuccess } from "@/lib/api-utils";
-import { MatchStatus } from "@/app/generated/prisma/enums";
+import { MatchStatus, BracketType } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -19,7 +19,7 @@ export async function POST(
 
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
-      select: { id: true, pointSystem: true },
+      select: { id: true, pointSystem: true, seasonId: true },
     });
     if (!tournament) return apiError("Tournament not found", 404);
 
@@ -27,7 +27,10 @@ export async function POST(
     const matches = await prisma.match.findMany({
       where: {
         tournamentId,
-        bracketType: "GROUP_STAGE",
+        OR: [
+          { bracketType: BracketType.GROUP_STAGE },
+          { bracketType: null }
+        ],
         status: { in: [MatchStatus.COMPLETED, MatchStatus.FORFEITED, MatchStatus.RESTING] },
       },
       select: {
@@ -40,6 +43,7 @@ export async function POST(
         scheduledTime: true,
         scoreA: true,
         scoreB: true,
+        statsFinalized: true,
         gameResults: { select: { winnerTeamId: true, durationSeconds: true } },
       },
     });
@@ -56,23 +60,7 @@ export async function POST(
 
     // Build quick lookup: teamId → groupName
     const teamGroupMap: Record<string, string> = {};
-    if (groups.length > 0) {
-      for (const g of groups) {
-        for (const t of g.teams) {
-          teamGroupMap[t.teamId] = g.name;
-        }
-      }
-    } else {
-      // Fallback: If no groups exist, treat the whole tournament as "Group A"
-      const registrations = await prisma.tournamentRegistration.findMany({
-        where: { tournamentId, status: "APPROVED" }
-      });
-      for (const r of registrations) {
-        teamGroupMap[r.teamId] = "Group A";
-      }
-    }
 
-    // Accumulate standings per (groupName, teamId)
     type StandingAccum = {
       wins: number;
       losses: number;
@@ -84,7 +72,6 @@ export async function POST(
     };
 
     const accum: Record<string, Record<string, StandingAccum>> = {};
-    // accum[groupName][teamId] = StandingAccum
 
     const ensure = (groupName: string, teamId: string) => {
       accum[groupName] ??= {};
@@ -98,12 +85,91 @@ export async function POST(
 
     const pointSystem = tournament.pointSystem as string | null;
 
+    if (groups.length > 0) {
+      for (const g of groups) {
+        for (const t of g.teams) {
+          teamGroupMap[t.teamId] = g.name;
+          ensure(g.name, t.teamId); // Pre-populate 0-stat teams
+        }
+      }
+    } else {
+      // Fallback: If no groups exist, treat the whole tournament as "Group A"
+      const registrations = await prisma.tournamentRegistration.findMany({
+        where: { tournamentId, status: "APPROVED" }
+      });
+      for (const r of registrations) {
+        teamGroupMap[r.teamId] = "Group A";
+        ensure("Group A", r.teamId); // Pre-populate 0-stat teams
+      }
+    }
+
     for (const m of matches) {
       const { teamAId, teamBId, winnerId, scoreA, scoreB, gameResults, status, bestOf, scheduledTime } = m;
 
       // Handle BYE / RESTING matches - ONLY if the scheduled time has passed
-      if (status === MatchStatus.RESTING) {
+      if (status === MatchStatus.RESTING || !teamBId) {
         if (!scheduledTime || new Date(scheduledTime) > new Date()) continue;
+
+        // If it's still marked as RESTING/UPCOMING without an opponent, or hasn't had its season stats finalized yet, physically convert it to a COMPLETED win!
+        if (status !== MatchStatus.COMPLETED || !m.statsFinalized) {
+          const gameWinsToAward = bestOf ? Math.ceil(bestOf / 2) : 2;
+          
+          await prisma.$transaction(async (tx) => {
+            await tx.match.update({
+               where: { id: m.id },
+               data: {
+                 status: MatchStatus.COMPLETED,
+                 winnerId: teamAId,
+                 scoreA: gameWinsToAward,
+                 scoreB: 0,
+                 statsFinalized: true,
+               }
+            });
+
+            // Retroactively award the win to the Global Season Leaderboard!
+            if (tournament.seasonId) {
+              await tx.teamStanding.upsert({
+                where: { teamId_seasonId: { seasonId: tournament.seasonId, teamId: teamAId } },
+                update: {
+                  wins: { increment: 1 },
+                  points: { increment: 3 }
+                },
+                create: {
+                  seasonId: tournament.seasonId,
+                  teamId: teamAId,
+                  wins: 1,
+                  losses: 0,
+                  points: 3,
+                  rank: 0
+                }
+              });
+
+              const matchDate = m.scheduledTime ? new Date(m.scheduledTime) : new Date();
+              const year = matchDate.getFullYear();
+              const month = matchDate.getMonth() + 1;
+
+              await tx.monthlyStanding.upsert({
+                where: { seasonId_teamId_year_month: { seasonId: tournament.seasonId, teamId: teamAId, year, month } },
+                update: {
+                  wins: { increment: 1 },
+                  points: { increment: 3 }
+                },
+                create: {
+                  seasonId: tournament.seasonId,
+                  teamId: teamAId,
+                  year,
+                  month,
+                  wins: 1,
+                  losses: 0,
+                  forfeits: 0,
+                  points: 3,
+                  rank: 0
+                }
+              });
+            }
+          });
+        }
+
 
         const groupNameA = teamGroupMap[teamAId];
         if (!groupNameA) continue;
@@ -117,7 +183,7 @@ export async function POST(
         continue;
       }
 
-      if (!teamBId || !winnerId) continue;
+      if (!teamBId) continue;
 
       const groupNameA = teamGroupMap[teamAId];
       const groupNameB = teamGroupMap[teamBId];
@@ -132,9 +198,13 @@ export async function POST(
         if (winnerId === teamAId) {
           pointsA = scoreB === 0 ? 3 : 2;
           pointsB = scoreB > 0 ? 1 : 0;
-        } else {
+        } else if (winnerId === teamBId) {
           pointsB = scoreA === 0 ? 3 : 2;
           pointsA = scoreA > 0 ? 1 : 0;
+        } else {
+          // Draw logic for MLBB weighted (if any draws can exist)
+          pointsA = 1;
+          pointsB = 1;
         }
       } else {
         pointsA = winnerId === teamAId ? 3 : 0;

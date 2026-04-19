@@ -1,0 +1,1 @@
+app/api/tournaments/[id]/recalculate-group-standings/route.ts(30,66): error TS2339: Property 'NONE' does not exist on type '{ readonly WINNER_BRACKET: "WINNER_BRACKET"; readonly LOSER_BRACKET: "LOSER_BRACKET"; readonly GRAND_FINAL: "GRAND_FINAL"; readonly GROUP_STAGE: "GROUP_STAGE"; }'.

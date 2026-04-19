@@ -438,6 +438,9 @@ async function updateStandings(matchId: string) {
       } else if (winnerId === teamBId) {
         pointsToAddB = scoreA === 0 ? 3 : 2;
         pointsToAddA = scoreA > 0 ? 1 : 0;
+      } else {
+        pointsToAddA = 1;
+        pointsToAddB = 1;
       }
     } else {
       // Standard 3/1/0

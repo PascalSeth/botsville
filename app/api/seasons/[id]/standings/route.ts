@@ -26,7 +26,7 @@ export async function GET(
     const [cumulative, monthly] = await Promise.all([
       prisma.teamStanding.findMany({
         where: standingWhere,
-        orderBy: { rank: "asc" },
+        orderBy: [{ points: "desc" }, { wins: "desc" }, { rank: "asc" }],
         include: {
           team: {
             select: {
@@ -42,7 +42,7 @@ export async function GET(
       }),
       prisma.monthlyStanding.findMany({
         where: monthlyWhere,
-        orderBy: [{ year: "asc" }, { month: "asc" }, { rank: "asc" }],
+        orderBy: [{ year: "desc" }, { month: "desc" }, { points: "desc" }, { wins: "desc" }, { rank: "asc" }],
         include: {
           team: {
             select: {

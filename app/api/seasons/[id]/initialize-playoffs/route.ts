@@ -40,7 +40,7 @@ export async function POST(
     // Get top 4 from standings
     const top4 = await prisma.teamStanding.findMany({
       where: { seasonId },
-      orderBy: { rank: "asc" },
+      orderBy: [{ points: "desc" }, { wins: "desc" }, { rank: "asc" }],
       take: 4,
       include: { team: { select: { id: true, name: true, tag: true } } },
     });

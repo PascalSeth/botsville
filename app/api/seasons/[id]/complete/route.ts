@@ -46,7 +46,11 @@ export async function POST(
     }
 
     // Get top 3 teams by standing
-    const topTeams = season.teamStandings.sort((a, b) => (a.rank || 999) - (b.rank || 999)).slice(0, 3);
+    const topTeams = season.teamStandings.sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      return (a.rank || 999) - (b.rank || 999);
+    }).slice(0, 3);
 
     // Get top player MVP
     const topPlayer = season.playerMvpRankings
@@ -163,7 +167,7 @@ export async function GET(
         tournaments: { select: { id: true, name: true, status: true } },
         teamStandings: {
           include: { team: { select: { name: true, tag: true, logo: true } } },
-          orderBy: { rank: 'asc' },
+          orderBy: [{ points: 'desc' }, { wins: 'desc' }, { rank: 'asc' }],
           take: 10,
         },
         playerMvpRankings: {

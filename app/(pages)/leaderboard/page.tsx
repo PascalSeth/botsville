@@ -404,7 +404,11 @@ export default function LeaderboardPage() {
                                   <p key={h} className="text-[#333] text-[9px] uppercase tracking-widest font-bold">{h}</p>
                                 ))}
                               </div>
-                              {[...currentMonthRows].sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99)).map((s, i) => {
+                              {[...currentMonthRows].sort((a, b) => {
+                                if (b.points !== a.points) return b.points - a.points;
+                                if (b.wins !== a.wins) return b.wins - a.wins;
+                                return (a.rank ?? 99) - (b.rank ?? 99);
+                              }).map((s, i) => {
                                 const c = s.team.color || '#e8a000';
                                 return (
                                   <div key={s.id} className="grid grid-cols-[36px_1fr_50px_50px_50px_70px_50px] gap-2 items-center px-3 py-3 mb-1 bg-[#0f0f18] border border-white/[0.05] hover:border-white/[0.12] transition-colors">
