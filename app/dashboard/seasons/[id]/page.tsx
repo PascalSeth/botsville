@@ -239,6 +239,25 @@ export default function SeasonDetailPage() {
     await load();
   };
 
+  // ── Recalculate All Standings ──────────────────────────────
+  const [recalculating, setRecalculating] = useState(false);
+  const recalculateAll = async () => {
+    if (!confirm("Are you sure? This will wipe and rebuild all Season & Monthly standings from match records.")) return;
+    setRecalculating(true);
+    setError(null);
+    setSuccess(null);
+
+    const { data, error: err } = await dashboardFetch<{ message: string }>(
+      `/api/seasons/${seasonId}/recalculate-all`,
+      { method: "POST" }
+    );
+
+    setRecalculating(false);
+    if (err) { setError(err); return; }
+    setSuccess(data?.message ?? "Standings recalculated successfully");
+    await load();
+  };
+
   // ── Team multi-select toggle ─────────────────────────────
   const toggleTeam = (id: string) => {
     setSelectedTeamIds((prev) =>
@@ -379,6 +398,15 @@ export default function SeasonDetailPage() {
             <Trophy size={14} /> Playoffs bracket active
           </span>
         )}
+        <button
+          type="button"
+          onClick={recalculateAll}
+          disabled={recalculating}
+          className="flex items-center gap-2 px-4 py-2 bg-[#222] border border-white/10 text-[#aaa] text-xs font-black uppercase tracking-wider hover:bg-[#333] hover:text-white transition-colors disabled:opacity-50"
+        >
+          {recalculating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          Recalculate All Standings
+        </button>
       </div>
 
       {/* League init form */}
