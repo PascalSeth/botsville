@@ -8,33 +8,34 @@ type Tx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction
 
 // ── Helpers ────────────────────────────────────────────────
 
-/**
- * Calculate MLBB points based on match result
- * Dynamic support for BO1, BO3, BO5, etc:
- * - Sweep win (opponent won 0 games): 3 points
- * - Close win (opponent won > 0 games): 2 points
- * - Close loss (team won > 0 games): 1 point
- * - Clean loss (team won 0 games): 0 points
- * - Forfeit win: 3 points
- * - Forfeit loss: 0 points
- */
-function calculateMLBBPoints(
+function calculateMatchPoints(
   teamScore: number,
   opponentScore: number,
   won: boolean,
-  forfeit: boolean = false
+  forfeit: boolean = false,
+  pointSystem: string | null = "STANDARD",
+  isDraw: boolean = false
 ): number {
   if (forfeit) {
     return won ? 3 : 0;
   }
 
-  if (!won) {
-    // Team lost: If they won at least 1 game, they get 1 point
-    return teamScore > 0 ? 1 : 0;
+  if (isDraw) {
+    return 1;
   }
 
-  // Team won: If opponent won 0 games (sweep), they get 3 points. Otherwise 2.
-  return opponentScore === 0 ? 3 : 2;
+  if (pointSystem === "MLBB_WEIGHTED") {
+    if (!won) {
+      // Team lost: If they won at least 1 game, they get 1 point
+      return teamScore > 0 ? 1 : 0;
+    }
+    // Team won: If opponent won 0 games (sweep), they get 3 points. Otherwise 2.
+    return opponentScore === 0 ? 3 : 2;
+  }
+
+  // Standard 3/1/0
+  if (won) return 3;
+  return 0; // Losses / Draws handled at higher level if needed, but standard is 3 for win
 }
 
 function updateStreak(current: string | null, won: boolean): string {
@@ -265,6 +266,8 @@ async function upsertMonthly(
     forfeit,
     teamScore,
     opponentScore,
+    pointSystem,
+    isDraw = false,
   }: {
     teamId: string;
     seasonId: string;
@@ -274,14 +277,16 @@ async function upsertMonthly(
     forfeit: boolean;
     teamScore: number;
     opponentScore: number;
+    pointSystem: string | null;
+    isDraw?: boolean;
   }
 ) {
   const existing = await tx.monthlyStanding.findUnique({
     where: { seasonId_teamId_year_month: { seasonId, teamId, year, month } },
   });
 
-  // Use MLBB points system
-  const pointsAwarded = calculateMLBBPoints(teamScore, opponentScore, won, forfeit);
+  // Use defined points system
+  const pointsAwarded = calculateMatchPoints(teamScore, opponentScore, won, forfeit, pointSystem, isDraw);
 
   const delta: Prisma.MonthlyStandingUpdateInput = {
     wins: { increment: won ? 1 : 0 },
@@ -318,6 +323,8 @@ async function upsertTeamStanding(
     forfeit,
     teamScore,
     opponentScore,
+    pointSystem,
+    isDraw = false,
   }: {
     teamId: string;
     seasonId: string;
@@ -325,6 +332,8 @@ async function upsertTeamStanding(
     forfeit: boolean;
     teamScore: number;
     opponentScore: number;
+    pointSystem: string | null;
+    isDraw?: boolean;
   },
   existingStandings: { teamId: string; streak: string | null }[]
 ) {
@@ -332,8 +341,8 @@ async function upsertTeamStanding(
     where: { teamId_seasonId: { teamId, seasonId } },
   });
 
-  // Use MLBB points system
-  const pointsAwarded = calculateMLBBPoints(teamScore, opponentScore, won, forfeit);
+  // Use defined points system
+  const pointsAwarded = calculateMatchPoints(teamScore, opponentScore, won, forfeit, pointSystem, isDraw);
 
   // Find the current max rank for new entries
   const maxRank = existingStandings.length > 0 ? existingStandings.length : 0;
@@ -533,6 +542,7 @@ export async function POST(
             forfeit: false,
             teamScore: winnerScore,
             opponentScore: loserScore,
+            pointSystem: match.tournament.pointSystem,
           },
           existingStandings
         );
@@ -548,6 +558,8 @@ export async function POST(
               forfeit: isForfeit,
               teamScore: loserScore,
               opponentScore: winnerScore,
+              pointSystem: match.tournament.pointSystem,
+              isDraw: manualIsDraw,
             },
             existingStandings
           );
@@ -560,10 +572,12 @@ export async function POST(
             seasonId,
             year,
             month,
-            won: true,
+            won: !manualIsDraw,
             forfeit: false,
             teamScore: winnerScore,
             opponentScore: loserScore,
+            pointSystem: match.tournament.pointSystem,
+            isDraw: manualIsDraw,
           });
           if (loserId) {
             await upsertMonthly(tx as Tx, {
@@ -575,10 +589,14 @@ export async function POST(
               forfeit: isForfeit,
               teamScore: loserScore,
               opponentScore: winnerScore,
+              pointSystem: match.tournament.pointSystem,
+              isDraw: manualIsDraw,
             });
 
             // ─── HeadToHead ─────────────────────────────────────
-            await upsertH2H(tx as Tx, seasonId, winnerId, loserId);
+            if (!manualIsDraw) {
+              await upsertH2H(tx as Tx, seasonId, winnerId, loserId);
+            }
           }
 
           // ─── Recalculate ranks ───────────────────────────────
@@ -830,7 +848,7 @@ export async function PUT(
       where: { id: matchId },
       include: {
         tournament: {
-          select: { seasonId: true, phase: true },
+          select: { seasonId: true, phase: true, pointSystem: true },
         },
         winner: { select: { id: true } },
       },
@@ -854,8 +872,8 @@ export async function PUT(
     // Get old scores to calculate how many points to revert
     const oldWinnerScore = oldWinnerId === match.teamAId ? (match.scoreA || 0) : (match.scoreB || 0);
     const oldLoserScore = oldWinnerId === match.teamAId ? (match.scoreB || 0) : (match.scoreA || 0);
-    const oldWinnerPoints = calculateMLBBPoints(oldWinnerScore, oldLoserScore, true, false);
-    const oldLoserPoints = calculateMLBBPoints(oldLoserScore, oldWinnerScore, false, oldWasForfeited);
+    const oldWinnerPoints = calculateMatchPoints(oldWinnerScore, oldLoserScore, true, false, match.tournament.pointSystem);
+    const oldLoserPoints = calculateMatchPoints(oldLoserScore, oldWinnerScore, false, oldWasForfeited, match.tournament.pointSystem);
 
     const newLoserId = winnerId === match.teamAId ? match.teamBId : match.teamAId;
     const newIsForfeit = forfeit === true;
@@ -864,8 +882,8 @@ export async function PUT(
     // Determine new scores for winner and loser
     const newWinnerScore = winnerId === match.teamAId ? Number(scoreA) : Number(scoreB);
     const newLoserScore = winnerId === match.teamAId ? Number(scoreB) : Number(scoreA);
-    const newWinnerPoints = calculateMLBBPoints(newWinnerScore, newLoserScore, true, false);
-    const newLoserPoints = calculateMLBBPoints(newLoserScore, newWinnerScore, false, newIsForfeit);
+    const newWinnerPoints = calculateMatchPoints(newWinnerScore, newLoserScore, true, false, match.tournament.pointSystem);
+    const newLoserPoints = calculateMatchPoints(newLoserScore, newWinnerScore, false, newIsForfeit, match.tournament.pointSystem);
 
     const { seasonId } = match.tournament;
     const matchDate = new Date(match.scheduledTime);

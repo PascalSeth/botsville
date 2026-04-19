@@ -23,7 +23,7 @@ export async function GET(
     const standingWhere: Record<string, unknown> = { seasonId };
     const monthlyWhere: Record<string, unknown> = { seasonId, ...(monthFilter ? { month: monthFilter } : {}), ...(yearFilter ? { year: yearFilter } : {}) };
 
-    const [cumulative, monthly] = await Promise.all([
+    const [cumulative, monthly, groupStandings] = await Promise.all([
       prisma.teamStanding.findMany({
         where: standingWhere,
         orderBy: [{ points: "desc" }, { wins: "desc" }, { rank: "asc" }],
@@ -55,7 +55,37 @@ export async function GET(
           },
         },
       }),
+      prisma.groupStageStanding.findMany({
+        where: { tournament: { seasonId } },
+        select: {
+          teamId: true,
+          groupPoints: true,
+          tournament: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      }),
     ]);
+
+    // Map group standings to teamId
+    const breakdownByTeam: Record<string, Array<{ tournamentId: string; tournamentName: string; points: number }>> = {};
+    for (const gs of groupStandings) {
+      breakdownByTeam[gs.teamId] ??= [];
+      breakdownByTeam[gs.teamId].push({
+        tournamentId: gs.tournament.id,
+        tournamentName: gs.tournament.name,
+        points: gs.groupPoints,
+      });
+    }
+
+    // Attach breakdown to cumulative standings
+    const cumulativeWithBreakdown = cumulative.map(s => ({
+      ...s,
+      tournamentBreakdown: breakdownByTeam[s.teamId] || [],
+    }));
 
     // Group monthly standings by year+month
     const monthlyGrouped: Record<string, typeof monthly> = {};
@@ -67,7 +97,7 @@ export async function GET(
 
     return apiSuccess({
       season: { id: season.id, name: season.name, status: season.status },
-      cumulative,
+      cumulative: cumulativeWithBreakdown,
       monthly: monthlyGrouped,
     });
   } catch (err) {

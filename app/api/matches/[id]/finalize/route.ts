@@ -423,14 +423,18 @@ async function updateStandings(matchId: string) {
     const teamBId = match.teamBId;
     const winnerId = match.winnerId;
 
-    // Calculate Points based on system
+    // Calculate Points based on stats
     const scoreA = match.scoreA || 0;
     const scoreB = match.scoreB || 0;
+    const isDraw = !winnerId;
     
     let pointsToAddA = 0;
     let pointsToAddB = 0;
 
-    if (pointSystem === 'MLBB_WEIGHTED') {
+    if (isDraw) {
+      pointsToAddA = 1;
+      pointsToAddB = 1;
+    } else if (pointSystem === 'MLBB_WEIGHTED') {
       // Dynamic Points System
       if (winnerId === teamAId) {
         pointsToAddA = scoreB === 0 ? 3 : 2;
@@ -438,14 +442,11 @@ async function updateStandings(matchId: string) {
       } else if (winnerId === teamBId) {
         pointsToAddB = scoreA === 0 ? 3 : 2;
         pointsToAddA = scoreA > 0 ? 1 : 0;
-      } else {
-        pointsToAddA = 1;
-        pointsToAddB = 1;
       }
     } else {
       // Standard 3/1/0
-      pointsToAddA = winnerId === teamAId ? 3 : (!winnerId ? 1 : 0);
-      pointsToAddB = winnerId === teamBId ? 3 : (!winnerId ? 1 : 0);
+      pointsToAddA = winnerId === teamAId ? 3 : 0;
+      pointsToAddB = winnerId === teamBId ? 3 : 0;
     }
 
     // New stats calculation
@@ -577,9 +578,57 @@ async function updateStandings(matchId: string) {
       });
     }
 
+    // ── 3. Update Monthly Standings ──
+    if (seasonId) {
+      const matchDate = match.scheduledTime ? new Date(match.scheduledTime) : new Date();
+      const year = matchDate.getFullYear();
+      const month = matchDate.getMonth() + 1;
+
+      // Upsert monthly for Team A
+      await prisma.monthlyStanding.upsert({
+        where: { seasonId_teamId_year_month: { seasonId, teamId: teamAId, year, month } },
+        update: {
+          wins: { increment: winnerId === teamAId ? 1 : 0 },
+          losses: { increment: winnerId === teamBId ? 1 : 0 },
+          points: { increment: pointsToAddA },
+        },
+        create: {
+          seasonId,
+          teamId: teamAId,
+          year,
+          month,
+          wins: winnerId === teamAId ? 1 : 0,
+          losses: winnerId === teamBId ? 1 : 0,
+          points: pointsToAddA,
+          rank: 0,
+        }
+      });
+
+      // Upsert monthly for Team B
+      if (teamBId) {
+        await prisma.monthlyStanding.upsert({
+          where: { seasonId_teamId_year_month: { seasonId, teamId: teamBId, year, month } },
+          update: {
+            wins: { increment: winnerId === teamBId ? 1 : 0 },
+            losses: { increment: winnerId === teamAId ? 1 : 0 },
+            points: { increment: pointsToAddB },
+          },
+          create: {
+            seasonId,
+            teamId: teamBId,
+            year,
+            month,
+            wins: winnerId === teamBId ? 1 : 0,
+            losses: winnerId === teamAId ? 1 : 0,
+            points: pointsToAddB,
+            rank: 0,
+          }
+        });
+      }
+    }
+
     // Finally, refresh ranks
     await updateSeasonPlayerRankings(seasonId);
-
   } catch (error) {
     console.error("Error updating standings in finalize:", error);
   }

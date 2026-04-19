@@ -115,8 +115,39 @@ export async function GET(request: NextRequest) {
 
     const paginated = dedupedMerged.slice(skip, skip + limit);
 
+    // Fetch tournament breakdown for these specific teams
+    const teamIds = paginated.map(p => p.team.id);
+    const groupStandings = await prisma.groupStageStanding.findMany({
+      where: { teamId: { in: teamIds } },
+      select: {
+        teamId: true,
+        groupPoints: true,
+        tournament: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    const breakdownByTeam: Record<string, Array<{ tournamentId: string; tournamentName: string; points: number }>> = {};
+    for (const gs of groupStandings) {
+      breakdownByTeam[gs.teamId] ??= [];
+      breakdownByTeam[gs.teamId].push({
+        tournamentId: gs.tournament.id,
+        tournamentName: gs.tournament.name,
+        points: gs.groupPoints,
+      });
+    }
+
+    const paginatedWithBreakdown = paginated.map(p => ({
+      ...p,
+      tournamentBreakdown: breakdownByTeam[p.team.id] || [],
+    }));
+
     const response = {
-      standings: paginated,
+      standings: paginatedWithBreakdown,
       season,
       pagination: {
         total: dedupedMerged.length,

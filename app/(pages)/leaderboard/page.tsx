@@ -25,6 +25,7 @@ const ROLE_META: Record<string, { color: string; icon: React.ReactNode }> = {
 interface ApiTeamStanding {
   id: string; rank: number; wins: number; losses: number; points: number; tier: string;
   team: { id: string; name: string; tag: string; logo: string | null; banner: string | null; color: string | null; region: string; totalPrizeMoney: number; trophies: string[] };
+  tournamentBreakdown: Array<{ tournamentId: string; tournamentName: string; points: number }>;
 }
 interface ApiPlayerRanking {
   id: string; rank: number; mvpCount: number; kda: number; winRate: number; hero?: string | null;
@@ -35,6 +36,7 @@ interface ApiHeroMeta { id: string; heroName: string; role: string; pickRate: nu
 interface SeasonStanding {
   id: string; rank: number; previousRank: number | null; wins: number; losses: number; forfeits: number; points: number; streak: string | null; tier: string;
   team: { id: string; name: string; tag: string; logo: string | null; color: string | null };
+  tournamentBreakdown: Array<{ tournamentId: string; tournamentName: string; points: number }>;
 }
 interface MonthlyRow {
   id: string; rank: number | null; wins: number; losses: number; forfeits: number; points: number;
@@ -114,6 +116,7 @@ export default function LeaderboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [selectedRole, setSelectedRole] = useState<string>('ALL');
+  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -318,32 +321,50 @@ export default function LeaderboardPage() {
                         {seasonStandings.map((s) => {
                           const c = s.team.color || '#e8a000';
                           return (
-                            <div key={s.id} className="grid grid-cols-[36px_1fr_50px_50px_50px_70px_70px_60px_50px] gap-2 items-center px-3 py-3 mb-1 bg-[#0f0f18] border border-white/[0.05] hover:border-white/[0.12] transition-colors"
-                              style={{ borderLeft: s.rank <= 4 ? `2px solid ${c}` : '2px solid transparent' }}>
-                              <span className="text-white font-black text-sm font-mono">
-                                {s.rank <= 3 ? ['🥇','🥈','🥉'][s.rank-1] : s.rank === 4 ? '4' : s.rank}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                {s.team.logo ? (
-                                  <img src={s.team.logo} alt={s.team.tag} className="w-6 h-6 rounded-full object-cover" />
-                                ) : (
-                                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black" style={{ background: c + '33', color: c }}>
-                                    {s.team.tag.slice(0, 2)}
+                            <React.Fragment key={s.id}>
+                              <div className="grid grid-cols-[36px_1fr_50px_50px_50px_70px_70px_60px_50px] gap-2 items-center px-3 py-3 mb-px bg-[#0f0f18] border border-white/[0.05] hover:border-white/[0.12] transition-colors cursor-pointer"
+                                onClick={() => setExpandedTeamId(expandedTeamId === s.id ? null : s.id)}
+                                style={{ borderLeft: s.rank <= 4 ? `2px solid ${c}` : '2px solid transparent' }}>
+                                <span className="text-white font-black text-sm font-mono">
+                                  {s.rank <= 3 ? ['🥇','🥈','🥉'][s.rank-1] : s.rank === 4 ? '4' : s.rank}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  {s.team.logo ? (
+                                    <img src={s.team.logo} alt={s.team.tag} className="w-6 h-6 rounded-full object-cover" />
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black" style={{ background: c + '33', color: c }}>
+                                      {s.team.tag.slice(0, 2)}
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-white font-black text-[12px] uppercase tracking-wide leading-none truncate">{s.team.name}</p>
+                                    <p className="text-[#444] text-[9px]">[{s.team.tag}]</p>
                                   </div>
-                                )}
-                                <div>
-                                  <p className="text-white font-black text-[12px] uppercase tracking-wide leading-none">{s.team.name}</p>
-                                  <p className="text-[#444] text-[9px]">[{s.team.tag}]</p>
                                 </div>
+                                <p className="text-[#27ae60] font-black text-sm">{s.wins}</p>
+                                <p className="text-[#e84040] font-black text-sm">{s.losses}</p>
+                                <p className="text-[#666] text-sm">{s.forfeits}</p>
+                                <p className={`font-black font-mono text-sm ${s.points < 0 ? 'text-[#e84040]' : 'text-[#e8a000]'}`}>{s.points}</p>
+                                <StreakBadge streak={s.streak} />
+                                <TierBadge tier={s.tier} />
+                                <RankDelta curr={s.rank} prev={s.previousRank} />
                               </div>
-                              <p className="text-[#27ae60] font-black text-sm">{s.wins}</p>
-                              <p className="text-[#e84040] font-black text-sm">{s.losses}</p>
-                              <p className="text-[#666] text-sm">{s.forfeits}</p>
-                              <p className={`font-black font-mono text-sm ${s.points < 0 ? 'text-[#e84040]' : 'text-[#e8a000]'}`}>{s.points}</p>
-                              <StreakBadge streak={s.streak} />
-                              <TierBadge tier={s.tier} />
-                              <RankDelta curr={s.rank} prev={s.previousRank} />
-                            </div>
+                              {expandedTeamId === s.id && s.tournamentBreakdown && s.tournamentBreakdown.length > 0 && (
+                                <div className="bg-black/40 border-x border-b border-white/[0.05] px-12 py-2 mb-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                                  <p className="text-[8px] font-black text-[#444] uppercase tracking-[0.2em] mb-1.5 flex items-center gap-2">
+                                    <span className="w-4 h-px bg-[#222]" /> Tournament Breakdown
+                                  </p>
+                                  <div className="flex flex-col gap-1">
+                                    {s.tournamentBreakdown.map(tb => (
+                                      <div key={tb.tournamentId} className="flex items-center justify-between py-1 border-b border-white/[0.02] last:border-0">
+                                        <span className="text-[10px] text-[#777] uppercase font-bold">{tb.tournamentName}</span>
+                                        <span className="text-[10px] font-mono font-black text-[#e8a000]">{tb.points} PTS</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </React.Fragment>
                           );
                         })}
                         <p className="text-[#2a2a2a] text-[9px] mt-4 text-center uppercase tracking-widest">
@@ -536,7 +557,9 @@ export default function LeaderboardPage() {
                   const teamColor = s.team.color || '#e8a000';
                   const prize = s.team.totalPrizeMoney > 0 ? `₵${(s.team.totalPrizeMoney / 100).toLocaleString()}` : '—';
                   return (
-                    <div key={s.id} className="grid grid-cols-[32px_1fr_60px_60px_80px_60px_80px_80px] gap-3 items-center px-3 py-3 bg-[#0f0f18] border border-white/[0.05] hover:border-white/[0.12] transition-colors group cursor-pointer"
+                  <React.Fragment key={s.id}>
+                    <div onClick={() => setExpandedTeamId(expandedTeamId === s.id ? null : s.id)}
+                      className="grid grid-cols-[32px_1fr_60px_60px_80px_60px_80px_80px] gap-3 items-center px-3 py-3 bg-[#0f0f18] border border-white/[0.05] hover:border-white/[0.12] transition-colors group cursor-pointer"
                       style={{ borderLeft: s.rank <= 3 ? `2px solid ${teamColor}` : '2px solid transparent' }}>
                       <div className="flex flex-col items-center">
                         <span className="text-white font-black text-sm font-mono">{s.rank <= 3 ? ['🥇','🥈','🥉'][s.rank-1] : s.rank}</span>
@@ -553,6 +576,22 @@ export default function LeaderboardPage() {
                       <p className="text-[#666] text-[11px] font-mono">{prize}</p>
                       <TierBadge tier={s.tier} />
                     </div>
+                    {expandedTeamId === s.id && s.tournamentBreakdown && s.tournamentBreakdown.length > 0 && (
+                      <div className="bg-black/40 border-x border-b border-white/[0.05] px-12 py-3 mb-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                        <p className="text-[8px] font-black text-[#444] uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
+                          <span className="w-6 h-px bg-[#222]" /> Career Point Allocation
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1">
+                          {s.tournamentBreakdown.map(tb => (
+                            <div key={tb.tournamentId} className="flex items-center justify-between py-1.5 border-b border-white/[0.02] last:border-0 hover:bg-white/[0.01] transition-colors">
+                              <span className="text-[10px] text-[#777] uppercase font-bold">{tb.tournamentName}</span>
+                              <span className="text-[10px] font-mono font-black text-[#e8a000]">{tb.points} PTS</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </React.Fragment>
                   );
                 })}
               </div>
