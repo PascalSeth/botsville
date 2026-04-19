@@ -431,13 +431,13 @@ async function updateStandings(matchId: string) {
     let pointsToAddB = 0;
 
     if (pointSystem === 'MLBB_WEIGHTED') {
-      // 3/2/1/0 system
+      // Dynamic Points System
       if (winnerId === teamAId) {
-        pointsToAddA = (scoreA === 2 && scoreB === 0) ? 3 : 2;
-        pointsToAddB = (scoreA === 2 && scoreB === 1) ? 1 : 0;
+        pointsToAddA = scoreB === 0 ? 3 : 2;
+        pointsToAddB = scoreB > 0 ? 1 : 0;
       } else if (winnerId === teamBId) {
-        pointsToAddB = (scoreB === 2 && scoreA === 0) ? 3 : 2;
-        pointsToAddA = (scoreB === 2 && scoreA === 1) ? 1 : 0;
+        pointsToAddB = scoreA === 0 ? 3 : 2;
+        pointsToAddA = scoreA > 0 ? 1 : 0;
       }
     } else {
       // Standard 3/1/0
@@ -463,11 +463,11 @@ async function updateStandings(matchId: string) {
     if (match.bracketType === 'GROUP_STAGE') {
       // Find which group these teams are in
       const groupA = await prisma.tournamentGroup.findFirst({
-        where: { tournamentId, teams: { some: { id: teamAId } } }
+        where: { tournamentId, teams: { some: { teamId: teamAId } } }
       });
       const groupB = teamBId 
         ? await prisma.tournamentGroup.findFirst({
-            where: { tournamentId, teams: { some: { id: teamBId } } }
+            where: { tournamentId, teams: { some: { teamId: teamBId } } }
           })
         : null;
 

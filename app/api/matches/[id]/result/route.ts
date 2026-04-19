@@ -10,10 +10,11 @@ type Tx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction
 
 /**
  * Calculate MLBB points based on match result
- * - 2-0 win: 3 points (dominant)
- * - 2-1 win: 2 points (close win)
- * - 1-2 loss: 1 point (close loss)
- * - 0-2 loss: 0 points (clear loss)
+ * Dynamic support for BO1, BO3, BO5, etc:
+ * - Sweep win (opponent won 0 games): 3 points
+ * - Close win (opponent won > 0 games): 2 points
+ * - Close loss (team won > 0 games): 1 point
+ * - Clean loss (team won 0 games): 0 points
  * - Forfeit win: 3 points
  * - Forfeit loss: 0 points
  */
@@ -28,17 +29,12 @@ function calculateMLBBPoints(
   }
 
   if (!won) {
-    // Team lost
-    if (teamScore === 1 && opponentScore === 2) return 1; // 1-2 loss
-    return 0; // 0-2 loss
+    // Team lost: If they won at least 1 game, they get 1 point
+    return teamScore > 0 ? 1 : 0;
   }
 
-  // Team won
-  if (teamScore === 2 && opponentScore === 0) return 3; // 2-0 win
-  if (teamScore === 2 && opponentScore === 1) return 2; // 2-1 win
-
-  // Default to 2 for any close win (safety)
-  return 2;
+  // Team won: If opponent won 0 games (sweep), they get 3 points. Otherwise 2.
+  return opponentScore === 0 ? 3 : 2;
 }
 
 function updateStreak(current: string | null, won: boolean): string {
@@ -135,6 +131,125 @@ async function recalculateMonthlyRanks(seasonId: string, year: number, month: nu
   await Promise.all(
     sorted.map((s, idx) => tx.monthlyStanding.update({ where: { id: s.id }, data: { rank: idx + 1 } }))
   );
+}
+
+/**
+ * Upsert GroupStageStanding for a group-stage match.
+ * Called from the result route so standings update immediately on submission.
+ */
+async function upsertGroupStageStanding(
+  tx: Tx,
+  {
+    tournamentId,
+    teamAId,
+    teamBId,
+    winnerId,
+    scoreA,
+    scoreB,
+    pointSystem,
+    gameResults,
+  }: {
+    tournamentId: string;
+    teamAId: string;
+    teamBId: string | null;
+    winnerId: string;
+    scoreA: number;
+    scoreB: number;
+    pointSystem: string | null;
+    gameResults: { winnerTeamId: string; durationSeconds: number | null }[];
+  }
+) {
+  if (!teamBId) return; // need two teams
+
+  // Find the group both teams share
+  const groupA = await tx.tournamentGroup.findFirst({
+    where: { tournamentId, teams: { some: { teamId: teamAId } } },
+  });
+  const groupB = await tx.tournamentGroup.findFirst({
+    where: { tournamentId, teams: { some: { teamId: teamBId } } },
+  });
+
+  if (!groupA || !groupB || groupA.id !== groupB.id) return; // not same group — skip
+
+  const groupName = groupA.name;
+
+  // Calculate points using the tournament's point system
+  let pointsA = 0;
+  let pointsB = 0;
+  if (pointSystem === "MLBB_WEIGHTED") {
+    if (winnerId === teamAId) {
+      pointsA = scoreB === 0 ? 3 : 2;
+      pointsB = scoreB > 0 ? 1 : 0;
+    } else {
+      pointsB = scoreA === 0 ? 3 : 2;
+      pointsA = scoreA > 0 ? 1 : 0;
+    }
+  } else {
+    // Standard 3/1/0
+    pointsA = winnerId === teamAId ? 3 : 0;
+    pointsB = winnerId === teamBId ? 3 : 0;
+  }
+
+  // Game-level stats (tie-breakers)
+  const gamesWonByA = scoreA;
+  const gamesWonByB = scoreB;
+
+  const minWinTimeA = gameResults
+    .filter((gr) => gr.winnerTeamId === teamAId && gr.durationSeconds !== null)
+    .reduce((min, gr) => Math.min(min, gr.durationSeconds!), Infinity);
+  const minWinTimeB = gameResults
+    .filter((gr) => gr.winnerTeamId === teamBId && gr.durationSeconds !== null)
+    .reduce((min, gr) => Math.min(min, gr.durationSeconds!), Infinity);
+
+  // Upsert Team A
+  await tx.groupStageStanding.upsert({
+    where: { tournamentId_groupName_teamId: { tournamentId, groupName, teamId: teamAId } },
+    update: {
+      wins: { increment: winnerId === teamAId ? 1 : 0 },
+      losses: { increment: winnerId === teamBId ? 1 : 0 },
+      groupPoints: { increment: pointsA },
+      gameWins: { increment: gamesWonByA },
+      gameLosses: { increment: gamesWonByB },
+      ...(minWinTimeA !== Infinity ? { fastestWinSeconds: minWinTimeA } : {}),
+    },
+    create: {
+      tournamentId,
+      groupName,
+      teamId: teamAId,
+      wins: winnerId === teamAId ? 1 : 0,
+      losses: winnerId === teamBId ? 1 : 0,
+      draws: 0,
+      groupPoints: pointsA,
+      gameWins: gamesWonByA,
+      gameLosses: gamesWonByB,
+      fastestWinSeconds: minWinTimeA !== Infinity ? minWinTimeA : null,
+    },
+  });
+
+  // Upsert Team B
+  await tx.groupStageStanding.upsert({
+    where: { tournamentId_groupName_teamId: { tournamentId, groupName, teamId: teamBId } },
+    update: {
+      wins: { increment: winnerId === teamBId ? 1 : 0 },
+      losses: { increment: winnerId === teamAId ? 1 : 0 },
+      groupPoints: { increment: pointsB },
+      gameWins: { increment: gamesWonByB },
+      gameLosses: { increment: gamesWonByA },
+      ...(minWinTimeB !== Infinity ? { fastestWinSeconds: minWinTimeB } : {}),
+    },
+    create: {
+      tournamentId,
+      groupName,
+      teamId: teamBId,
+      wins: winnerId === teamBId ? 1 : 0,
+      losses: winnerId === teamAId ? 1 : 0,
+      draws: 0,
+      groupPoints: pointsB,
+      gameWins: gamesWonByB,
+      gameLosses: gamesWonByA,
+      fastestWinSeconds: minWinTimeB !== Infinity ? minWinTimeB : null,
+    },
+  });
 }
 
 async function upsertMonthly(
@@ -322,8 +437,9 @@ export async function POST(
       where: { id: matchId },
       include: {
         tournament: {
-          select: { seasonId: true, phase: true },
+          select: { seasonId: true, phase: true, pointSystem: true },
         },
+        gameResults: { select: { winnerTeamId: true, durationSeconds: true } },
       },
     });
 
@@ -469,6 +585,23 @@ export async function POST(
           
           // Selection V2: Update Contention Flags
           await updateSelectionContention(match.tournamentId, tx as Tx);
+        }
+
+        // ─── Group Stage Standings ───────────────────────────
+        // Only for matches tagged as GROUP_STAGE bracket type.
+        // This runs regardless of applyPoints so non-season tournaments
+        // still get their group table updated.
+        if (match.bracketType === "GROUP_STAGE" && match.teamBId) {
+          await upsertGroupStageStanding(tx as Tx, {
+            tournamentId: match.tournamentId,
+            teamAId: match.teamAId,
+            teamBId: match.teamBId,
+            winnerId,
+            scoreA: Number(scoreA),
+            scoreB: Number(scoreB),
+            pointSystem: match.tournament.pointSystem ?? null,
+            gameResults: match.gameResults,
+          });
         }
       }
 

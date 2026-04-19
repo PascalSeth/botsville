@@ -109,7 +109,7 @@ export async function PUT(
     const user = await requireActiveUser();
     const { id } = await context.params;
     const body = await request.json();
-    const { status, scoreA, scoreB, elapsed, winnerId, scheduledTime } = body;
+    const { status, scoreA, scoreB, elapsed, winnerId, scheduledTime, bestOf } = body;
 
     const match = await prisma.match.findUnique({
       where: { id },

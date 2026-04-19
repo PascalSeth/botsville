@@ -16,7 +16,7 @@ export async function GET(
 
     if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
 
-    // 2. Fetch all group stage standings
+    // 2. Fetch all group stage standings first
     const groupStandings = await prisma.groupStageStanding.findMany({
       where: { tournamentId: id },
       include: {
@@ -88,13 +88,22 @@ export async function GET(
 
       standingsByGroup[groupName] = groupTeams.map((s, idx) => ({
         ...s,
+        points: s.groupPoints,
+        forfeits: 0,
+        streak: null,
+        tier: "Group",
+        previousRank: null,
         rank: idx + 1
       }));
     }
 
+    // Flatten for the legacy 'standings' UI
+    const flatStandings = Object.values(standingsByGroup).flat();
+
     return NextResponse.json({ 
       tournamentId: id,
-      groups: standingsByGroup 
+      groups: standingsByGroup,
+      standings: flatStandings
     });
 
 

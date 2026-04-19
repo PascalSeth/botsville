@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { dashboardFetch } from "../lib/api";
-import { Loader2, CheckCircle, RefreshCw, BarChart3, Trash2, Zap, Clock, Edit2 } from "lucide-react";
+import { Loader2, CheckCircle, RefreshCw, BarChart3, Trash2, Zap, Clock, Edit2, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { BracketVisualization } from "@/app/components/sections/BracketVisualization";
 
@@ -51,6 +51,8 @@ export default function DashboardMatchesPage() {
   const [editingMetadataId, setEditingMetadataId] = useState<string | null>(null);
   const [editScheduledTime, setEditScheduledTime] = useState("");
   const [updatingMetadata, setUpdatingMetadata] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalcSuccess, setRecalcSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -275,6 +277,21 @@ export default function DashboardMatchesPage() {
     await loadMatches();
   };
 
+  const recalculateGroupStandings = async () => {
+    if (!selectedTournamentId) return;
+    if (!confirm("Rebuild group standings from all completed group-stage matches? This will wipe the current table and rebuild it from scratch.")) return;
+    setRecalculating(true);
+    setRecalcSuccess(null);
+    setError(null);
+    const { data, error: err } = await dashboardFetch<{ message: string }>(
+      `/api/tournaments/${selectedTournamentId}/recalculate-group-standings`,
+      { method: "POST" }
+    );
+    setRecalculating(false);
+    if (err) { setError(err); return; }
+    setRecalcSuccess(data?.message ?? "Group standings rebuilt successfully.");
+  };
+
   const handleDeleteMatch = async (match: Match) => {
     if (!confirm(`Delete match ${match.id}? This cannot be undone.`)) return;
     setDeletingId(match.id);
@@ -373,16 +390,37 @@ export default function DashboardMatchesPage() {
       {/* Matches table */}
       {viewMode === 'table' && (
       <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between gap-3 flex-wrap">
           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e8a000]">
             Tournament Matches
           </span>
-          {selectedTournamentId && (
-            <span className="text-[10px] font-black text-[#555] tabular-nums">
-              {matches.length} matches
-            </span>
-          )}
+          <div className="flex items-center gap-3 ml-auto">
+            {selectedTournamentId && (
+              <span className="text-[10px] font-black text-[#555] tabular-nums">
+                {matches.length} matches
+              </span>
+            )}
+            {selectedTournamentId && (
+              <button
+                type="button"
+                onClick={recalculateGroupStandings}
+                disabled={recalculating}
+                title="Rebuild group standings from all completed group-stage matches (no need to re-enter results)"
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-blue-500/40 text-blue-400 text-[10px] font-black uppercase tracking-wider hover:bg-blue-500/10 hover:border-blue-400 disabled:opacity-50 transition-colors rounded"
+              >
+                {recalculating
+                  ? <Loader2 size={10} className="animate-spin" />
+                  : <RotateCcw size={10} />}
+                Recalc Group Standings
+              </button>
+            )}
+          </div>
         </div>
+        {recalcSuccess && (
+          <div className="mx-4 mt-3 border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm text-blue-300 flex items-center gap-2 rounded">
+            <CheckCircle size={14} /> {recalcSuccess}
+          </div>
+        )}
         {loadingTournaments || loadingMatches ? (
           <div className="p-8 text-center text-[#666] flex items-center justify-center gap-2">
             <Loader2 size={14} className="animate-spin" /> Loading...
