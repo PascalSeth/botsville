@@ -142,29 +142,27 @@ export async function POST(
       const roleTaken = invite.team.players.find((p) => p.role === acceptRole && !p.isSubstitute);
       const isSubstitute = Boolean(roleTaken);
 
-      // If a placeholder player with same IGN already exists on the team (created by captain),
-      // attach the user to that player instead of creating a new row (allows same IGN on different teams).
+      // Check if this IGN exists as a placeholder ANYWHERE (global search)
+      // This ensures match history is preserved even if the placeholder was on a different team.
       const placeholder = await prisma.player.findFirst({
         where: {
-          teamId: invite.teamId,
-          ign: targetIgn,
+          ign: { equals: targetIgn, mode: "insensitive" },
+          userId: null,
           deletedAt: null,
         },
       });
 
       if (placeholder) {
-        if (placeholder.userId) {
-          // Shouldn't normally happen, but guard against it
-          throw new Error('IGN already associated with a user on this team');
-        }
-
+        // Claim the placeholder and move it to the current team
         const player = await prisma.player.update({
           where: { id: placeholder.id },
           data: {
             userId: targetUserId,
+            teamId: invite.teamId, // Transfer to the target team
             role: acceptRole,
             secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
             isSubstitute,
+            ign: targetIgn, // Sync casing
             updatedAt: new Date(),
           },
         });
@@ -172,48 +170,17 @@ export async function POST(
         return { player, isSubstitute };
       }
 
-      // Check if IGN exists in the database
-      // If it's a placeholder (userId is null), delete it first to allow the new player
-      const existingIgn = await prisma.player.findUnique({
-        where: { ign: targetIgn },
-        include: { team: { select: { name: true } } }
+      // Final fallback check for active players (not placeholders)
+      const existingActivePlayer = await prisma.player.findFirst({
+        where: { 
+          ign: { equals: targetIgn, mode: "insensitive" }, 
+          userId: { not: null },
+          deletedAt: null
+        },
       });
-      if (existingIgn) {
-        if (existingIgn.userId !== null) {
-          // There's an active player with this IGN - block it
-          console.log('IGN already taken by active player:', { 
-            ign: targetIgn, 
-            existingPlayerId: existingIgn.id, 
-            existingUserId: existingIgn.userId, 
-            existingTeamId: existingIgn.teamId,
-            existingTeamName: existingIgn.team?.name
-          });
-          throw new Error('IGN is already taken by another player');
-        } else {
-          // It's just a placeholder - need to delete it first due to unique constraint on IGN
-          // Since placeholder is on a different team, we delete its stats and then the player
-          console.log('Deleting placeholder IGN on other team:', { 
-            ign: targetIgn, 
-            existingPlayerId: existingIgn.id, 
-            existingTeamId: existingIgn.teamId,
-            existingTeamName: existingIgn.team?.name
-          });
-          
-          // Delete all related records first to avoid foreign key constraint violations
-          // (these are from a different team so we don't transfer them)
-          await prisma.playerMvpRanking.deleteMany({
-            where: { playerId: existingIgn.id }
-          });
-          await prisma.bestRoleAward.deleteMany({
-            where: { playerId: existingIgn.id }
-          });
-          await prisma.roleVote.deleteMany({
-            where: { playerId: existingIgn.id }
-          });
-          
-          // Delete the placeholder player
-          await prisma.player.delete({ where: { id: existingIgn.id } });
-        }
+
+      if (existingActivePlayer) {
+        throw new Error('IGN is already taken by another active player');
       }
 
       const player = await prisma.player.create({
@@ -257,16 +224,42 @@ export async function POST(
         data: { status: InviteStatus.CANCELLED, respondedAt: new Date() },
       });
 
-      const player = await prisma.player.create({
-        data: {
-          teamId: invite.teamId,
-          userId: user.id,
-          ign: user.ign,
-          role: role as GameRole,
-          secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
-          isSubstitute,
+      // Check for placeholders first to preserve match history
+      const placeholder = await prisma.player.findFirst({
+        where: { 
+          ign: { equals: user.ign, mode: "insensitive" },
+          userId: null,
+          deletedAt: null 
         },
       });
+
+      let player;
+      if (placeholder) {
+        // Claim and transfer the placeholder
+        player = await prisma.player.update({
+          where: { id: placeholder.id },
+          data: {
+            userId: user.id,
+            teamId: invite.teamId,
+            role: role as GameRole,
+            secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
+            isSubstitute,
+            ign: user.ign,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        player = await prisma.player.create({
+          data: {
+            teamId: invite.teamId,
+            userId: user.id,
+            ign: user.ign,
+            role: role as GameRole,
+            secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
+            isSubstitute,
+          },
+        });
+      }
 
       try {
         await prisma.teamInvite.update({ where: { id }, data: { status: InviteStatus.ACCEPTED, respondedAt: new Date() } });

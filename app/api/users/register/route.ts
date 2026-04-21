@@ -151,13 +151,27 @@ export async function POST(request: NextRequest) {
       });
 
       if (teamToJoin) {
-        // If the captain already added this player's IGN as a placeholder slot,
-        // link the new account to that slot instead of creating a duplicate.
-        const linked = await transaction.player.updateMany({
-          where: { ign: createdUser.ign, userId: null, deletedAt: null, teamId: teamToJoin.id },
-          data: { userId: createdUser.id },
+        // Find if this IGN exists as a placeholder ANYWHERE (global search)
+        // This ensures match history is preserved even if the placeholder was on a different team.
+        const placeholder = await transaction.player.findFirst({
+          where: { 
+            ign: { equals: createdUser.ign, mode: "insensitive" }, 
+            userId: null, 
+            deletedAt: null 
+          },
         });
-        if (linked.count === 0) {
+
+        if (placeholder) {
+          // Claim the placeholder and move it to the new team
+          await transaction.player.update({
+            where: { id: placeholder.id },
+            data: { 
+              userId: createdUser.id,
+              teamId: teamToJoin.id, // Transfer to the new team
+              ign: createdUser.ign, // Sync casing with user's preferred IGN
+            },
+          });
+        } else {
           // No matching placeholder — create a fresh player record
           await transaction.player.create({
             data: {

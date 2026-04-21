@@ -2,6 +2,12 @@ import NextAuth, { CredentialsSignin } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/auth";
+import { Prisma } from "@/app/generated/prisma/client";
+
+// Define the type for user with relations included
+type UserWithAdmin = Prisma.UserGetPayload<{
+  include: { adminRole: true };
+}>;
 
 // Helper: throw a CredentialsSignin with a specific code so the
 // client can map it to a human-readable message.
@@ -31,19 +37,19 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           authError("missing_fields");
         }
 
-        // Find user by email or IGN
+        // Find user by email or IGN (case-insensitive)
         console.log("[AUTH] Looking up user by email or IGN:", credentials.emailOrIgn);
-        const user = await prisma.user.findFirst({
+        const user = (await prisma.user.findFirst({
           where: {
             OR: [
-              { email: credentials.emailOrIgn },
-              { ign: credentials.emailOrIgn },
+              { email: { equals: credentials.emailOrIgn as string, mode: "insensitive" } },
+              { ign: { equals: credentials.emailOrIgn as string, mode: "insensitive" } },
             ],
           },
           include: {
             adminRole: true,
           },
-        });
+        })) as UserWithAdmin | null;
 
         if (!user) {
           console.log("[AUTH] User not found");

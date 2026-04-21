@@ -41,6 +41,13 @@ export async function GET(request: NextRequest) {
           adminRole: {
             select: { role: true },
           },
+          player: {
+            select: {
+              team: {
+                select: { name: true },
+              },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         take: limit,
@@ -53,7 +60,9 @@ export async function GET(request: NextRequest) {
       users: users.map((u) => ({
         ...u,
         role: u.adminRole?.role ?? null,
+        teamName: u.player?.team?.name ?? null,
         adminRole: undefined,
+        player: undefined,
       })),
       pagination: { total, limit, skip },
     });
