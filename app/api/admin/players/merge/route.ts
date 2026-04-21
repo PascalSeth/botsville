@@ -140,6 +140,18 @@ export async function POST(request: NextRequest) {
           }
         });
 
+        // AUTO-CAPTAINCY: If the team has no captain, make this user the captain
+        const team = await tx.team.findUnique({
+          where: { id: updated.teamId },
+          select: { captainId: true }
+        });
+        if (!team?.captainId) {
+          await tx.team.update({
+            where: { id: updated.teamId },
+            data: { captainId: user.id }
+          });
+        }
+
         // Log the action
         await tx.adminAuditLog.create({
           data: {

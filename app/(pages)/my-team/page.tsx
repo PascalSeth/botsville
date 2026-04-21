@@ -533,15 +533,22 @@ export default function MyTeamPage() {
   const removePlayer = async (playerId: string) => {
     if (!team || !confirm('Are you sure you want to remove this player?')) return;
     setRemovingPlayerId(playerId);
+    setManageError(null);
+    setManageSuccess(null);
     try {
       const response = await fetch(`/api/teams/${team.id}/players/${playerId}`, {
         method: 'DELETE',
       });
+      const data = await response.json();
       if (response.ok) {
+        setManageSuccess('Player removed successfully');
         fetchMyTeam();
+      } else {
+        setManageError(data?.error || 'Failed to remove player');
       }
     } catch (err) {
       console.error('Error removing player:', err);
+      setManageError('A network error occurred. Please try again.');
     } finally {
       setRemovingPlayerId(null);
     }

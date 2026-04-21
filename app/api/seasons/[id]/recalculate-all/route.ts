@@ -134,45 +134,90 @@ export async function POST(
       }
     }
 
-    // Database Update
+    // 5. Database Update (Nuclear Recalculation)
+    console.time("db_update");
     await prisma.$transaction(async (tx) => {
-      // 1. Reset all Season Standings for this season (delete and recreate)
+      // Step 1: Clean slate for this season
       await tx.teamStanding.deleteMany({ where: { seasonId } });
-      for (const [teamId, stats] of Object.entries(teamSeasonStats)) {
-        await tx.teamStanding.create({
-          data: {
+      await tx.monthlyStanding.deleteMany({ where: { seasonId } });
+
+      // Step 2: Prepare & Sort Season Standings for Ranking
+      const seasonStandingsData = Object.entries(teamSeasonStats)
+        .map(([teamId, stats]) => ({
+          seasonId,
+          teamId,
+          wins: stats.wins,
+          losses: stats.losses,
+          points: stats.points,
+          forfeits: stats.forfeits,
+        }))
+        .sort((a, b) => {
+          if (b.points !== a.points) return b.points - a.points;
+          if (b.wins !== a.wins) return b.wins - a.wins;
+          return a.losses - b.losses; // fewer losses is better
+        })
+        .map((standing, index) => ({
+          ...standing,
+          rank: index + 1,
+        }));
+
+      if (seasonStandingsData.length > 0) {
+        await tx.teamStanding.createMany({
+          data: seasonStandingsData,
+        });
+
+        // Step 2.5: Synchronize Season Awards Podium (Top 3)
+        const champion = seasonStandingsData[0]?.teamId;
+        const runnerUp = seasonStandingsData[1]?.teamId;
+        const thirdPlace = seasonStandingsData[2]?.teamId;
+
+        await tx.seasonAwards.upsert({
+          where: { seasonId },
+          create: {
             seasonId,
-            teamId,
-            wins: stats.wins,
-            losses: stats.losses,
-            points: stats.points,
-            forfeits: stats.forfeits,
-            rank: 0,
+            championTeamId: champion || null,
+            runnerUpTeamId: runnerUp || null,
+            thirdPlaceTeamId: thirdPlace || null,
+          },
+          update: {
+            championTeamId: champion || null,
+            runnerUpTeamId: runnerUp || null,
+            thirdPlaceTeamId: thirdPlace || null,
+            updatedAt: new Date(),
           },
         });
       }
 
-      // 2. Reset all Monthly Standings for this season
-      await tx.monthlyStanding.deleteMany({ where: { seasonId } });
+      // Step 3: Prepare Bulk Data for Monthly Standings
+      const monthlyStandingsData: any[] = [];
       for (const [teamId, months] of Object.entries(teamMonthlyStats)) {
         for (const [monthKey, stats] of Object.entries(months)) {
           const [year, month] = monthKey.split("-").map(Number);
-          await tx.monthlyStanding.create({
-            data: {
-              seasonId,
-              teamId,
-              year,
-              month,
-              wins: stats.wins,
-              losses: stats.losses,
-              points: stats.points,
-              forfeits: stats.forfeits,
-              rank: 0,
-            },
+          if (isNaN(year) || isNaN(month)) continue;
+          
+          monthlyStandingsData.push({
+            seasonId,
+            teamId,
+            year,
+            month,
+            wins: stats.wins,
+            losses: stats.losses,
+            points: stats.points,
+            forfeits: stats.forfeits,
+            rank: 0, // monthly ranks are usually handled by the UI/view
           });
         }
       }
+
+      if (monthlyStandingsData.length > 0) {
+        await tx.monthlyStanding.createMany({
+          data: monthlyStandingsData,
+        });
+      }
+    }, {
+      timeout: 30000, // 30 second timeout for large seasons
     });
+    console.timeEnd("db_update");
 
     return apiSuccess({ message: "Season and Monthly standings fully recalculated.", matchesProcessed: matches.length });
   } catch (err) {

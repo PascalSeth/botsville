@@ -55,12 +55,21 @@ export async function GET(
       return NextResponse.json({ error: 'Season awards not found' }, { status: 404 });
     }
 
+    // Fetch live points for the podium teams to show on the cards
+    const podiumTeamIds = [awards.championTeamId, awards.runnerUpTeamId, awards.thirdPlaceTeamId].filter(Boolean) as string[];
+    const standings = await prisma.teamStanding.findMany({
+      where: { seasonId, teamId: { in: podiumTeamIds } },
+      select: { teamId: true, points: true },
+    });
+
+    const pointsMap = Object.fromEntries(standings.map(s => [s.teamId, s.points]));
+
     const formatted = {
       seasonId: awards.season.id,
       seasonName: awards.season.name,
-      championTeam: awards.championTeam,
-      runnerUpTeam: awards.runnerUpTeam,
-      thirdPlaceTeam: awards.thirdPlaceTeam,
+      championTeam: awards.championTeam ? { ...awards.championTeam, points: pointsMap[awards.championTeam.id] || 0 } : null,
+      runnerUpTeam: awards.runnerUpTeam ? { ...awards.runnerUpTeam, points: pointsMap[awards.runnerUpTeam.id] || 0 } : null,
+      thirdPlaceTeam: awards.thirdPlaceTeam ? { ...awards.thirdPlaceTeam, points: pointsMap[awards.thirdPlaceTeam.id] || 0 } : null,
       seasonMvp: awards.seasonMvp,
       bestOffender: awards.bestOffender,
       bestDefender: awards.bestDefender,
