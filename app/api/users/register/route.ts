@@ -81,47 +81,44 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check if email or IGN already exists
+    // Check if email or IGN already exists as an actual User
     const existingUser = await findUserByEmailOrIgn(email);
     if (existingUser) {
       return apiError("Email already registered");
     }
 
-    const existingIGN = await findUserByEmailOrIgn(ign);
-    if (existingIGN) {
+    const existingIGNUser = await findUserByEmailOrIgn(ign);
+    if (existingIGNUser) {
       return apiError("IGN already taken");
     }
 
-    // Check if IGN is already on a team's roster (as a placeholder or linked player)
-    // If no team code provided, block registration - they need the team code to claim this IGN
-    if (!normalizedTeamCode) {
-      const rosterEntry = await prisma.player.findFirst({
-        where: {
-          ign: { equals: ign, mode: "insensitive" },
-          deletedAt: null,
-        },
-        select: { id: true, team: { select: { name: true } } },
-      });
+    // Check Player roster for identity overlaps
+    const rosterEntry = await prisma.player.findFirst({
+      where: {
+        ign: { equals: ign, mode: "insensitive" },
+        deletedAt: null,
+      },
+      select: { 
+        id: true, 
+        userId: true,
+        teamId: true,
+        team: { select: { name: true } } 
+      },
+    });
 
-      if (rosterEntry) {
-        return apiError(
-          `This IGN is already on a team roster (${rosterEntry.team.name}). Use your team code to register.`
-        );
+    if (rosterEntry) {
+      // Scenario 1: Actual linked player (userId exists)
+      if (rosterEntry.userId) {
+        return apiError("IGN already taken");
       }
-    } else if (teamToJoin) {
-      // Team code provided - check if IGN is on a DIFFERENT team's roster
-      const rosterEntry = await prisma.player.findFirst({
-        where: {
-          ign: { equals: ign, mode: "insensitive" },
-          deletedAt: null,
-          teamId: { not: teamToJoin.id },
-        },
-        select: { id: true, team: { select: { name: true } } },
-      });
 
-      if (rosterEntry) {
+      // Scenario 2: Placeholder (userId is null)
+      // Check if we are currently trying to join the SAME team as the placeholder
+      const joiningSameTeam = teamToJoin && rosterEntry.teamId === teamToJoin.id;
+
+      if (!joiningSameTeam) {
         return apiError(
-          `This IGN is already registered to another team (${rosterEntry.team.name})`
+          `This IGN is already assigned to ${rosterEntry.team?.name || "a team"}. Please ask your Captain for the Team Code to register and claim this record.`
         );
       }
     }

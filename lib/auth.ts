@@ -33,7 +33,10 @@ export async function verifyPassword(
 export async function findUserByEmailOrIgn(emailOrIgn: string) {
   return prisma.user.findFirst({
     where: {
-      OR: [{ email: emailOrIgn }, { ign: emailOrIgn }],
+      OR: [
+        { email: { equals: emailOrIgn, mode: "insensitive" } },
+        { ign: { equals: emailOrIgn, mode: "insensitive" } }
+      ],
     },
   });
 }

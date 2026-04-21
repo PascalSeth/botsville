@@ -10,38 +10,59 @@ export async function GET(request: NextRequest) {
   const ign = searchParams.get("ign")?.trim();
   const teamCode = searchParams.get("teamCode")?.trim().toUpperCase();
 
-  if (!ign || ign.length < 3 || !teamCode || teamCode.length !== 6) {
-    return apiSuccess({ found: false, team: null });
+  if (!ign || ign.length < 2) {
+    return apiSuccess({ status: "available" });
   }
 
+  // 1. Check if an actual User account exists with this IGN
+  const user = await prisma.user.findFirst({
+    where: { ign: { equals: ign, mode: "insensitive" } },
+    select: { id: true },
+  });
+
+  if (user) {
+    return apiSuccess({ status: "taken" });
+  }
+
+  // 2. Check the Player rosters (historical and current)
   const player = await prisma.player.findFirst({
     where: {
-      ign,
-      userId: null,
+      ign: { equals: ign, mode: "insensitive" },
       deletedAt: null,
-      team: { teamCode },
     },
     select: {
       id: true,
+      userId: true,
       role: true,
       team: {
         select: {
           id: true,
           name: true,
           tag: true,
-          logo: true,
           color: true,
+          teamCode: true,
         },
       },
     },
   });
 
   if (!player) {
-    return apiSuccess({ found: false, team: null });
+    return apiSuccess({ status: "available" });
   }
 
+  // If the player record already has a userId, it's effectively taken
+  if (player.userId) {
+    return apiSuccess({ status: "taken" });
+  }
+
+  // Otherwise, it's a placeholder. Check if the provided team code matches.
+  const codeMatches = teamCode && player.team?.teamCode === teamCode;
+
   return apiSuccess({
-    found: true,
+    status: "placeholder",
+    found: true, // legacy support for frontend
+    isClaimable: true,
+    codeMatches,
     team: player.team,
     role: player.role,
   });

@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn, signOut, useSession } from 'next-auth/react';
-import { Eye, EyeOff, ChevronRight, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, ChevronRight, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────
 type Mode = 'login' | 'register' | 'reset-request';
@@ -522,7 +522,12 @@ const RegisterForm = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [rosterMatch, setRosterMatch] = useState<{ team: { name: string; tag: string; color?: string | null }; role: string } | null>(null);
+  const [rosterMatch, setRosterMatch] = useState<{ 
+    status: 'taken' | 'placeholder' | 'available';
+    codeMatches?: boolean;
+    team: { name: string; tag: string; color?: string | null }; 
+    role: string 
+  } | null>(null);
   const [checkingIgn, setCheckingIgn] = useState(false);
 
   // Map GameRole (from API) back to the PlayerRole used by the form
@@ -532,17 +537,19 @@ const RegisterForm = () => {
 
   // Auto-set role from roster match; unlock when match clears
   useEffect(() => {
-    if (rosterMatch) {
+    if (rosterMatch && rosterMatch.status === 'placeholder') {
       const mapped = GAME_ROLE_TO_PLAYER_ROLE[rosterMatch.role];
       if (mapped) setRole(mapped);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rosterMatch]);
 
-  // Debounced roster check — requires both a valid IGN and a full 6-char team code
+  // Debounced roster check — triggered by IGN and Team Code
   useEffect(() => {
-    setRosterMatch(null);
-    if (ign.trim().length < 2 || teamCode.trim().length !== 6) return;
+    if (ign.trim().length < 2) {
+      setRosterMatch(null);
+      return;
+    }
     const t = setTimeout(async () => {
       setCheckingIgn(true);
       try {
@@ -550,8 +557,19 @@ const RegisterForm = () => {
           `/api/users/check-ign?ign=${encodeURIComponent(ign.trim())}&teamCode=${encodeURIComponent(teamCode.trim().toUpperCase())}`
         );
         const data = await res.json();
-        if (data.found) setRosterMatch({ team: data.team, role: data.role });
-        else setRosterMatch(null);
+        
+        if (data.status === 'taken') {
+          setRosterMatch({ status: 'taken', team: { name: '', tag: '' }, role: '' });
+        } else if (data.status === 'placeholder') {
+          setRosterMatch({ 
+            status: 'placeholder', 
+            codeMatches: data.codeMatches,
+            team: data.team, 
+            role: data.role 
+          });
+        } else {
+          setRosterMatch(null);
+        }
       } catch { setRosterMatch(null); }
       finally { setCheckingIgn(false); }
     }, 600);
@@ -566,6 +584,13 @@ const RegisterForm = () => {
     if (password !== confirm) return setError('Passwords do not match');
     if (ign.length < 2 || ign.length > 20) return setError('IGN must be 2–20 characters');
     if (teamCode && !/^[A-Z0-9]{6}$/.test(teamCode.trim().toUpperCase())) return setError('Team code must be 6 alphanumeric characters');
+    
+    // Safety check BEFORE submit
+    if (rosterMatch?.status === 'taken') return setError('IGN already taken');
+    if (rosterMatch?.status === 'placeholder' && !rosterMatch.codeMatches) {
+        return setError(`This IGN is already assigned to ${rosterMatch.team.name}. Please enter your Team Code.`);
+    }
+
     setLoading(true);
     try {
       const res = await fetch('/api/users/register', {
@@ -596,25 +621,39 @@ const RegisterForm = () => {
         <Field label="Email" type="email" placeholder="your@email.com" value={email} onChange={setEmail} />
       </div>
 
-      {/* Roster match banner */}
+      {/* Roster / Identity match banner */}
       {(rosterMatch || checkingIgn) && (
         <div
-          className="flex items-start gap-2.5 px-3 py-2.5 border text-[11px] leading-relaxed"
-          style={rosterMatch
-            ? { borderColor: `${rosterMatch.team.color ?? '#22c55e'}55`, background: `${rosterMatch.team.color ?? '#22c55e'}10`, color: rosterMatch.team.color ?? '#22c55e' }
-            : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)', color: 'rgba(255,255,255,0.4)' }
+          className="flex items-start gap-2.5 px-3 py-2.5 border text-[11px] leading-relaxed transition-all duration-300"
+          style={
+            checkingIgn 
+              ? { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)', color: 'rgba(255,255,255,0.4)' }
+              : rosterMatch?.status === 'taken'
+                ? { borderColor: 'rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.1)', color: '#f87171' }
+                : rosterMatch?.status === 'placeholder' && rosterMatch.codeMatches
+                  ? { borderColor: `${rosterMatch.team.color ?? '#22c55e'}55`, background: `${rosterMatch.team.color ?? '#22c55e'}10`, color: rosterMatch.team.color ?? '#22c55e' }
+                  : { borderColor: 'rgba(232,160,0,0.3)', background: 'rgba(232,160,0,0.1)', color: '#e8a000' } // Placeholder no-match
           }
         >
           {checkingIgn ? (
-            <span className="tracking-wide">Checking roster…</span>
-          ) : rosterMatch ? (
+            <span className="tracking-wide animate-pulse">Scanning identity registry…</span>
+          ) : rosterMatch?.status === 'taken' ? (
             <>
-              <svg className="shrink-0 mt-px" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
-              <span>
-                <strong>{ign}</strong> is on the <strong>{rosterMatch.team.name}</strong> ({rosterMatch.team.tag}) roster as <strong>{rosterMatch.role}</strong>.
-                {' '}Your account will be automatically linked when you register.
-              </span>
+              <AlertCircle size={14} className="shrink-0 mt-0.5" />
+              <span><strong>IGN already taken.</strong> Please choose a unique name.</span>
             </>
+          ) : rosterMatch?.status === 'placeholder' ? (
+             rosterMatch.codeMatches ? (
+                <>
+                  <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
+                  <span><strong>{ign}</strong> is on the <strong>{rosterMatch.team.name}</strong> roster. Your account will be linked when you register.</span>
+                </>
+             ) : (
+                <>
+                  <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                  <span>This IGN is already assigned to <strong>{rosterMatch.team.name}</strong>. Please ask your Captain for the Team Code to register and claim this record.</span>
+                </>
+             )
           ) : null}
         </div>
       )}
