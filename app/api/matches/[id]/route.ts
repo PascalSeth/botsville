@@ -7,6 +7,7 @@ import {
 } from "@/lib/api-utils";
 import { MatchStatus, AdminRoleType } from "@/app/generated/prisma/enums";
 
+import { recalculateTeamSeasonStandings } from "@/lib/standings-utils";
 import { prisma } from "@/lib/prisma";
 
 // GET - Get match details
@@ -167,8 +168,28 @@ export async function PUT(
       data: updateData,
     });
 
-    // If match completed, notify both captains
-    if (status === MatchStatus.COMPLETED && updated.winnerId) {
+    // If match completed or forfeited, update standings and notify both captains
+    const completedStatuses: MatchStatus[] = [MatchStatus.COMPLETED, MatchStatus.FORFEITED];
+    if (status && completedStatuses.includes(status as MatchStatus)) {
+      // Fetch seasonId to recalculate standings
+      const matchWithTournament = await prisma.match.findUnique({
+        where: { id },
+        select: { 
+          tournament: { select: { seasonId: true } },
+          teamAId: true,
+          teamBId: true,
+        },
+      });
+
+      if (matchWithTournament?.tournament?.seasonId) {
+        const seasonId = matchWithTournament.tournament.seasonId;
+        // Recalculate standings for both teams (Idempotent)
+        await recalculateTeamSeasonStandings(matchWithTournament.teamAId, seasonId);
+        if (matchWithTournament.teamBId) {
+          await recalculateTeamSeasonStandings(matchWithTournament.teamBId, seasonId);
+        }
+      }
+
       const [teamA, teamB] = await Promise.all([
         prisma.team.findUnique({
           where: { id: match.teamAId },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api-utils";
 import { MatchStatus, MainRole, MetaTier, DraftType } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { recalculateTeamSeasonStandings } from "@/lib/standings-utils";
 
 // POST /api/matches/[id]/finalize - Finalize match and update all player stats and leaderboards
 export async function POST(
@@ -100,8 +101,13 @@ export async function POST(
       await updateHeroMeta(seasonId);
     }
 
-    // Update Team & Group Standings (Tournament + Season)
-    await updateStandings(matchId);
+    // Update Team & Group Standings (Tournament + Season) - IDEMPOTENT
+    if (seasonId) {
+      await recalculateTeamSeasonStandings(match.teamA.id, seasonId);
+      if (match.teamB?.id) {
+        await recalculateTeamSeasonStandings(match.teamB.id, seasonId);
+      }
+    }
 
     // Mark match as stats finalized
     await prisma.match.update({
@@ -399,240 +405,6 @@ async function updateHeroMeta(seasonId: string) {
   }
 }
 
-// Update Tournament Group Standings and Season Standings based on match result
-async function updateStandings(matchId: string) {
-  try {
-    const match = await prisma.match.findUnique({
-      where: { id: matchId },
-      include: {
-        teamA: true,
-        teamB: true,
-        winner: true,
-        gameResults: true,
-        tournament: {
-          select: { id: true, seasonId: true, pointSystem: true }
-        },
-      }
-    });
-
-
-    if (!match || !match.tournament) return;
-
-    const { id: tournamentId, seasonId, pointSystem } = match.tournament;
-    const teamAId = match.teamAId;
-    const teamBId = match.teamBId;
-    const winnerId = match.winnerId;
-
-    // Calculate Points based on stats
-    const scoreA = match.scoreA || 0;
-    const scoreB = match.scoreB || 0;
-    const isDraw = !winnerId;
-    
-    let pointsToAddA = 0;
-    let pointsToAddB = 0;
-
-    if (isDraw) {
-      pointsToAddA = 1;
-      pointsToAddB = 1;
-    } else if (pointSystem === 'MLBB_WEIGHTED') {
-      // Dynamic Points System
-      if (winnerId === teamAId) {
-        pointsToAddA = scoreB === 0 ? 3 : 2;
-        pointsToAddB = scoreB > 0 ? 1 : 0;
-      } else if (winnerId === teamBId) {
-        pointsToAddB = scoreA === 0 ? 3 : 2;
-        pointsToAddA = scoreA > 0 ? 1 : 0;
-      }
-    } else {
-      // Standard 3/1/0
-      pointsToAddA = winnerId === teamAId ? 3 : 0;
-      pointsToAddB = winnerId === teamBId ? 3 : 0;
-    }
-
-    // New stats calculation
-    const gamesWonByA = scoreA;
-    const gamesWonByB = scoreB;
-    
-    const minWinTimeA = match.gameResults
-      .filter(gr => gr.winnerTeamId === teamAId && gr.durationSeconds)
-      .reduce((min, gr) => Math.min(min, gr.durationSeconds!), Infinity);
-    
-    const minWinTimeB = match.gameResults
-      .filter(gr => gr.winnerTeamId === teamBId && gr.durationSeconds)
-      .reduce((min, gr) => Math.min(min, gr.durationSeconds!), Infinity);
-
-
-    // ── 1. Update Group Stage Standings (Tournament Level) ──
-    // Only if match is tagged as a group stage match
-    if (match.bracketType === 'GROUP_STAGE') {
-      // Find which group these teams are in
-      const groupA = await prisma.tournamentGroup.findFirst({
-        where: { tournamentId, teams: { some: { teamId: teamAId } } }
-      });
-      const groupB = teamBId 
-        ? await prisma.tournamentGroup.findFirst({
-            where: { tournamentId, teams: { some: { teamId: teamBId } } }
-          })
-        : null;
-
-      // Usually they are in the same group
-      if (groupA && groupB && groupA.id === groupB.id) {
-        const groupName = groupA.name;
-
-        // Upsert for Team A
-        await prisma.groupStageStanding.upsert({
-          where: { tournamentId_groupName_teamId: { tournamentId, groupName, teamId: teamAId } },
-          update: {
-            losses: { increment: winnerId === teamBId ? 1 : 0 },
-            draws: { increment: !winnerId ? 1 : 0 },
-            groupPoints: { increment: pointsToAddA },
-            gameWins: { increment: gamesWonByA },
-            gameLosses: { increment: gamesWonByB },
-            fastestWinSeconds: minWinTimeA !== Infinity ? { set: minWinTimeA } : undefined, // Simplification: we'll handle actual min check in Standings API or here
-          },
-          create: {
-            tournamentId,
-            groupName,
-            teamId: teamAId,
-            wins: winnerId === teamAId ? 1 : 0,
-            losses: winnerId === teamBId ? 1 : 0,
-            draws: !winnerId ? 1 : 0,
-            groupPoints: pointsToAddA,
-            gameWins: gamesWonByA,
-            gameLosses: gamesWonByB,
-            fastestWinSeconds: minWinTimeA !== Infinity ? minWinTimeA : null,
-          }
-        });
-
-
-        // Upsert for Team B
-        if (teamBId) {
-          await prisma.groupStageStanding.upsert({
-            where: { tournamentId_groupName_teamId: { tournamentId, groupName, teamId: teamBId } },
-            update: {
-              losses: { increment: winnerId === teamAId ? 1 : 0 },
-              draws: { increment: !winnerId ? 1 : 0 },
-              groupPoints: { increment: pointsToAddB },
-              gameWins: { increment: gamesWonByB },
-              gameLosses: { increment: gamesWonByA },
-              fastestWinSeconds: minWinTimeB !== Infinity ? { set: minWinTimeB } : undefined,
-            },
-            create: {
-              tournamentId,
-              groupName,
-              teamId: teamBId,
-              wins: winnerId === teamBId ? 1 : 0,
-              losses: winnerId === teamAId ? 1 : 0,
-              draws: !winnerId ? 1 : 0,
-              groupPoints: pointsToAddB,
-              gameWins: gamesWonByB,
-              gameLosses: gamesWonByA,
-              fastestWinSeconds: minWinTimeB !== Infinity ? minWinTimeB : null,
-            }
-          });
-
-        }
-      }
-    }
-
-    // ── 2. Update Team Standings (Season Level) ──
-    // Points count 1-1 to the season ranking as requested
-    // (using the same point system logic as above)
-
-
-    // Update Team A Season Standing
-    await prisma.teamStanding.upsert({
-      where: { teamId_seasonId: { seasonId, teamId: teamAId } },
-      update: {
-        wins: { increment: winnerId === teamAId ? 1 : 0 },
-        losses: { increment: winnerId === teamBId ? 1 : 0 },
-        points: { increment: pointsToAddA },
-      },
-      create: {
-        seasonId,
-        teamId: teamAId,
-        wins: winnerId === teamAId ? 1 : 0,
-        losses: winnerId === teamBId ? 1 : 0,
-        points: pointsToAddA,
-        rank: 0,
-      }
-    });
-
-    // Update Team B Season Standing
-    if (teamBId) {
-      await prisma.teamStanding.upsert({
-        where: { teamId_seasonId: { seasonId, teamId: teamBId } },
-        update: {
-          wins: { increment: winnerId === teamBId ? 1 : 0 },
-          losses: { increment: winnerId === teamAId ? 1 : 0 },
-          points: { increment: pointsToAddB },
-        },
-        create: {
-          seasonId,
-          teamId: teamBId,
-          wins: winnerId === teamBId ? 1 : 0,
-          losses: winnerId === teamAId ? 1 : 0,
-          points: pointsToAddB,
-          rank: 0,
-        }
-      });
-    }
-
-    // ── 3. Update Monthly Standings ──
-    if (seasonId) {
-      const matchDate = match.scheduledTime ? new Date(match.scheduledTime) : new Date();
-      const year = matchDate.getFullYear();
-      const month = matchDate.getMonth() + 1;
-
-      // Upsert monthly for Team A
-      await prisma.monthlyStanding.upsert({
-        where: { seasonId_teamId_year_month: { seasonId, teamId: teamAId, year, month } },
-        update: {
-          wins: { increment: winnerId === teamAId ? 1 : 0 },
-          losses: { increment: winnerId === teamBId ? 1 : 0 },
-          points: { increment: pointsToAddA },
-        },
-        create: {
-          seasonId,
-          teamId: teamAId,
-          year,
-          month,
-          wins: winnerId === teamAId ? 1 : 0,
-          losses: winnerId === teamBId ? 1 : 0,
-          points: pointsToAddA,
-          rank: 0,
-        }
-      });
-
-      // Upsert monthly for Team B
-      if (teamBId) {
-        await prisma.monthlyStanding.upsert({
-          where: { seasonId_teamId_year_month: { seasonId, teamId: teamBId, year, month } },
-          update: {
-            wins: { increment: winnerId === teamBId ? 1 : 0 },
-            losses: { increment: winnerId === teamAId ? 1 : 0 },
-            points: { increment: pointsToAddB },
-          },
-          create: {
-            seasonId,
-            teamId: teamBId,
-            year,
-            month,
-            wins: winnerId === teamBId ? 1 : 0,
-            losses: winnerId === teamAId ? 1 : 0,
-            points: pointsToAddB,
-            rank: 0,
-          }
-        });
-      }
-    }
-
-    // Finally, refresh ranks
-    await updateSeasonPlayerRankings(seasonId);
-  } catch (error) {
-    console.error("Error updating standings in finalize:", error);
-  }
-}
 
 // Map of heroes to their primary lane/role in MLBB Meta context
 const HERO_ROLE_MAPPING: Record<string, MainRole> = {
