@@ -15,6 +15,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { dashboardFetch } from "../../lib/api";
 import OrchestratorControl from "../../components/OrchestratorControl";
+import ManualSeedingModal from "../../components/ManualSeedingModal";
 
 type TournamentGroupTeam = {
   id: string;
@@ -39,6 +40,7 @@ type Tournament = {
   prizePool: string | null;
   status: string;
   format: string;
+  phase: string;
   date: string;
   location: string;
   isOnline: boolean;
@@ -119,6 +121,9 @@ export default function TournamentDetailPage() {
   // Advance to Playoffs State
   const [advancing, setAdvancing] = useState(false);
   const [advanceMessage, setAdvanceMessage] = useState<string | null>(null);
+  const [teamsPerGroup, setTeamsPerGroup] = useState(2);
+  const [showManualSeeding, setShowManualSeeding] = useState(false);
+  const [isNextRoundMode, setIsNextRoundMode] = useState(false);
 
   // Tournament Settings State
   const [pointSystem, setPointSystem] = useState<string>("STANDARD");
@@ -198,38 +203,40 @@ export default function TournamentDetailPage() {
       reader.readAsDataURL(file);
     });
 
-  useEffect(() => {
+  const fetchTournament = async () => {
     if (!id) return;
-    (async () => {
-      setLoading(true);
-      setLoadingRegistrations(true);
+    setLoading(true);
+    setLoadingRegistrations(true);
 
-      const [{ data, error: err }, { data: registrationsData, error: registrationsError }] = await Promise.all([
-        dashboardFetch<Tournament>(`/api/tournaments/${id}`),
-        dashboardFetch<TournamentRegistration[]>(`/api/tournaments/${id}/registrations`),
-      ]);
+    const [{ data, error: err }, { data: registrationsData, error: registrationsError }] = await Promise.all([
+      dashboardFetch<Tournament>(`/api/tournaments/${id}`),
+      dashboardFetch<TournamentRegistration[]>(`/api/tournaments/${id}/registrations`),
+    ]);
 
-      setLoading(false);
-      setLoadingRegistrations(false);
+    setLoading(false);
+    setLoadingRegistrations(false);
 
-      if (err) {
-        setError(err);
-        setTournament(null);
-        return;
-      }
+    if (err) {
+      setError(err);
+      setTournament(null);
+      return;
+    }
 
-      if (!registrationsError && Array.isArray(registrationsData)) {
-        setRegistrations(registrationsData);
-      } else {
-        setRegistrations([]);
-      }
+    if (!registrationsError && Array.isArray(registrationsData)) {
+      setRegistrations(registrationsData);
+    } else {
+      setRegistrations([]);
+    }
 
-      if (data) {
-        setTournament(data);
-        setPointSystem(data.pointSystem || "STANDARD");
-        setTiebreakers(data.tiebreakerSequence || []);
-      }
-    })();
+    if (data) {
+      setTournament(data);
+      setPointSystem(data.pointSystem || "STANDARD");
+      setTiebreakers(data.tiebreakerSequence || []);
+    }
+  };
+
+  useEffect(() => {
+    fetchTournament();
   }, [id]);
 
 
@@ -448,7 +455,7 @@ export default function TournamentDetailPage() {
 
   const handleAdvanceToPlayoffs = async () => {
     if (!id) return;
-    if (!confirm("🚀 This will seed the Top 4 teams into the Semi-Finals. Proceed?")) return;
+    if (!confirm(`🚀 This will seed the Top ${teamsPerGroup} teams from each group into the Playoffs. Proceed?`)) return;
 
     setAdvancing(true);
     setAdvanceMessage(null);
@@ -456,7 +463,8 @@ export default function TournamentDetailPage() {
     try {
       const res = await fetch(`/api/tournaments/${id}/advance-to-playoffs`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamsPerGroup })
       });
 
       const result = await res.json();
@@ -468,6 +476,23 @@ export default function TournamentDetailPage() {
       if (data) setTournament(data);
     } catch (err) {
       setAdvanceMessage(`⚠️ ${err instanceof Error ? err.message : 'Transition failed'}`);
+    } finally {
+      setAdvancing(false);
+    }
+  };
+
+  const handleGenerateNextRound = async () => {
+    if (!id) return;
+    setAdvancing(true);
+    setAdvanceMessage(null);
+    try {
+      const res = await fetch(`/api/tournaments/${id}/generate-next-round`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to generate next round");
+      setAdvanceMessage(`🏆 ${data.message}`);
+      fetchTournament();
+    } catch (err) {
+      setAdvanceMessage(`⚠️ ${err instanceof Error ? err.message : 'Generation failed'}`);
     } finally {
       setAdvancing(false);
     }
@@ -705,30 +730,125 @@ export default function TournamentDetailPage() {
                )}
             </GlassCard>
 
+            {/* Card 1: Advance Groups to Playoffs */}
             <GlassCard delay={0.22} className="border-indigo-500/20 bg-indigo-500/[0.02]">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-1.5 h-6 bg-indigo-500 rounded-full" />
-                <h2 className="text-xs font-black text-white uppercase tracking-widest leading-none">Stage Progression</h2>
+                <h2 className="text-xs font-black text-white uppercase tracking-widest leading-none">Advance to Playoffs</h2>
               </div>
               
               <div className="space-y-4">
-                <p className="text-[9px] font-medium text-white/40 leading-relaxed uppercase tracking-wider">Once all group matches are finalized, advance the top 4 teams to the Semi-Finals automatically.</p>
-                <button 
-                  onClick={handleAdvanceToPlayoffs}
-                  disabled={advancing || tournament.status === "COMPLETED"}
-                  className="w-full py-4 bg-indigo-500 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-indigo-600 transition-all shadow-xl shadow-indigo-500/10 flex items-center justify-center gap-3 disabled:opacity-30"
-                >
-                  {advancing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} 
-                  Advance to Playoffs
-                </button>
+                <p className="text-[9px] font-medium text-white/40 leading-relaxed uppercase tracking-wider">
+                  Once all group matches are finalized, advance the top teams from each group into the playoff bracket.
+                </p>
+                
+                <div>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block mb-2">Teams to Advance (Per Group)</label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={teamsPerGroup} 
+                    onChange={(e) => setTeamsPerGroup(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full bg-black/40 border border-indigo-500/20 rounded-xl px-4 py-3 text-white text-xs outline-none focus:border-indigo-500/50" 
+                  />
+                </div>
+
+                <div className="flex gap-4">
+                  <button 
+                    onClick={handleAdvanceToPlayoffs}
+                    disabled={advancing || tournament.status === "COMPLETED"}
+                    className="flex-1 py-4 bg-indigo-500 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-indigo-600 transition-all shadow-xl shadow-indigo-500/10 flex items-center justify-center gap-2 disabled:opacity-30"
+                  >
+                    {advancing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} 
+                    Auto Seed
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIsNextRoundMode(false);
+                      setShowManualSeeding(true);
+                    }}
+                    disabled={advancing || tournament.status === "COMPLETED"}
+                    className="flex-1 py-4 bg-zinc-800 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-zinc-700 transition-all shadow-xl flex items-center justify-center gap-2 disabled:opacity-30 border border-white/10"
+                  >
+                    Manual Seed
+                  </button>
+                </div>
+
                 {advanceMessage && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-[9px] font-black uppercase text-center">
                     {advanceMessage}
                   </motion.div>
                 )}
               </div>
-             </GlassCard>
+            </GlassCard>
+
+            {/* Card 2: Playoff Round Progression (only visible once playoffs started) */}
+            {/* Card 2: Playoff Progression */}
+            {(tournament?.phase === "PLAYOFFS" || tournament?.phase === "GRAND_FINALS") && (
+              <GlassCard delay={0.24} className={tournament.phase === "GRAND_FINALS" ? "border-yellow-500/20 bg-yellow-500/[0.02]" : "border-violet-500/20 bg-violet-500/[0.02]"}>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className={`w-1.5 h-6 rounded-full ${tournament.phase === "GRAND_FINALS" ? "bg-yellow-500" : "bg-violet-500"}`} />
+                  <h2 className="text-xs font-black text-white uppercase tracking-widest leading-none">
+                    {tournament.phase === "GRAND_FINALS" ? "Grand Finals" : "Playoff Progression"}
+                  </h2>
+                  <span className={`ml-auto text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${
+                    tournament.phase === "GRAND_FINALS"
+                      ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20"
+                      : "text-violet-400 bg-violet-500/10 border-violet-500/20"
+                  }`}>
+                    {tournament.phase === "GRAND_FINALS" ? "Finals" : "Active"}
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  {tournament.phase === "GRAND_FINALS" ? (
+                    <div className="flex flex-col items-center py-6 gap-3 text-center">
+                      <div className="w-14 h-14 rounded-2xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center">
+                        <Sparkles size={24} className="text-yellow-400" />
+                      </div>
+                      <p className="text-white font-black text-xs uppercase tracking-widest">Grand Finals Underway</p>
+                      <p className="text-[9px] font-medium text-white/40 leading-relaxed uppercase tracking-wider max-w-xs">
+                        The championship match has been set. No further rounds to generate.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-[9px] font-medium text-white/40 leading-relaxed uppercase tracking-wider">
+                        Once all matches in the current playoff round are completed, generate the next round.
+                      </p>
+                      <div className="flex gap-4">
+                        <button 
+                          onClick={handleGenerateNextRound}
+                          disabled={advancing || tournament.status === "COMPLETED"}
+                          className="flex-1 py-4 bg-violet-500 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-violet-600 transition-all shadow-xl shadow-violet-500/10 flex items-center justify-center gap-2 disabled:opacity-30"
+                        >
+                          {advancing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} 
+                          Auto Next Round
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setIsNextRoundMode(true);
+                            setShowManualSeeding(true);
+                          }}
+                          disabled={advancing || tournament.status === "COMPLETED"}
+                          className="flex-1 py-4 bg-zinc-800 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-zinc-700 transition-all shadow-xl flex items-center justify-center gap-2 disabled:opacity-30 border border-white/10"
+                        >
+                          Manual Next Round
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {advanceMessage && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 rounded-xl bg-violet-500/10 border border-violet-500/30 text-violet-400 text-[9px] font-black uppercase text-center">
+                      {advanceMessage}
+                    </motion.div>
+                  )}
+                </div>
+              </GlassCard>
+            )}
+
  
+
              <GlassCard delay={0.25} className="border-emerald-500/20 bg-emerald-500/[0.02]">
                  <div className="flex items-center gap-3 mb-6">
                    <div className="w-1.5 h-6 bg-[#e8a000] rounded-full" />
@@ -1067,6 +1187,20 @@ export default function TournamentDetailPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {showManualSeeding && id && (
+        <ManualSeedingModal
+          tournamentId={id}
+          teamsPerGroup={teamsPerGroup}
+          isNextRound={isNextRoundMode}
+          onClose={() => setShowManualSeeding(false)}
+          onSuccess={(msg) => {
+            setShowManualSeeding(false);
+            setAdvanceMessage(msg);
+            fetchTournament();
+          }}
+        />
+      )}
     </div>
   );
 }

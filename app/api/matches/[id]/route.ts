@@ -110,7 +110,7 @@ export async function PUT(
     const user = await requireActiveUser();
     const { id } = await context.params;
     const body = await request.json();
-    const { status, scoreA, scoreB, elapsed, winnerId, scheduledTime, bestOf } = body;
+    const { status, scoreA, scoreB, elapsed, winnerId, forfeitedById, scheduledTime, bestOf } = body;
 
     const match = await prisma.match.findUnique({
       where: { id },
@@ -148,11 +148,29 @@ export async function PUT(
     if (scoreA !== undefined) updateData.scoreA = parseInt(scoreA);
     if (scoreB !== undefined) updateData.scoreB = parseInt(scoreB);
     if (elapsed !== undefined) updateData.elapsed = elapsed;
-    if (winnerId !== undefined) {
-      if (winnerId !== match.teamAId && (match.teamBId && winnerId !== match.teamBId)) {
+    
+    // Explicit Forfeit tracking
+    if (forfeitedById !== undefined) {
+      updateData.forfeitedById = forfeitedById;
+    }
+
+    let finalWinnerId = winnerId;
+    // Auto-infer winner if forfeit is set
+    if (status === MatchStatus.FORFEITED && !winnerId) {
+      const fId = forfeitedById || match.forfeitedById;
+      if (fId === match.teamAId) finalWinnerId = match.teamBId;
+      else if (fId === match.teamBId) finalWinnerId = match.teamAId;
+    }
+
+    if (finalWinnerId !== undefined) {
+      if (finalWinnerId !== match.teamAId && (match.teamBId && finalWinnerId !== match.teamBId)) {
         return apiError("Winner must be one of the competing teams");
       }
-      updateData.winner = { connect: { id: winnerId } };
+      if (finalWinnerId) {
+        updateData.winner = { connect: { id: finalWinnerId } };
+      } else {
+        updateData.winner = { disconnect: true };
+      }
     }
 
     if (scheduledTime !== undefined) {

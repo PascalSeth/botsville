@@ -85,9 +85,6 @@ export async function POST(
       message: "Season and Monthly standings successfully synchronized.", 
       teamsProcessed: teamIds.length 
     });
-    console.timeEnd("db_update");
-
-    return apiSuccess({ message: "Season and Monthly standings fully recalculated.", matchesProcessed: matches.length });
   } catch (err) {
     console.error("recalculate-all error:", err);
     return apiError(err instanceof Error ? err.message : "Failed to recalculate", 500);

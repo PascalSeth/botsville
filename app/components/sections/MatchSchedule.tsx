@@ -52,7 +52,7 @@ const useRealtimeMatches = () => {
         const list = (Array.isArray(data?.tournaments) ? data.tournaments : [])
           .filter((t: TournamentListItem) => (t._count?.matches ?? 0) > 0)
           .sort((a: TournamentListItem, b: TournamentListItem) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-          
+
         setTournaments(list);
         if (list.length > 0 && !initialSelectionDone.current) {
           const prioritize = list.find((t: TournamentListItem) => t.status === 'LIVE') || list.find((t: TournamentListItem) => t.status === 'UPCOMING') || list[0];
@@ -230,22 +230,69 @@ const MatchCard = ({ match, onClick }: { match: ScheduleMatch, onClick: () => vo
 export const MatchSchedule = () => {
   const { matches, tournaments, activeTournamentId, setActiveTournamentId, loading } = useRealtimeMatches();
   const [activeTab, setActiveTab] = useState('ALL');
+  const [activeStage, setActiveStage] = useState<string>('');
   const [activeDay, setActiveDay] = useState<number>(1);
   const [selectedMatch, setSelectedMatch] = useState<ScheduleMatch | null>(null);
   const [teamAPlayers, setTeamAPlayers] = useState<PlayerData[]>([]);
   const [teamBPlayers, setTeamBPlayers] = useState<PlayerData[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(false);
 
-  const days = useMemo(() => Array.from(new Set(matches.map(m => m.playDay || 0))).sort((a, b) => a - b), [matches]);
+  const isGrandFinal = (stage: string) => stage.toLowerCase().includes('grand final');
+
+  const parsedStages = useMemo(() => {
+    const stages = new Set<string>();
+    matches.forEach(m => {
+      if (!m.stage) {
+        stages.add('Other');
+      } else if (m.stage.toLowerCase().includes('group')) {
+        stages.add('Group Stage');
+      } else if (isGrandFinal(m.stage)) {
+        stages.add('Grand Finals');
+      } else {
+        stages.add('Playoffs');
+      }
+    });
+    return Array.from(stages).sort((a, b) => {
+      const order = ['Group Stage', 'Playoffs', 'Grand Finals', 'Other'];
+      return order.indexOf(a) - order.indexOf(b);
+    });
+  }, [matches]);
+
+  const matchesInStage = useMemo(() => {
+    if (!activeStage) return matches;
+    return matches.filter(m => {
+      if (activeStage === 'Group Stage') return m.stage?.toLowerCase().includes('group');
+      if (activeStage === 'Grand Finals') return m.stage && isGrandFinal(m.stage);
+      if (activeStage === 'Other') return !m.stage;
+      if (activeStage === 'Playoffs') return m.stage && !m.stage.toLowerCase().includes('group') && !isGrandFinal(m.stage);
+      return true;
+    });
+  }, [matches, activeStage]);
+
+  const days = useMemo(() => Array.from(new Set(matchesInStage.map(m => m.playDay || 0))).sort((a, b) => a - b), [matchesInStage]);
+
+  useEffect(() => {
+    if (parsedStages.length > 0 && !parsedStages.includes(activeStage)) {
+      // Auto-select stage with LIVE matches, or the last stage (furthest along)
+      const liveMatch = matches.find(m => m.status === 'LIVE');
+      if (liveMatch) {
+        if (liveMatch.stage?.toLowerCase().includes('group')) setActiveStage('Group Stage');
+        else if (liveMatch.stage) setActiveStage('Playoffs');
+        else setActiveStage('Other');
+      } else {
+        setActiveStage(parsedStages[parsedStages.length - 1]);
+      }
+    }
+  }, [parsedStages, matches, activeStage]);
 
   useEffect(() => {
     if (days.length === 0) return;
-    
+
     // Smart Day Selection: Priority: Live > Today > First Upcoming > Day 1
     const today = new Date().toDateString();
-    const liveMatch = matches.find(m => m.status === 'LIVE');
-    const todayMatch = matches.find(m => m.scheduledAt && new Date(m.scheduledAt).toDateString() === today);
-    const upcomingMatch = matches.find(m => m.status === 'UPCOMING');
+    const liveMatch = matchesInStage.find(m => m.status === 'LIVE');
+    const todayMatch = matchesInStage.find(m => m.scheduledAt && new Date(m.scheduledAt).toDateString() === today);
+    const upcomingMatch = matchesInStage.find(m => m.status === 'UPCOMING');
 
     let smartDay = activeDay;
     if (liveMatch?.playDay) smartDay = liveMatch.playDay;
@@ -254,10 +301,12 @@ export const MatchSchedule = () => {
     else if (!days.includes(activeDay)) smartDay = days[0];
 
     setActiveDay(smartDay);
-  }, [matches, days]); // Trigger on matches load
+  }, [matchesInStage, days]); // Trigger on matches load
 
-  const filteredMatches = matches.filter(m => {
-    const isDay = m.playDay === activeDay;
+  const filteredMatches = matchesInStage.filter(m => {
+    // For playoff matches that have no playDay, skip day filtering entirely
+    const hasPlayDay = matchesInStage.some(x => x.playDay);
+    const isDay = !hasPlayDay || m.playDay === activeDay;
     const isTab = activeTab === 'ALL' || m.status === activeTab;
     return isDay && isTab;
   });
@@ -317,8 +366,31 @@ export const MatchSchedule = () => {
         </div>
 
         {/* --- Unified Mission Control (Filters) --- */}
-        <div className="sticky top-4 z-40 mb-8 bg-[#0a0a0f]/80 backdrop-blur-md border border-white/5 p-2 rounded-2xl shadow-2xl">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="sticky top-4 z-40 mb-8 bg-[#0a0a0f]/80 backdrop-blur-md border border-white/5 p-2 rounded-2xl shadow-2xl flex flex-col gap-2">
+
+          {/* Stage Selection */}
+          {parsedStages.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 mb-2 border-b border-white/5 px-2">
+              {parsedStages.map(stage => (
+                <button
+                  key={stage}
+                  onClick={() => setActiveStage(stage)}
+                  className={`whitespace-nowrap px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    activeStage === stage
+                      ? stage === 'Grand Finals'
+                        ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+                        : 'bg-white/10 text-white border border-white/20'
+                      : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  {stage === 'Grand Finals' && <Crown size={11} className={activeStage === 'Grand Finals' ? 'text-yellow-400' : ''} />}
+                  {stage}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 px-2">
 
             {/* Days Horizontal Scroll */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full md:max-w-[60%]">
@@ -359,20 +431,108 @@ export const MatchSchedule = () => {
                   <div key={i} className="h-32 w-full bg-white/5 animate-pulse border border-white/5 rounded-xl" />
                 ))}
               </div>
+            ) : activeStage === 'Grand Finals' && filteredMatches.length > 0 ? (
+              <motion.div key="grand-finals" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="relative">
+                {/* Cinematic background */}
+                <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+                  <div className="absolute inset-0 bg-linear-to-br from-yellow-500/10 via-transparent to-amber-500/5" />
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-yellow-500/10 blur-[100px] rounded-full" />
+                </div>
+                <div className="relative border border-yellow-500/20 rounded-3xl overflow-hidden">
+                  {/* Header */}
+                  <div className="text-center pt-10 pb-6 px-8 border-b border-yellow-500/10">
+                    <div className="flex items-center justify-center gap-3 mb-2">
+                      <div className="w-8 h-[1px] bg-yellow-500/50" />
+                      <Crown size={20} className="text-yellow-400" />
+                      <div className="w-8 h-[1px] bg-yellow-500/50" />
+                    </div>
+                    <p className="text-yellow-400/70 text-[10px] font-black uppercase tracking-[0.5em] mb-1">Championship Match</p>
+                    <h3 className="text-4xl lg:text-6xl font-black uppercase tracking-tighter text-white">Grand Finals</h3>
+                  </div>
+
+                  {filteredMatches.map((m) => {
+                    const isCompleted = m.status === 'COMPLETED';
+                    const isLive = m.status === 'LIVE';
+                    const aWins = isCompleted && m.scoreA > m.scoreB;
+                    const bWins = isCompleted && m.scoreB > m.scoreA;
+                    return (
+                      <div key={m.id} onClick={() => handleMatchClick(m)} className="cursor-pointer px-8 py-10">
+                        {isLive && (
+                          <div className="flex items-center justify-center gap-2 mb-8">
+                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                            <span className="text-red-400 text-[11px] font-black uppercase tracking-widest">Live Now</span>
+                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                          </div>
+                        )}
+                        <div className="flex items-center justify-center gap-4 lg:gap-12">
+                          {/* Team A */}
+                          <div className={`flex-1 flex flex-col items-center gap-4 transition-opacity ${isCompleted && !aWins ? 'opacity-40' : ''}`}>
+                            <div className={`w-20 h-20 lg:w-28 lg:h-28 rounded-2xl border-2 p-1 transition-all ${
+                              aWins ? 'border-yellow-400 shadow-[0_0_40px_rgba(234,179,8,0.4)]' : 'border-white/10'
+                            }`}>
+                              <div className="w-full h-full rounded-xl bg-white/5 flex items-center justify-center overflow-hidden relative">
+                                {m.teamA.logo ? <Image src={m.teamA.logo} alt="" fill className="object-cover" /> : <Shield size={40} className="text-white/20" />}
+                              </div>
+                            </div>
+                            {aWins && <Crown size={18} className="text-yellow-400" />}
+                            <div className="text-center">
+                              <p className="text-lg lg:text-2xl font-black uppercase tracking-tight text-white">{m.teamA.name}</p>
+                              <p className="text-[11px] font-bold text-yellow-500/60">{m.teamA.tag}</p>
+                            </div>
+                          </div>
+
+                          {/* Score */}
+                          <div className="flex flex-col items-center gap-3 min-w-[80px]">
+                            {isCompleted || isLive ? (
+                              <div className="flex items-center gap-3 lg:gap-6">
+                                <span className={`text-4xl lg:text-6xl font-black tabular-nums ${aWins ? 'text-yellow-300' : 'text-white'}`}>{m.scoreA}</span>
+                                <span className="text-white/20 text-2xl">:</span>
+                                <span className={`text-4xl lg:text-6xl font-black tabular-nums ${bWins ? 'text-yellow-300' : 'text-white'}`}>{m.scoreB}</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center gap-1">
+                                <Swords size={28} className="text-yellow-500/50" />
+                                <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">vs</span>
+                              </div>
+                            )}
+                            <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                              isLive ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                              isCompleted ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
+                              'bg-white/5 border-white/10 text-white/40'
+                            }`}>
+                              {isLive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse mr-1" />}
+                              {m.status}
+                            </div>
+                            <p className="text-[9px] text-white/20 font-bold uppercase tracking-widest">{m.time} · {formatMatchDate(m.scheduledAt)}</p>
+                          </div>
+
+                          {/* Team B */}
+                          <div className={`flex-1 flex flex-col items-center gap-4 transition-opacity ${isCompleted && !bWins ? 'opacity-40' : ''}`}>
+                            <div className={`w-20 h-20 lg:w-28 lg:h-28 rounded-2xl border-2 p-1 transition-all ${
+                              bWins ? 'border-yellow-400 shadow-[0_0_40px_rgba(234,179,8,0.4)]' : 'border-white/10'
+                            }`}>
+                              <div className="w-full h-full rounded-xl bg-white/5 flex items-center justify-center overflow-hidden relative">
+                                {m.teamB.logo ? <Image src={m.teamB.logo} alt="" fill className="object-cover" /> : <Shield size={40} className="text-white/20" />}
+                              </div>
+                            </div>
+                            {bWins && <Crown size={18} className="text-yellow-400" />}
+                            <div className="text-center">
+                              <p className="text-lg lg:text-2xl font-black uppercase tracking-tight text-white">{m.teamB.name}</p>
+                              <p className="text-[11px] font-bold text-yellow-500/60">{m.teamB.tag}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
             ) : filteredMatches.length > 0 ? (
-              filteredMatches.map((m, idx) => (
-                <MatchCard
-                  key={m.id}
-                  match={m}
-                  onClick={() => handleMatchClick(m)}
-                />
+              filteredMatches.map((m) => (
+                <MatchCard key={m.id} match={m} onClick={() => handleMatchClick(m)} />
               ))
             ) : (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="py-20 flex flex-col items-center justify-center text-center opacity-40"
-              >
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-20 flex flex-col items-center justify-center text-center opacity-40">
                 <LayoutGrid size={48} className="mb-4 text-[#e8a000]" />
                 <h3 className="text-xl font-black uppercase tracking-widest">No Sector Activity</h3>
                 <p className="text-xs">No matches found for the selected criteria</p>

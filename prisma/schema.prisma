@@ -58,6 +58,7 @@ enum SeasonStatus {
 enum SeasonPhase {
   LEAGUE    // Round-robin regular season
   PLAYOFFS  // Elimination bracket (semis, 3rd place, grand final)
+  GRAND_FINALS // Championship final match
 }
 
 // Team status

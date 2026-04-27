@@ -209,7 +209,7 @@ export default function OrchestratorControl({ tournamentId, onRefresh }: Orchest
 }
 
 function MatchRow({ match, index, onSwap, isSwapping }: { match: Match; index: number; onSwap: () => void; isSwapping: boolean }) {
-  const isResting = match.status === "RESTING";
+  const isResting = match.status === "RESTING" || !match.teamB;
   const time = new Date(match.scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   
   return (
@@ -258,7 +258,17 @@ function MatchRow({ match, index, onSwap, isSwapping }: { match: Match; index: n
   );
 }
 
-function TeamBlock({ team }: { team: Match["teamA"] }) {
+function TeamBlock({ team }: { team: Match["teamA"] | null }) {
+  if (!team) {
+    return (
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+          <span className="text-[9px] font-black text-white/40">TBD</span>
+        </div>
+        <p className="text-[10px] font-bold text-white/40 uppercase truncate min-w-0">TBD</p>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-2 min-w-0 flex-1">
       <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden">

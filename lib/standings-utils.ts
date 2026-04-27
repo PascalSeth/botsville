@@ -9,12 +9,13 @@ export function calculateMatchPoints(match: {
   winnerId: string | null;
   teamAId: string;
   teamBId: string | null;
+  forfeitedById: string | null;
   scoreA: number;
   scoreB: number;
   isDraw?: boolean;
   tournament: { pointSystem: string };
 }) {
-  const { teamAId, teamBId, winnerId, scoreA, scoreB, tournament, status } = match;
+  const { teamAId, teamBId, winnerId, forfeitedById, scoreA, scoreB, tournament, status } = match;
   
   let pointsA = 0;
   let pointsB = 0;
@@ -42,14 +43,27 @@ export function calculateMatchPoints(match: {
 
   // Determine points
   if (isForfeit) {
-    if (winnerId === teamAId) { 
+    // Priority 1: Use forfeitedById if available
+    if (forfeitedById === teamAId) {
+      pointsA = -1;
+      pointsB = 3;
+      winsB = 1;
+      lossesA = 1;
+    } else if (forfeitedById === teamBId) {
+      pointsB = -1;
+      pointsA = 3;
+      winsA = 1;
+      lossesB = 1;
+    } 
+    // Priority 2: Fallback to winnerId if forfeitedById is not set
+    else if (winnerId === teamAId) { 
       pointsA = 3; 
-      pointsB = -1; // Negative penalty for forfeit
+      pointsB = -1; 
       winsA = 1; 
       lossesB = 1; 
     }
     else if (winnerId === teamBId) { 
-      pointsA = -1; // Negative penalty for forfeit
+      pointsA = -1; 
       pointsB = 3; 
       winsB = 1; 
       lossesA = 1; 
