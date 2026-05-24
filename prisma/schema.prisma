@@ -329,6 +329,7 @@ model User {
   challengesResponded     MatchChallenge[]     @relation("ChallengeResponder")
   triviaVotes             TriviaVote[]
   roleVotes               RoleVote[]
+  proInterviewVotes       ProInterviewVote[]
   streamerProfile         Streamer?
 
   @@index([email])
@@ -899,6 +900,8 @@ model MatchPerformance {
   deaths     Int      @default(0)
   assists    Int      @default(0)
   isMvp      Boolean  @default(false) // one per game per team
+  maniacs    Int      @default(0)     // entered by admin/ref — ≥4 kills in one life
+  savages    Int      @default(0)     // entered by admin/ref — pentakill (5 kills)
   side       TeamSide
   won        Boolean  // did this player's team win this game
 
@@ -1900,4 +1903,23 @@ model StreamerSpotlight {
   @@index([active, weekStart])
   @@index([streamerId])
   @@map("streamer_spotlights")
+}
+
+// ═══════════════════════════════════════════════════════════
+// PRO INTERVIEW VOTING
+// ═══════════════════════════════════════════════════════════
+
+// One active vote per user — voting for a different candidateId replaces the previous vote.
+// Removing a vote deletes the row entirely.
+model ProInterviewVote {
+  id          String   @id @default(uuid())
+  userId      String   @unique   // enforces one-vote-per-user at DB level
+  candidateId String               // slug e.g. "coach-yeb"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("pro_interview_votes")
 }

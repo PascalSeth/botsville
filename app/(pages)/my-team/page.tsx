@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2, Pencil, Check, Camera, Crown, ArrowUpDown, Send, ArrowUpCircle, ArrowDownCircle, ArrowRightLeft } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
+import { uploadImage, STORAGE_BUCKETS } from '@/lib/supabase';
 
 interface Player {
   id: string;
@@ -224,6 +225,7 @@ export default function MyTeamPage() {
             type="file"
             accept="image/*"
             className="hidden"
+            onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) handleEditPhotoChange(f);
@@ -693,11 +695,16 @@ export default function MyTeamPage() {
     }
   };
 
-  const handleEditPhotoChange = async (file: File) => {
+  const handleEditPhotoChange = (file: File) => {
     setEditPhotoUploading(true);
-    try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
+    setEditPlayerError(null);
+    const reader = new FileReader();
+    reader.onerror = () => {
+      setEditPlayerError('Failed to read file. Please try again.');
+      setEditPhotoUploading(false);
+    };
+    reader.onload = async (e) => {
+      try {
         const base64 = e.target?.result as string;
         const res = await fetch('/api/upload', {
           method: 'POST',
@@ -708,15 +715,15 @@ export default function MyTeamPage() {
         if (res.ok && data.url) {
           setEditForm(prev => ({ ...prev, photo: data.url }));
         } else {
-          setEditPlayerError('Photo upload failed');
+          setEditPlayerError(data?.error ?? 'Photo upload failed');
         }
+      } catch {
+        setEditPlayerError('Photo upload failed. Please try again.');
+      } finally {
         setEditPhotoUploading(false);
-      };
-      reader.readAsDataURL(file);
-    } catch {
-      setEditPlayerError('Photo upload failed');
-      setEditPhotoUploading(false);
-    }
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const savePlayerEdit = async () => {

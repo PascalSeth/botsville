@@ -80,6 +80,8 @@ type PerformanceInput = {
   deaths: number | "";
   assists: number | "";
   isMvp: boolean;
+  maniacs: number;
+  savages: number;
 };
 
 type HeroCatalogItem = {
@@ -183,6 +185,8 @@ export default function MatchDetailPage({
           deaths: p.deaths,
           assists: p.assists,
           isMvp: p.isMvp,
+          maniacs: (p as Performance & { maniacs?: number }).maniacs ?? 0,
+          savages: (p as Performance & { savages?: number }).savages ?? 0,
         });
         if (p.won && !winnerByGame[p.gameNumber]) {
           winnerByGame[p.gameNumber] = p.side === "A" ? data.teamA?.id || "" : data.teamB?.id || "";
@@ -234,6 +238,8 @@ export default function MatchDetailPage({
         deaths: "",
         assists: "",
         isMvp: false,
+        maniacs: 0,
+        savages: 0,
       });
     }
     // Add Team B starting players
@@ -247,6 +253,8 @@ export default function MatchDetailPage({
         deaths: "",
         assists: "",
         isMvp: false,
+        maniacs: 0,
+        savages: 0,
       });
     }
     setGamePerformances((prev) => ({ ...prev, [gameNum]: perfs }));
@@ -349,6 +357,8 @@ export default function MatchDetailPage({
       deaths: typeof p.deaths === "string" ? (p.deaths === "" ? 0 : parseInt(p.deaths)) : p.deaths,
       assists: typeof p.assists === "string" ? (p.assists === "" ? 0 : parseInt(p.assists)) : p.assists,
       isMvp: p.isMvp,
+      maniacs: p.maniacs,
+      savages: p.savages,
       side: p.teamId === match.teamA?.id ? "A" : "B",
       won: p.teamId === winner,
     }));
@@ -395,6 +405,8 @@ export default function MatchDetailPage({
         deaths: "",
         assists: "",
         isMvp: false,
+        maniacs: 0,
+        savages: 0,
       });
     }
     for (const p of teamBPlayers.filter((x) => !x.isSubstitute).slice(0, 5)) {
@@ -407,6 +419,8 @@ export default function MatchDetailPage({
         deaths: "",
         assists: "",
         isMvp: false,
+        maniacs: 0,
+        savages: 0,
       });
     }
 
@@ -1333,6 +1347,38 @@ function PerformanceRow({
         <Crown size={12} />
         MVP
       </button>
+
+      {/* Maniac & Savage counters */}
+      <div className="flex items-center gap-3 pl-2 border-l border-white/10">
+        <div className="flex flex-col items-center">
+          <label className="text-[8px] font-black text-orange-400 mb-0.5">🔥 MAN</label>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => onUpdate("maniacs", Math.max(0, perf.maniacs - 1))}
+              className="w-5 h-5 bg-white/5 text-white/40 rounded text-xs flex items-center justify-center hover:bg-orange-500/20 hover:text-orange-400">−</button>
+            <input
+              type="number" min={0} value={perf.maniacs}
+              onChange={(e) => onUpdate("maniacs", Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-10 bg-[#0a0a0f] border border-orange-500/30 text-orange-400 px-1 py-1 text-sm text-center outline-none focus:border-orange-500"
+            />
+            <button type="button" onClick={() => onUpdate("maniacs", perf.maniacs + 1)}
+              className="w-5 h-5 bg-white/5 text-white/40 rounded text-xs flex items-center justify-center hover:bg-orange-500/20 hover:text-orange-400">+</button>
+          </div>
+        </div>
+        <div className="flex flex-col items-center">
+          <label className="text-[8px] font-black text-red-400 mb-0.5">💀 SAV</label>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => onUpdate("savages", Math.max(0, perf.savages - 1))}
+              className="w-5 h-5 bg-white/5 text-white/40 rounded text-xs flex items-center justify-center hover:bg-red-500/20 hover:text-red-400">−</button>
+            <input
+              type="number" min={0} value={perf.savages}
+              onChange={(e) => onUpdate("savages", Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-10 bg-[#0a0a0f] border border-red-500/30 text-red-400 px-1 py-1 text-sm text-center outline-none focus:border-red-500"
+            />
+            <button type="button" onClick={() => onUpdate("savages", perf.savages + 1)}
+              className="w-5 h-5 bg-white/5 text-white/40 rounded text-xs flex items-center justify-center hover:bg-red-500/20 hover:text-red-400">+</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

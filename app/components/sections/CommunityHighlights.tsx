@@ -27,7 +27,7 @@ import { STORAGE_BUCKETS, supabase } from '@/lib/supabase'
 /* ────────────────────────────────────────────────────────── */
 /*  Types                                                     */
 /* ────────────────────────────────────────────────────────── */
-type TriviaFact = {
+export type TriviaFact = {
   id: string
   title: string
   teaser: string
@@ -45,7 +45,7 @@ type TriviaFact = {
   reveal?: string | null
 }
 
-type TriviaState = {
+export type TriviaState = {
   trivias: TriviaFact[]
   currentIndex: number
   userTotalXp: number
@@ -56,9 +56,9 @@ type TriviaState = {
   allCompletedToday: boolean
 }
 
-type ClipPost = { id: string; title?: string | null; content: string; author?: { ign: string; photo?: string | null } }
-type Poll = { id: string; question: string }
-type Streamer = { id: string; name: string; platform: string; handle?: string; profileUrl: string; imageUrl?: string | null }
+export type ClipPost = { id: string; title?: string | null; content: string; author?: { ign: string; photo?: string | null }; mediaUrl?: string | null }
+export type Poll = { id: string; question: string }
+export type Streamer = { id: string; name: string; platform: string; handle?: string; profileUrl: string; imageUrl?: string | null }
 
 // Category config for styling
 const TRIVIA_CATEGORY_CONFIG: Record<string, { emoji: string; label: string; color: string; bg: string }> = {
@@ -313,7 +313,7 @@ const SkeletonBlock = ({ className = '' }: { className?: string }) => (
 /* ────────────────────────────────────────────────────────── */
 /*  CINEMATIC TRIVIA STAGE (Left Column)                      */
 /* ────────────────────────────────────────────────────────── */
-const TriviaCinematicStage = ({
+export const TriviaCinematicStage = ({
   triviaState,
   imageUrl,
   onAnswer,
@@ -569,7 +569,7 @@ const TriviaCinematicStage = ({
 /* ────────────────────────────────────────────────────────── */
 /*  MISSION CONTROL WIDGETS (Right Column)                    */
 /* ────────────────────────────────────────────────────────── */
-const MissionControlSidebar = ({ clip, polls, streamers }: { clip: ClipPost | null, polls: Poll[], streamers: Streamer[] }) => (
+export const MissionControlSidebar = ({ clip, polls, streamers }: { clip: ClipPost | null, polls: Poll[], streamers: Streamer[] }) => (
   <motion.div
     initial={{ opacity: 0, x: 20 }}
     animate={{ opacity: 1, x: 0 }}

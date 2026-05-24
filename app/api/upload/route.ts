@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { apiError, apiSuccess, requireActiveUser } from "@/lib/api-utils";
-import { uploadBase64Image, STORAGE_BUCKETS, generateFilePath } from "@/lib/supabase";
+import { STORAGE_BUCKETS, generateFilePath } from "@/lib/supabase";
+import { serverUploadBase64Image } from "@/lib/supabase-server";
 
 // POST - Upload an image to Supabase storage
 export async function POST(request: NextRequest) {
@@ -36,8 +37,8 @@ export async function POST(request: NextRequest) {
     const filePath = generateFilePath(type, user.id, type);
     console.log('[Upload] Generated file path:', filePath);
 
-    // Upload to Supabase
-    const { url, error } = await uploadBase64Image(targetBucket, filePath, image);
+    // Upload to Supabase using admin client (bypasses RLS for server-side uploads)
+    const { url, error } = await serverUploadBase64Image(targetBucket, filePath, image);
 
     if (error) {
       console.error("[Upload] Supabase upload error:", error);

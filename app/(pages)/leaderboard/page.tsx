@@ -4,11 +4,12 @@
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import {
   Shield, Zap, Swords, Star, Target, Wind, Crown,
   TrendingUp, TrendingDown, Minus, Trophy, Flame,
   Loader2, Calendar, ChevronLeft, ChevronRight,
-  ChevronDown, ChevronUp, Medal
+  ChevronDown, ChevronUp, Medal, Brain, ArrowRight
 } from 'lucide-react';
 
 // ── MLBB Role meta ─────────────────────────────────────────
@@ -268,10 +269,41 @@ export default function LeaderboardPage() {
               {tab === t && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#e8a000]" />}
             </button>
           ))}
+          <Link
+            href="/leaderboard/trivia"
+            className="flex-1 min-w-fit px-5 py-4 text-[10px] font-black uppercase tracking-widest text-[#e8a000]/70 hover:text-[#e8a000] transition-all relative flex items-center justify-center gap-1.5 border-l border-white/[0.04] shrink-0"
+          >
+            <Brain size={12} className="text-[#e8a000] animate-pulse" />
+            Trivia Rankings
+          </Link>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
+
+        {/* TRIVIA RANKINGS PROMO BANNER */}
+        <div className="relative border border-amber-500/20 rounded-xl bg-[#0f0b07] p-4 flex flex-col sm:flex-row items-center justify-between gap-4 overflow-hidden mb-6 shadow-lg">
+          <div className="absolute top-1/2 right-12 -translate-y-1/2 w-20 h-20 bg-[#e8a000]/5 rounded-full blur-xl pointer-events-none" />
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+              <Brain className="w-5 h-5 text-[#e8a000]" />
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-white flex items-center gap-1.5">
+                TRIVIA RANKINGS ARE LIVE
+                <span className="text-[8px] bg-red-500 text-white px-1.5 py-0.5 rounded font-mono font-black animate-pulse">NEW</span>
+              </p>
+              <p className="text-[10px] text-zinc-400">Answer daily trivia, earn XP, and secure Season Cash & Diamond Packs!</p>
+            </div>
+          </div>
+          <Link 
+            href="/leaderboard/trivia" 
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg bg-[#e8a000] text-black text-[10px] font-black uppercase px-4 py-2 hover:bg-[#ffa800] transition-colors duration-300 active:scale-[0.98] shrink-0"
+          >
+            View Trivia Rankings
+            <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
 
         {/* ── SEASON STANDINGS ── */}
         {tab === 'season' && (
@@ -515,7 +547,9 @@ export default function LeaderboardPage() {
           <div className="space-y-6">
             {/* Featured MVP Slider */}
             {featuredRole?.top && (
-              <div className="relative overflow-hidden rounded-2xl bg-[#0f0f18] border border-white/[0.08] p-6 shadow-2xl">
+              <Link
+                href={`/players/${featuredRole.top.player.id}`}
+                className="relative overflow-hidden rounded-2xl bg-[#0f0f18] border border-white/[0.08] p-6 shadow-2xl block hover:border-[#e8a000]/30 transition-all group">
                 <div className="absolute top-0 right-0 p-8 opacity-10">
                   <Crown size={120} className="rotate-12" />
                 </div>
@@ -540,7 +574,7 @@ export default function LeaderboardPage() {
                       </span>
                       <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">{featuredRole.role} Meta-Leader</span>
                     </div>
-                    <h2 className="text-3xl font-black italic uppercase text-white mb-4 leading-none">{featuredRole.top.player.ign}</h2>
+                    <h2 className="text-3xl font-black italic uppercase text-white mb-4 leading-none group-hover:text-[#e8a000] transition-colors">{featuredRole.top.player.ign}</h2>
 
                     <div className="grid grid-cols-3 gap-4">
                       <div className="bg-white/5 rounded-xl p-3 border border-white/5">
@@ -556,9 +590,12 @@ export default function LeaderboardPage() {
                         <p className="text-lg font-black text-[#27ae60]">{Math.round(featuredRole.top.winRate * 100)}%</p>
                       </div>
                     </div>
+                    <p className="text-[9px] text-[#e8a000]/60 font-black uppercase tracking-widest mt-3 flex items-center gap-1 justify-center md:justify-start">
+                      View Full Profile <ArrowRight size={10} />
+                    </p>
                   </div>
                 </div>
-              </div>
+              </Link>
             )}
 
             {/* Role Filter - Horizontal Scroll optimized */}
@@ -590,13 +627,17 @@ export default function LeaderboardPage() {
                 .slice()
                 .sort((a, b) => b.mvpCount - a.mvpCount)
                 .map((p, idx) => (
-                  <div key={p.id} className="bg-[#0f0f18] p-3 rounded-xl border border-white/5 flex items-center gap-4 transition-all hover:bg-white/[0.05]">
+                  <Link
+                    key={p.id}
+                    href={`/players/${p.player.id}`}
+                    className="bg-[#0f0f18] p-3 rounded-xl border border-white/5 flex items-center gap-4 transition-all hover:bg-white/[0.05] hover:border-[#e8a000]/20 group cursor-pointer block"
+                  >
                     <span className="w-6 text-xs font-black italic text-white/20">{idx + 1}</span>
                     <div className="w-12 h-12 rounded-full bg-white/5 p-0.5 border border-white/10 overflow-hidden relative">
                       <Image src={p.player.photo || p.player.user?.photo || '/heroes/stun.png'} alt="" fill className="object-cover rounded-full" />
                     </div>
                     <div className="flex-1">
-                      <p className="font-black text-sm uppercase tracking-tighter">{p.player.ign}</p>
+                      <p className="font-black text-sm uppercase tracking-tighter group-hover:text-[#e8a000] transition-colors">{p.player.ign}</p>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-white/5 text-white/40">
                           {p.player.role}
@@ -610,7 +651,8 @@ export default function LeaderboardPage() {
                       <p className="text-xs font-black text-white">{p.kda.toFixed(1)}</p>
                       <p className="text-[8px] font-black uppercase text-white/20">KDA Ratio</p>
                     </div>
-                  </div>
+                    <ArrowRight size={12} className="text-white/10 group-hover:text-[#e8a000] transition-colors shrink-0" />
+                  </Link>
                 ))}
             </div>
           </div>

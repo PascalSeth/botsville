@@ -4,6 +4,7 @@ import React from 'react'
 // MobileHero + DesktopHero are both exported from Hero.tsx
 // and self-select via md:hidden / hidden md:flex internally.
 import { Hero } from '../components/sections/Hero'
+import { RoadmapUpdates } from '../components/sections/RoadmapUpdates'
 
 // ── News ───────────────────────────────────────────────────
 // MobileNewsSection + DesktopNewsSection self-select via lg:hidden / hidden lg:block.
@@ -29,6 +30,9 @@ function Home() {
     <div>
       {/* Self-switching: MobileHero md:hidden / DesktopHero hidden md:flex */}
       <Hero />
+
+      {/* MPL Next Level Roadmap Updates */}
+      <RoadmapUpdates />
 
       {/* Self-switching: MobileNewsSection lg:hidden / DesktopNewsSection hidden lg:block */}
 

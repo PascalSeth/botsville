@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, X, ArrowRight, Radio, User, LogOut,
   Settings, ChevronDown, Users, Shield, Bell, Zap, Trophy,
-  Swords, Globe, Newspaper, BarChart3, ChevronRight, Star, Medal
+  Swords, Globe, Newspaper, BarChart3, ChevronRight, Star, Medal, Volume2
 } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
 import { subscribeToUserNotifications, unsubscribeFromChannel } from '@/lib/socket-client';
@@ -41,6 +41,7 @@ const NAV_ITEMS = [
     items: [
       { label: 'Teams', href: '/teams', desc: 'Browse & join squads', icon: Users },
       { label: 'Community', href: '/community', desc: 'Forums & discussions', icon: Globe },
+      { label: 'Meet the Pros', href: '/pros', desc: 'Vote for the next interview', icon: Volume2 },
       { label: 'News', href: '/news', desc: 'Latest esports updates', icon: Newspaper },
     ],
   },

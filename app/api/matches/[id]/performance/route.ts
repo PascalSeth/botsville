@@ -90,6 +90,8 @@ export async function POST(
       side: string;
       won: boolean;
       isMvp?: boolean;
+      maniacs?: number;
+      savages?: number;
       gameNumber: string | number;
     }
 
@@ -155,6 +157,8 @@ export async function POST(
               deaths: typeof deaths === 'string' ? parseInt(deaths) : deaths || 0,
               assists: typeof assists === 'string' ? parseInt(assists) : assists || 0,
               isMvp: Boolean(isMvp),
+              maniacs: typeof perf.maniacs === 'number' ? perf.maniacs : 0,
+              savages: typeof perf.savages === 'number' ? perf.savages : 0,
               side: side === "A" || side === "BLUE" ? TeamSide.BLUE : TeamSide.RED,
               won: Boolean(won),
             },
@@ -167,6 +171,8 @@ export async function POST(
               deaths: typeof deaths === 'string' ? parseInt(deaths) : deaths || 0,
               assists: typeof assists === 'string' ? parseInt(assists) : assists || 0,
               isMvp: Boolean(isMvp),
+              maniacs: typeof perf.maniacs === 'number' ? perf.maniacs : 0,
+              savages: typeof perf.savages === 'number' ? perf.savages : 0,
               side: side === "A" || side === "BLUE" ? TeamSide.BLUE : TeamSide.RED,
               won: Boolean(won),
             },
