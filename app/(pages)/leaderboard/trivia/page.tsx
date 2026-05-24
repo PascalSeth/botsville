@@ -200,9 +200,9 @@ export default function TriviaRankingPage() {
           <div className="shrink-0 w-full md:w-auto p-5 rounded-xl border border-amber-500/25 bg-[#0f0b07] shadow-xl relative overflow-hidden flex flex-col justify-center items-center md:items-start">
             <div className="absolute -right-8 -top-8 w-24 h-24 bg-[#e8a000]/10 rounded-full blur-2xl" />
             <span className="font-mono text-[8px] text-[#e8a000] font-black uppercase tracking-widest mb-1">SEASON REWARDS</span>
-            <p className="text-2xl font-black italic uppercase text-white leading-none">₵500.00 CASH</p>
+            {/* <p className="text-2xl font-black italic uppercase text-white leading-none">₵500.00 CASH</p> */}
             <p className="text-sm font-bold text-amber-500 mt-1 flex items-center gap-1 uppercase tracking-tight">
-              <Sparkles className="w-3.5 h-3.5" /> + 500 Diamonds Bundle
+              500 Diamonds Bundle
             </p>
             <div className="h-[1px] w-full bg-white/[0.08] my-3" />
             <span className="text-[9px] text-zinc-500 font-mono">SEASON ENDS IN: 8 DAYS</span>
