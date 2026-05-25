@@ -42,7 +42,16 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("[Upload] Supabase upload error:", error);
-      return apiError(`Failed to upload image: ${error.message}`, 500);
+
+      const message = error.message || "Failed to upload image";
+      if (message.includes("SUPABASE_SERVICE_ROLE_KEY is not configured")) {
+        return apiError(
+          "Upload service is not configured on the server (missing SUPABASE_SERVICE_ROLE_KEY). Contact administrator.",
+          500
+        );
+      }
+
+      return apiError(`Failed to upload image: ${message}`, 500);
     }
 
     console.log("[Upload] Upload successful:", url);

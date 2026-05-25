@@ -1,15 +1,25 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-// Admin client bypasses RLS — for server-side storage operations only
-export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+function getSupabaseAdminClient() {
+  if (!supabaseUrl) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL is not configured');
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured. Server uploads require service role key to bypass RLS.');
+  }
+
+  // Service-role client bypasses RLS — server-side storage operations only.
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
 
 export async function serverUploadBase64Image(
   bucket: string,
@@ -32,17 +42,23 @@ export async function serverUploadBase64Image(
   const blob = new Blob([byteArray], { type: `image/${extension}` });
   const fullPath = `${path}.${extension}`;
 
-  const { data, error } = await supabaseAdmin.storage
-    .from(bucket)
-    .upload(fullPath, blob, {
-      upsert: true,
-      cacheControl: '3600',
-    });
+  try {
+    const supabaseAdmin = getSupabaseAdminClient();
 
-  if (error) {
+    const { data, error } = await supabaseAdmin.storage
+      .from(bucket)
+      .upload(fullPath, blob, {
+        upsert: true,
+        cacheControl: '3600',
+      });
+
+    if (error) {
+      return { url: null, error: error as Error };
+    }
+
+    const { data: urlData } = supabaseAdmin.storage.from(bucket).getPublicUrl(data.path);
+    return { url: urlData.publicUrl, error: null };
+  } catch (error) {
     return { url: null, error: error as Error };
   }
-
-  const { data: urlData } = supabaseAdmin.storage.from(bucket).getPublicUrl(data.path);
-  return { url: urlData.publicUrl, error: null };
 }

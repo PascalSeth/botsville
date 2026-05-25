@@ -115,7 +115,27 @@ export default function DashboardTeamsPage() {
                       </span>
                     </td>
                     <td className="p-3 text-[#aaa] text-sm">{t.captain?.ign ?? "—"}</td>
-                    <td className="p-3 text-[#666] text-sm">{t._count?.players ?? 0}</td>
+                    <td className="p-3 text-[#666] text-sm flex items-center justify-between gap-3">
+                      <span>{t._count?.players ?? 0}</span>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Disband team "${t.name}"? This will remove it from the league.`)) return;
+                          const res = await dashboardFetch<{ message?: string }>(`/api/admin/teams/${t.id}/disband`, {
+                            method: "DELETE",
+                          });
+                          if (res.error) {
+                            setError(res.error);
+                            return;
+                          }
+                          setError(null);
+                          await load();
+                        }}
+                        className="px-2 py-1 text-[10px] font-bold tracking-widest uppercase bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors"
+                        title="Disband team (admin only)"
+                      >
+                        Disband
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
