@@ -1695,12 +1695,12 @@ export default function MyTeamPage() {
 
       {/* Players Section */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10">
-        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">
             Roster
           </h2>
           {team.isCaptain && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => {
                   const starterCount = team.players.filter(p => !p.isSubstitute).length;
@@ -1716,6 +1716,27 @@ export default function MyTeamPage() {
                 className="text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] hover:bg-[#e8a000]/20 transition-colors"
               >
                 + Invite
+              </button>
+              <button
+                onClick={async () => {
+                  const ok = confirm("Disband your team? This will remove the team from the league. Players will remain on their accounts.");
+                  if (!ok) return;
+                  try {
+                    const res = await fetch("/api/my-team/disband", { method: "DELETE" });
+                    const data = await res.json();
+                    if (!res.ok) {
+                      setManageError(data?.error || "Failed to disband team");
+                      return;
+                    }
+                    window.location.href = "/teams";
+                  } catch (e) {
+                    setManageError("Network error. Please try again.");
+                  }
+                }}
+                className="text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors"
+                title="Disband team"
+              >
+                Disband Team
               </button>
             </div>
           )}
