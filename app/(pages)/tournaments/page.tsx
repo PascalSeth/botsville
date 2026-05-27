@@ -68,6 +68,7 @@ type Tournament = {
   heroImage?: string | null;
   banner?: string | null;
   image?: string | null; // Compatibility with legacy field
+  prizePool?: string | null;
   rules?: string[];
   season?: { id: string; name: string } | null;
 };

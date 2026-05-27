@@ -9,7 +9,8 @@
       "Bash(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\pasca\\\\OneDrive\\\\Desktop\\\\botsville\\\\app\\\\api\\\\admin\\\\teams\\\\[id]\\\\photos-zip\")",
       "Bash(Out-Null)",
       "Bash(Write-Host \"done\")",
-      "Bash(xargs grep -l \"Tournament.*Card\\\\|Card.*Tournament\")"
+      "Bash(xargs grep -l \"Tournament.*Card\\\\|Card.*Tournament\")",
+      "Bash(npm run *)"
     ]
   }
 }

@@ -68,7 +68,7 @@ export async function POST(
 
     const zipBuf = await zip.generateAsync({ type: "nodebuffer" });
 
-    return new NextResponse(zipBuf, {
+    return new NextResponse(zipBuf.buffer.slice(zipBuf.byteOffset, zipBuf.byteOffset + zipBuf.byteLength) as ArrayBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/zip",
