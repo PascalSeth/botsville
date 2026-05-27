@@ -357,6 +357,7 @@ const FeaturedCard = ({ t, onRegister, selectedHeroImage }: { t: Tournament; onR
             { icon: MapPin, label: 'Domain', val: t.location || 'Online' },
             { icon: Calendar, label: 'Launch', val: formatDate(t.date) },
             { icon: Users, label: 'Load', val: `${filled}/${t.slots}` },
+            ...(t.prizePool ? [{ icon: Trophy, label: 'Prize Pool', val: t.prizePool }] : []),
           ].map(stat => {
             const Icon = stat.icon;
             return (
@@ -417,7 +418,14 @@ const SmallCard = ({ t, active, onSelect, onRegister }: { t: Tournament; active:
            <div className="flex items-center gap-2 text-[#555] text-[10px] font-bold">
              <Calendar size={12} /> {new Date(t.date).toLocaleDateString()}
            </div>
-           <ArrowRight size={16} className={`text-[#333] group-hover:text-[#e8a000] transition-all ${active ? 'translate-x-1 text-[#e8a000]' : ''}`} />
+           <div className="flex items-center gap-3">
+             {t.prizePool && (
+               <div className="flex items-center gap-1 text-[#e8a000] text-[10px] font-black">
+                 <Trophy size={11} /> {t.prizePool}
+               </div>
+             )}
+             <ArrowRight size={16} className={`text-[#333] group-hover:text-[#e8a000] transition-all ${active ? 'translate-x-1 text-[#e8a000]' : ''}`} />
+           </div>
         </div>
       </div>
     </motion.button>
@@ -438,7 +446,11 @@ const PastCard = ({ t }: { t: Tournament }) => (
         <h3 className="text-2xl font-black text-white uppercase tracking-tighter">{t.name}</h3>
       </div>
       <div className="pt-4 border-t border-white/5 flex items-center justify-between">
-        <span className="text-[9px] font-black uppercase text-[#444] tracking-widest">Archive Sealed</span>
+        <span className="text-[9px] font-black uppercase text-[#444] tracking-widest">
+          {t.prizePool ? (
+            <span className="flex items-center gap-1.5 text-[#e8a000]"><Trophy size={11} /> {t.prizePool}</span>
+          ) : 'Archive Sealed'}
+        </span>
         <ChevronRight size={16} className="text-[#333] group-hover:text-[#e8a000] transition-all group-hover:translate-x-1" />
       </div>
     </div>

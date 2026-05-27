@@ -275,35 +275,33 @@ export async function DELETE(
       }
     }
 
-    // Soft delete player
+    // If the captain is leaving themselves, require manual captaincy transfer first
+    const isCaptainLeaving = player.team.captainId === player.userId && player.userId === user.id;
+    if (isCaptainLeaving) {
+      const othersWithAccount = player.team.players.filter(
+        (p) => p.id !== playerId && !p.deletedAt && p.userId
+      );
+      if (othersWithAccount.length > 0) {
+        return apiError(
+          "You must transfer captaincy to another player before leaving the team.",
+          400
+        );
+      }
+    }
+
+    // Soft delete player — stats preserved via soft delete
     await prisma.player.update({
       where: { id: playerId },
       data: { deletedAt: new Date() },
     });
 
-    // If captain is leaving, transfer captaincy
-    if (player.team.captainId === player.userId) {
-      const remainingStarters = player.team.players.filter(
-        (p) => p.id !== playerId && !p.isSubstitute && !p.deletedAt
-      );
-
-      if (remainingStarters.length > 0) {
-        // Transfer to longest-serving starter
-        const newCaptain = remainingStarters.sort(
-          (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
-        )[0];
-
-        await prisma.team.update({
-          where: { id },
-          data: { captainId: newCaptain.userId },
-        });
-      } else {
-        // No starters left, archive team
-        await prisma.team.update({
-          where: { id },
-          data: { deletedAt: new Date() },
-        });
-      }
+    // If no captaincy transfer was required but captain left anyway (no eligible players),
+    // archive the team
+    if (isCaptainLeaving) {
+      await prisma.team.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
     }
 
     return apiSuccess({

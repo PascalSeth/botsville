@@ -137,6 +137,12 @@ export default function TournamentDetailPage() {
   const [orchMatchesPerDay, setOrchMatchesPerDay] = useState(6);
   const [orchestrating, setOrchestrating] = useState(false);
   const [orchMessage, setOrchMessage] = useState<string | null>(null);
+
+  // Reset Tournament State
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetConfirmName, setResetConfirmName] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [orchMatchesExist, setOrchMatchesExist] = useState(tournament?._count?.matches ? tournament._count.matches > 0 : false);
   const [orchRoundsLimit, setOrchRoundsLimit] = useState<number | "">("");
 
@@ -478,6 +484,29 @@ export default function TournamentDetailPage() {
       setAdvanceMessage(`⚠️ ${err instanceof Error ? err.message : 'Transition failed'}`);
     } finally {
       setAdvancing(false);
+    }
+  };
+
+  const handleResetTournament = async () => {
+    if (!id || !tournament) return;
+    setResetting(true);
+    setResetMessage(null);
+    try {
+      const res = await fetch(`/api/admin/tournaments/${id}/reset`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      const result = await res.json() as { message?: string; error?: string; matchesDeleted?: number };
+      if (!res.ok) throw new Error(result.error || "Reset failed");
+      setResetMessage(result.message ?? "Tournament reset successfully.");
+      setShowResetModal(false);
+      setResetConfirmName("");
+      await fetchTournament();
+    } catch (err) {
+      setResetMessage(`Error: ${err instanceof Error ? err.message : "Reset failed"}`);
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -1102,6 +1131,34 @@ export default function TournamentDetailPage() {
         </div>
       </div>
 
+      {/* Danger Zone */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.5 }} className="bg-red-500/[0.03] backdrop-blur-xl border border-red-500/20 rounded-2xl p-6">
+        <div className="flex items-start gap-4">
+          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 shrink-0">
+            <AlertCircle size={20} className="text-red-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-xs font-black text-red-400 uppercase tracking-widest mb-1">Danger Zone</h2>
+            <p className="text-[10px] text-white/30 uppercase tracking-wider leading-relaxed mb-4">
+              Reset wipes all match data, group assignments, standings, MVP records, and prize distributions. Registered teams stay enrolled but seeds and elimination flags are cleared. Tournament reverts to <span className="text-white/60">UPCOMING</span>.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => { setShowResetModal(true); setResetMessage(null); setResetConfirmName(""); }}
+                className="px-5 py-2.5 bg-red-500/10 border border-red-500/30 text-red-400 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-red-500/20 transition-all flex items-center gap-2"
+              >
+                <AlertCircle size={13} /> Reset Tournament
+              </button>
+              {resetMessage && (
+                <p className={`text-[10px] font-black uppercase tracking-widest ${resetMessage.startsWith("Error") ? "text-red-400" : "text-emerald-400"}`}>
+                  {resetMessage}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
       {/* Bulk Register Modal */}
       <AnimatePresence>
         {showBulkRegisterModal && (
@@ -1183,6 +1240,84 @@ export default function TournamentDetailPage() {
                     </button>
                   </div>
                </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Reset Confirmation Modal */}
+      <AnimatePresence>
+        {showResetModal && tournament && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xl p-6">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-lg bg-[#0a0a0f] border border-red-500/30 rounded-3xl overflow-hidden"
+            >
+              <div className="p-8 border-b border-red-500/10 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-2xl bg-red-500/10 text-red-400"><AlertCircle size={22} /></div>
+                  <div>
+                    <h2 className="text-lg font-black text-white uppercase tracking-tighter">Reset Tournament</h2>
+                    <p className="text-[10px] font-black text-red-400/70 uppercase tracking-widest mt-0.5">This action cannot be undone</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowResetModal(false)} className="text-[#444] hover:text-white transition-colors"><X size={20} /></button>
+              </div>
+
+              <div className="p-8 space-y-6">
+                <div className="space-y-2">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-[#555] mb-3">The following will be permanently deleted:</p>
+                  {[
+                    "All matches and game results",
+                    "All group assignments and standings",
+                    "All MVP records and performance stats",
+                    "All prize distribution records",
+                    "All waitlist entries",
+                    "Tournament placement data from season records",
+                  ].map((item) => (
+                    <div key={item} className="flex items-center gap-3">
+                      <div className="w-1.5 h-1.5 rounded-full bg-red-500/60 shrink-0" />
+                      <p className="text-[10px] text-white/50 uppercase tracking-wide">{item}</p>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-3 mt-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/60 shrink-0" />
+                    <p className="text-[10px] text-emerald-400/70 uppercase tracking-wide">Registered teams are kept (seeds + elimination cleared)</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block">
+                    Type <span className="text-white">{tournament.name}</span> to confirm
+                  </label>
+                  <input
+                    type="text"
+                    value={resetConfirmName}
+                    onChange={(e) => setResetConfirmName(e.target.value)}
+                    placeholder={tournament.name}
+                    className="w-full bg-white/[0.03] border border-white/10 focus:border-red-500/40 text-white px-4 py-3 rounded-xl outline-none text-sm font-mono"
+                  />
+                </div>
+
+                <div className="flex gap-4 pt-2">
+                  <button
+                    onClick={() => setShowResetModal(false)}
+                    className="flex-1 py-4 bg-white/5 text-[#aaa] font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-white/10 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleResetTournament}
+                    disabled={resetting || resetConfirmName !== tournament.name}
+                    className="flex-1 py-4 bg-red-500/20 border border-red-500/40 text-red-400 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-red-500/30 transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    {resetting ? <Loader2 size={14} className="animate-spin" /> : <AlertCircle size={14} />}
+                    {resetting ? "Resetting…" : "Confirm Reset"}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

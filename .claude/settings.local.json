@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\pasca\\\\OneDrive\\\\Desktop\\\\botsville\" | Where-Object {$_.PSIsContainer} | Select-Object Name)",
+      "PowerShell(head -50)",
+      "Bash(xargs grep -l \"team.*detail\\\\|team.*\\\\[id\\\\]\\\\|playerList\\\\|roster\")",
+      "Bash(npm install *)",
+      "Bash(node -e \"require\\('jszip'\\); console.log\\('jszip ok'\\)\")",
+      "Bash(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\pasca\\\\OneDrive\\\\Desktop\\\\botsville\\\\app\\\\api\\\\admin\\\\teams\\\\[id]\\\\photos-zip\")",
+      "Bash(Out-Null)",
+      "Bash(Write-Host \"done\")",
+      "Bash(xargs grep -l \"Tournament.*Card\\\\|Card.*Tournament\")"
+    ]
+  }
+}

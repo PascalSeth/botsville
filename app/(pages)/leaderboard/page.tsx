@@ -223,7 +223,11 @@ export default function LeaderboardPage() {
               {seasonStandings[1] && (
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-12 h-12 md:w-16 md:h-16 rounded-full border-2 border-slate-400 p-1 relative">
-                    <img src={seasonStandings[1].team.logo || ''} alt="" className="w-full h-full rounded-full object-cover" />
+                    {seasonStandings[1].team.logo ? (
+                      <img src={seasonStandings[1].team.logo} alt="" className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-white/5 flex items-center justify-center text-[10px] font-black text-[#888]">{seasonStandings[1].team.tag?.slice(0,2)}</div>
+                    )}
                     <div className="absolute -bottom-1 -right-1 bg-slate-400 text-black font-black text-[10px] w-5 h-5 rounded-full flex items-center justify-center">2</div>
                   </div>
                   <p className="text-[10px] font-black truncate w-full text-center">{seasonStandings[1].team.tag}</p>
@@ -234,7 +238,11 @@ export default function LeaderboardPage() {
                 <div className="flex flex-col items-center gap-2 -translate-y-4">
                   <Crown size={20} className="text-[#e8a000] animate-bounce" />
                   <div className="w-16 h-16 md:w-24 md:h-24 rounded-full border-4 border-[#e8a000] p-1.5 relative shadow-[0_0_30px_rgba(232,160,0,0.3)]">
-                    <img src={seasonStandings[0].team.logo || ''} alt="" className="w-full h-full rounded-full object-cover" />
+                    {seasonStandings[0].team.logo ? (
+                      <img src={seasonStandings[0].team.logo} alt="" className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-[#e8a000]/10 flex items-center justify-center text-sm font-black text-[#e8a000]">{seasonStandings[0].team.tag?.slice(0,2)}</div>
+                    )}
                     <div className="absolute -bottom-1 -right-1 bg-[#e8a000] text-black font-black text-xs w-6 h-6 rounded-full flex items-center justify-center">1</div>
                   </div>
                   <p className="text-xs font-black truncate w-full text-center">{seasonStandings[0].team.tag}</p>
@@ -244,7 +252,11 @@ export default function LeaderboardPage() {
               {seasonStandings[2] && (
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-12 h-12 md:w-16 md:h-16 rounded-full border-2 border-amber-700 p-1 relative">
-                    <img src={seasonStandings[2].team.logo || ''} alt="" className="w-full h-full rounded-full object-cover" />
+                    {seasonStandings[2].team.logo ? (
+                      <img src={seasonStandings[2].team.logo} alt="" className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-white/5 flex items-center justify-center text-[10px] font-black text-amber-700">{seasonStandings[2].team.tag?.slice(0,2)}</div>
+                    )}
                     <div className="absolute -bottom-1 -right-1 bg-amber-700 text-white font-black text-[10px] w-5 h-5 rounded-full flex items-center justify-center">3</div>
                   </div>
                   <p className="text-[10px] font-black truncate w-full text-center">{seasonStandings[2].team.tag}</p>
@@ -353,8 +365,12 @@ export default function LeaderboardPage() {
 
                       {/* 2. Team */}
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-white/5 p-1 border border-white/10 flex-shrink-0 overflow-hidden">
-                          <img src={s.team.logo || ''} alt={s.team.tag} className="w-full h-full object-cover rounded" />
+                        <div className="w-10 h-10 rounded-lg bg-white/5 p-1 border border-white/10 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                          {s.team.logo ? (
+                            <img src={s.team.logo} alt={s.team.tag} className="w-full h-full object-cover rounded" />
+                          ) : (
+                            <span className="text-[10px] font-black text-[#555]">{s.team.tag?.slice(0,2)}</span>
+                          )}
                         </div>
                         <div className="min-w-0">
                           <p className="font-black text-sm uppercase tracking-tight group-hover:text-[#e8a000] transition-colors truncate">{s.team.name}</p>
@@ -454,7 +470,11 @@ export default function LeaderboardPage() {
                         <span className="text-sm font-black italic text-white/40 md:text-center">#{i + 1}</span>
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center overflow-hidden border border-white/10">
-                            <img src={row.team.logo || ''} alt="" className="w-full h-full object-cover" />
+                            {row.team.logo ? (
+                              <img src={row.team.logo} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-[9px] font-black text-[#555]">{row.team.tag?.slice(0,2)}</span>
+                            )}
                           </div>
                           <span className="text-xs font-black uppercase tracking-tight">{row.team.name}</span>
                         </div>
@@ -515,8 +535,12 @@ export default function LeaderboardPage() {
                                 <span className="w-8 md:w-full text-center text-sm font-black italic text-white/20">#{idx + 1}</span>
                                 
                                 <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-lg bg-white/5 p-1 border border-white/10 flex-shrink-0">
-                                    <img src={r.team.logo || ''} alt="" className="w-full h-full object-cover rounded-sm" />
+                                  <div className="w-8 h-8 rounded-lg bg-white/5 p-1 border border-white/10 flex-shrink-0 flex items-center justify-center">
+                                    {r.team.logo ? (
+                                      <img src={r.team.logo} alt="" className="w-full h-full object-cover rounded-sm" />
+                                    ) : (
+                                      <span className="text-[9px] font-black text-[#555]">{r.team.tag?.slice(0,2)}</span>
+                                    )}
                                   </div>
                                   <span className="text-xs font-black uppercase tracking-tight">{r.team.name}</span>
                                 </div>
@@ -737,7 +761,11 @@ export default function LeaderboardPage() {
                 {/* 2. Team */}
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-white/5 p-1 border border-white/10 flex-shrink-0 overflow-hidden">
-                    <img src={s.team.logo || ''} alt="" className="w-full h-full object-cover rounded" />
+                    {s.team.logo ? (
+                      <img src={s.team.logo} alt="" className="w-full h-full object-cover rounded" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-[#555]">{s.team.tag?.slice(0, 2)}</div>
+                    )}
                   </div>
                   <div>
                     <p className="font-black text-sm uppercase leading-tight text-white">{s.team.name}</p>

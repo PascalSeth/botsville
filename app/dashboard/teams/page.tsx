@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { dashboardFetch } from "../lib/api";
 
 type Team = {
@@ -98,7 +99,11 @@ export default function DashboardTeamsPage() {
               <tbody>
                 {teams.map((t) => (
                   <tr key={t.id} className="border-b border-white/5 hover:bg-white/[0.02]">
-                    <td className="p-3 text-white font-semibold">{t.name}</td>
+                    <td className="p-3">
+                      <Link href={`/dashboard/teams/${t.id}`} className="text-white font-semibold hover:text-[#e8a000] transition-colors">
+                        {t.name}
+                      </Link>
+                    </td>
                     <td className="p-3 text-[#e8a000] font-mono text-sm">{t.tag}</td>
                     <td className="p-3 text-[#aaa] text-sm">{t.region}</td>
                     <td className="p-3">
