@@ -209,19 +209,15 @@ export async function POST(
       playDayCount++;
     }
 
-    // 5. Initialize Standings Index
+    // 5. Initialize Standings Index (Clean slate first)
+    await prisma.groupStageStanding.deleteMany({
+      where: { tournamentId }
+    });
+
     for (const group of groups) {
       for (const groupTeam of group.teams) {
-        await prisma.groupStageStanding.upsert({
-          where: {
-            tournamentId_groupName_teamId: {
-              tournamentId,
-              groupName: group.name,
-              teamId: groupTeam.teamId
-            }
-          },
-          update: {},
-          create: {
+        await prisma.groupStageStanding.create({
+          data: {
             tournamentId,
             groupName: group.name,
             teamId: groupTeam.teamId
@@ -231,8 +227,9 @@ export async function POST(
     }
 
     // 6. Persistence
+    // Completely wipe all matches for this tournament to clear out any old/erroneous manual configurations
     await prisma.match.deleteMany({
-      where: { tournamentId, bracketType: BracketType.GROUP_STAGE }
+      where: { tournamentId }
     });
 
     const created = await prisma.match.createMany({

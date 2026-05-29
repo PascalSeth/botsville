@@ -134,7 +134,7 @@ export default function TournamentDetailPage() {
   // Orchestrator State
   const [orchDate, setOrchDate] = useState(tournament?.date ? new Date(tournament.date).toISOString().split('T')[0] : "");
   const [orchPlayDays, setOrchPlayDays] = useState<number[]>([3, 4, 5, 6, 0]); // Wed-Sun default
-  const [orchMatchesPerDay, setOrchMatchesPerDay] = useState(6);
+  const [orchMatchesPerDay, setOrchMatchesPerDay] = useState<number | "">(6);
   const [orchestrating, setOrchestrating] = useState(false);
   const [orchMessage, setOrchMessage] = useState<string | null>(null);
 
@@ -164,10 +164,11 @@ export default function TournamentDetailPage() {
     const totalMatches = totalRounds * matchesPerRound;
     
     // Scheduling Mechanics
-    const matchesPerWeek = orchPlayDays.length * orchMatchesPerDay;
+    const matchesPerDayVal = typeof orchMatchesPerDay === "number" && !Number.isNaN(orchMatchesPerDay) ? orchMatchesPerDay : 0;
+    const matchesPerWeek = orchPlayDays.length * matchesPerDayVal;
     if (matchesPerWeek === 0) return null;
 
-    const totalDaysNeeded = Math.ceil(totalMatches / orchMatchesPerDay);
+    const totalDaysNeeded = Math.ceil(totalMatches / matchesPerDayVal);
     
     // Estimate completion date
     let estimateDate = orchDate ? new Date(orchDate) : new Date();
@@ -176,7 +177,7 @@ export default function TournamentDetailPage() {
 
     while (scheduledMatches < totalMatches && daysPassed < 365) {
       if (orchPlayDays.includes(estimateDate.getDay())) {
-        scheduledMatches += orchMatchesPerDay;
+        scheduledMatches += matchesPerDayVal;
       }
       if (scheduledMatches < totalMatches) {
         estimateDate.setDate(estimateDate.getDate() + 1);
@@ -919,8 +920,8 @@ export default function TournamentDetailPage() {
                       <label className="text-[9px] font-black uppercase tracking-widest text-[#555] block mb-2">Matches / Day</label>
                       <input 
                         type="number" 
-                        value={orchMatchesPerDay} 
-                        onChange={(e) => setOrchMatchesPerDay(parseInt(e.target.value))}
+                        value={orchMatchesPerDay === "" || Number.isNaN(orchMatchesPerDay) ? "" : orchMatchesPerDay} 
+                        onChange={(e) => setOrchMatchesPerDay(e.target.value === "" ? "" : parseInt(e.target.value))}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-center text-xs outline-none focus:border-emerald-500/30" 
                       />
                     </div>
