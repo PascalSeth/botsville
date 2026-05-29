@@ -173,6 +173,40 @@ export default function MyTeamPage() {
   const [addingPlayer, setAddingPlayer] = useState(false);
   const [addPlayerError, setAddPlayerError] = useState<string | null>(null);
   const [addPlayerSuccess, setAddPlayerSuccess] = useState<string | null>(null);
+  const [lookupPlayer, setLookupPlayer] = useState<{ loading: boolean; found: boolean; ign?: string; photo?: string | null; team?: { id: string; name: string } | null } | null>(null);
+
+  // Debounced effect to lookup player status when captain types IGN
+  useEffect(() => {
+    const trimmed = addPlayerIGN.trim();
+    if (trimmed.length < 2) {
+      setLookupPlayer(null);
+      return;
+    }
+
+    setLookupPlayer({ loading: true, found: false });
+
+    const timeout = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/players/lookup?ign=${encodeURIComponent(trimmed)}`);
+        const data = await response.json();
+        if (response.ok && data?.found) {
+          setLookupPlayer({
+            loading: false,
+            found: true,
+            ign: data.ign,
+            photo: data.photo,
+            team: data.team,
+          });
+        } else {
+          setLookupPlayer({ loading: false, found: false });
+        }
+      } catch (e) {
+        setLookupPlayer(null);
+      }
+    }, 400); // 400ms debounce
+
+    return () => clearTimeout(timeout);
+  }, [addPlayerIGN]);
 
   // ── Player edit state ─────────────────────────────────────
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
@@ -579,6 +613,7 @@ export default function MyTeamPage() {
       if (!res.ok) { setAddPlayerError(data?.error ?? 'Failed to add player'); return; }
       setAddPlayerSuccess(`${addPlayerIGN.trim()} added as ${addPlayerIsSubstitute ? 'substitute' : 'starter'}!`);
       setAddPlayerIGN('');
+      setLookupPlayer(null);
       setAddPlayerRole('EXP');
       // Auto-set the next add type based on updated roster
       const currentStarters = team.players.filter(p => !p.isSubstitute).length;
@@ -2342,6 +2377,43 @@ export default function MyTeamPage() {
                               onChange={(e) => setAddPlayerIGN(e.target.value)}
                               className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2.5 outline-none focus:border-[#e8a000]/50 placeholder:text-[#444]"
                             />
+                            {lookupPlayer && (
+                              <div className="mt-2 p-3 bg-[#0c0c12] border border-white/5 flex items-center gap-3">
+                                {lookupPlayer.loading ? (
+                                  <div className="flex items-center gap-2 py-1">
+                                    <Loader2 size={12} className="animate-spin text-[#e8a000]" />
+                                    <span className="text-[10px] text-[#555] tracking-wider uppercase font-black">Preloading player info...</span>
+                                  </div>
+                                ) : lookupPlayer.found ? (
+                                  <>
+                                    <div className="w-10 h-10 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
+                                      {lookupPlayer.photo ? (
+                                        <img src={lookupPlayer.photo} alt="" className="w-full h-full object-cover" />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center">
+                                          <User size={14} className="text-[#333]" />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-white text-xs font-bold truncate">{lookupPlayer.ign}</p>
+                                      <p className="text-[9px] tracking-wider uppercase mt-0.5 font-black">
+                                        {lookupPlayer.team ? (
+                                          <span className="text-red-400">Team: {lookupPlayer.team.name}</span>
+                                        ) : (
+                                          <span className="text-emerald-400">Available</span>
+                                        )}
+                                      </p>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="flex items-center gap-2 py-1">
+                                    <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                    <span className="text-[10px] text-blue-400 tracking-wider uppercase font-black">New Player (will create placeholder)</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <div>
                             <label className="text-[9px] text-[#777] font-black uppercase tracking-[0.2em] mb-1.5 block">Role</label>
