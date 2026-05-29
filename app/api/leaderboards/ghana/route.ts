@@ -65,6 +65,8 @@ export async function GET() {
       highestWinRateByHero,
       mostSavageThisWeek,
       bestTankInGhana,
+    }, 200, {
+      "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
     });
   } catch (error: unknown) {
     console.error("Ghana leaderboard GET error:", error);

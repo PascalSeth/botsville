@@ -10,7 +10,9 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ sl
       include: { user: { select: { id: true, ign: true, photo: true } } },
       orderBy: { createdAt: "desc" },
     });
-    return apiSuccess({ comments });
+    return apiSuccess({ comments }, 200, {
+      "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
+    });
   } catch (error: unknown) {
     console.error("Hero comments GET error:", error);
     return apiError(error instanceof Error ? error.message : "Failed to fetch comments", 500);

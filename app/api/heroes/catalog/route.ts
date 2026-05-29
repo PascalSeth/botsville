@@ -31,7 +31,9 @@ export async function GET() {
       },
     });
 
-    return apiSuccess({ heroes });
+    return apiSuccess({ heroes }, 200, {
+      "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
+    });
   } catch (error: unknown) {
     console.error("Hero catalog GET error:", error);
     return apiError(error instanceof Error ? error.message : "Failed to fetch hero catalog", 500);

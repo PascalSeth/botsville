@@ -155,7 +155,9 @@ export async function GET(request: NextRequest) {
         skip,
       },
     };
-    return apiSuccess(response);
+    return apiSuccess(response, 200, {
+      "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
+    });
   } catch (error: unknown) {
     console.error("Get team leaderboard error:", error);
     return apiError(error instanceof Error ? error.message : "Failed to fetch leaderboard", 500);

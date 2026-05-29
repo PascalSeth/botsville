@@ -175,8 +175,8 @@ export function apiError(message: string, status: number = 400) {
 /**
  * Standard API success response
  */
-export function apiSuccess<T>(data: T, status: number = 200) {
-  return NextResponse.json(data, { status });
+export function apiSuccess<T>(data: T, status: number = 200, headers?: Record<string, string>) {
+  return NextResponse.json(data, { status, headers });
 }
 
 /**

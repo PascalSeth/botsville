@@ -24,8 +24,12 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    const cacheHeaders = {
+      "Cache-Control": "public, s-maxage=10, stale-while-revalidate=5"
+    };
+
     if (!player) {
-      return apiSuccess({ found: false });
+      return apiSuccess({ found: false }, 200, cacheHeaders);
     }
 
     // A player is active on a team if their player record is not soft-deleted,
@@ -37,7 +41,7 @@ export async function GET(request: NextRequest) {
       ign: player.ign,
       photo: player.photo,
       team: isPlayerActive ? { id: player.team!.id, name: player.team!.name } : null,
-    });
+    }, 200, cacheHeaders);
   } catch (error) {
     console.error("Player lookup error:", error);
     return apiError("Failed to lookup player", 500);

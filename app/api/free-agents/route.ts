@@ -59,6 +59,8 @@ export async function GET(request: NextRequest) {
         limit,
         skip,
       },
+    }, 200, {
+      "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to fetch free agents";

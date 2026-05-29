@@ -66,6 +66,10 @@ export async function GET(request: NextRequest) {
       prisma.news.count({ where }),
     ]);
 
+    const cacheHeaders = (!user || !user.role) ? {
+      "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
+    } : undefined;
+
     return apiSuccess({
       articles,
       pagination: {
@@ -73,7 +77,7 @@ export async function GET(request: NextRequest) {
         limit,
         skip,
       },
-    });
+    }, 200, cacheHeaders);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to fetch news";
     console.error("Get news error:", error);

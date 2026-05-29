@@ -44,6 +44,8 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ sl
       builds,
       comments,
       topPlayers,
+    }, 200, {
+      "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
     });
   } catch (error: unknown) {
     console.error("Hero GET error:", error);

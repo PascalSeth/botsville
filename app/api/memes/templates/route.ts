@@ -21,7 +21,9 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
-    return apiSuccess({ templates });
+    return apiSuccess({ templates }, 200, {
+      "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
+    });
   } catch (error: unknown) {
     console.error("Meme templates GET error:", error);
     return apiError(error instanceof Error ? error.message : "Failed to fetch meme templates", 500);

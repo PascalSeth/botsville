@@ -54,7 +54,11 @@ export async function GET(
       }
     }
 
-    return apiSuccess(article);
+    const cacheHeaders = (!user || !user.role) ? {
+      "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
+    } : undefined;
+
+    return apiSuccess(article, 200, cacheHeaders);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to fetch article";
     console.error("Get article error:", error);

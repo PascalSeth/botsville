@@ -139,6 +139,8 @@ export async function GET(request: NextRequest) {
         limit,
         skip,
       },
+    }, 200, {
+      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30"
     });
   } catch (error: unknown) {
     console.error("Get teams error:", error);
