@@ -24,6 +24,12 @@ export async function DELETE(
       data: { deletedAt: new Date() },
     });
 
+    // Soft-delete all players on the disbanded team (retains stats & records)
+    await prisma.player.updateMany({
+      where: { teamId: id, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
+
     await prisma.adminAuditLog.create({
       data: {
         actorId: admin.id,

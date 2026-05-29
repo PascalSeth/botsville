@@ -263,19 +263,37 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Auto-create a player record for the captain using their mainRole
+      // Auto-create or restore a player record for the captain using their mainRole
       if (captainRecord?.mainRole) {
         const gameRole = ROLE_TO_GAME_ROLE[captainRecord.mainRole];
-        await tx.player.create({
-          data: {
-            teamId: created.id,
-            userId: user.id,
-            ign: captainRecord.ign,
-            role: gameRole,
-            photo: captainRecord.photo || null,
-            isSubstitute: false,
-          },
+        const existingPlayerRecord = await tx.player.findFirst({
+          where: { userId: user.id },
         });
+
+        if (existingPlayerRecord) {
+          await tx.player.update({
+            where: { id: existingPlayerRecord.id },
+            data: {
+              teamId: created.id,
+              ign: captainRecord.ign,
+              role: gameRole,
+              photo: captainRecord.photo || null,
+              isSubstitute: false,
+              deletedAt: null, // restore it!
+            },
+          });
+        } else {
+          await tx.player.create({
+            data: {
+              teamId: created.id,
+              userId: user.id,
+              ign: captainRecord.ign,
+              role: gameRole,
+              photo: captainRecord.photo || null,
+              isSubstitute: false,
+            },
+          });
+        }
       }
 
       return created;

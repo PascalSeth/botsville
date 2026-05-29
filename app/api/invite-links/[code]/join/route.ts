@@ -69,15 +69,12 @@ export async function POST(
       return apiError("You have already used this invite link");
     }
 
-    // Check if user is already on a team
-    const existingPlayer = await prisma.player.findFirst({
-      where: {
-        userId: user.id,
-        deletedAt: null,
-      },
+    // Find the player's active or inactive player record
+    const playerRecord = await prisma.player.findFirst({
+      where: { userId: user.id },
     });
 
-    if (existingPlayer) {
+    if (playerRecord && !playerRecord.deletedAt) {
       return apiError("You are already on a team");
     }
 
@@ -96,17 +93,34 @@ export async function POST(
       isSubstitute = true;
     }
 
-    // Create player
-    const player = await prisma.player.create({
-      data: {
-        teamId: link.teamId,
-        userId: user.id,
-        ign: user.ign,
-        role: role as GameRole,
-        secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
-        isSubstitute,
-      },
-    });
+    // Create or restore player
+    let player;
+    if (playerRecord) {
+      // Restore and update existing player record (preserves stats)
+      player = await prisma.player.update({
+        where: { id: playerRecord.id },
+        data: {
+          teamId: link.teamId,
+          ign: user.ign,
+          role: role as GameRole,
+          secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
+          isSubstitute,
+          deletedAt: null, // restore
+        },
+      });
+    } else {
+      // Create new player record
+      player = await prisma.player.create({
+        data: {
+          teamId: link.teamId,
+          userId: user.id,
+          ign: user.ign,
+          role: role as GameRole,
+          secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
+          isSubstitute,
+        },
+      });
+    }
 
     // Log usage
     await prisma.inviteLinkUsage.create({

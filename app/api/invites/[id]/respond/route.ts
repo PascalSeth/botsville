@@ -131,24 +131,39 @@ export async function POST(
 
     // Helper to create player for a target user id
     const createPlayerForUser = async (targetUserId: string, targetIgn: string) => {
-      // Check if target user is already on a team
-      const existingPlayer = await prisma.player.findFirst({
-        where: { userId: targetUserId, deletedAt: null },
+      // Find target user's active or inactive player record
+      const playerRecord = await prisma.player.findFirst({
+        where: { userId: targetUserId },
       });
-      if (existingPlayer) throw new Error('User is already on a team');
+      if (playerRecord && !playerRecord.deletedAt) throw new Error('User is already on a team');
 
       if (invite.team.players.length >= 9) throw new Error('Team is full (maximum 9 players)');
 
       const roleTaken = invite.team.players.find((p) => p.role === acceptRole && !p.isSubstitute);
       const isSubstitute = Boolean(roleTaken);
 
-      // Check if this IGN exists as a placeholder ANYWHERE (global search)
-      // This ensures match history is preserved even if the placeholder was on a different team.
+      if (playerRecord) {
+        // Restore and reuse the user's existing player record (preserves stats)
+        const player = await prisma.player.update({
+          where: { id: playerRecord.id },
+          data: {
+            teamId: invite.teamId,
+            ign: targetIgn,
+            role: acceptRole,
+            secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
+            isSubstitute,
+            deletedAt: null, // restore
+            updatedAt: new Date(),
+          },
+        });
+        return { player, isSubstitute };
+      }
+
+      // Check if this IGN exists as a placeholder ANYWHERE (including soft-deleted)
       const placeholder = await prisma.player.findFirst({
         where: {
           ign: { equals: targetIgn, mode: "insensitive" },
           userId: null,
-          deletedAt: null,
         },
       });
 
@@ -163,6 +178,7 @@ export async function POST(
             secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
             isSubstitute,
             ign: targetIgn, // Sync casing
+            deletedAt: null, // restore if soft-deleted
             updatedAt: new Date(),
           },
         });
@@ -209,9 +225,14 @@ export async function POST(
         return apiError('Invalid role');
       }
 
-      // Check if user is already on a team
-      const existingPlayer = await prisma.player.findFirst({ where: { userId: user.id, deletedAt: null } });
-      if (existingPlayer) return apiError('You are already on a team');
+      // Find the player's active or inactive player record
+      const playerRecord = await prisma.player.findFirst({
+        where: { userId: user.id },
+      });
+
+      if (playerRecord && !playerRecord.deletedAt) {
+        return apiError("You are already on a team");
+      }
 
       if (invite.team.players.length >= 9) return apiError('Team is full (maximum 9 players)');
 
@@ -224,41 +245,57 @@ export async function POST(
         data: { status: InviteStatus.CANCELLED, respondedAt: new Date() },
       });
 
-      // Check for placeholders first to preserve match history
-      const placeholder = await prisma.player.findFirst({
-        where: { 
-          ign: { equals: user.ign, mode: "insensitive" },
-          userId: null,
-          deletedAt: null 
-        },
-      });
-
       let player;
-      if (placeholder) {
-        // Claim and transfer the placeholder
+      if (playerRecord) {
+        // Restore and reuse the user's existing player record (preserves stats)
         player = await prisma.player.update({
-          where: { id: placeholder.id },
+          where: { id: playerRecord.id },
           data: {
-            userId: user.id,
             teamId: invite.teamId,
+            ign: user.ign,
             role: role as GameRole,
             secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
             isSubstitute,
-            ign: user.ign,
+            deletedAt: null, // restore
             updatedAt: new Date(),
           },
         });
       } else {
-        player = await prisma.player.create({
-          data: {
-            teamId: invite.teamId,
-            userId: user.id,
-            ign: user.ign,
-            role: role as GameRole,
-            secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
-            isSubstitute,
+        // Check for placeholders first (including soft-deleted) to preserve match history
+        const placeholder = await prisma.player.findFirst({
+          where: { 
+            ign: { equals: user.ign, mode: "insensitive" },
+            userId: null,
           },
         });
+
+        if (placeholder) {
+          // Claim and transfer the placeholder
+          player = await prisma.player.update({
+            where: { id: placeholder.id },
+            data: {
+              userId: user.id,
+              teamId: invite.teamId,
+              role: role as GameRole,
+              secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
+              isSubstitute,
+              ign: user.ign,
+              deletedAt: null, // restore if soft-deleted
+              updatedAt: new Date(),
+            },
+          });
+        } else {
+          player = await prisma.player.create({
+            data: {
+              teamId: invite.teamId,
+              userId: user.id,
+              ign: user.ign,
+              role: role as GameRole,
+              secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
+              isSubstitute,
+            },
+          });
+        }
       }
 
       try {

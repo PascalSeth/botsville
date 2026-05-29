@@ -148,13 +148,11 @@ export async function POST(request: NextRequest) {
       });
 
       if (teamToJoin) {
-        // Find if this IGN exists as a placeholder ANYWHERE (global search)
-        // This ensures match history is preserved even if the placeholder was on a different team.
+        // Find if this IGN exists as a placeholder ANYWHERE (including soft-deleted)
         const placeholder = await transaction.player.findFirst({
           where: { 
             ign: { equals: createdUser.ign, mode: "insensitive" }, 
             userId: null, 
-            deletedAt: null 
           },
         });
 
@@ -166,6 +164,7 @@ export async function POST(request: NextRequest) {
               userId: createdUser.id,
               teamId: teamToJoin.id, // Transfer to the new team
               ign: createdUser.ign, // Sync casing with user's preferred IGN
+              deletedAt: null, // restore it if soft-deleted
             },
           });
         } else {

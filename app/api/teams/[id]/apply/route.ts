@@ -37,6 +37,18 @@ export async function POST(
       return apiError("You have already applied to this team");
     }
 
+    // Check if there is already a pending invite from this team to the user
+    const pendingInvite = await prisma.teamInvite.findFirst({
+      where: {
+        teamId: id,
+        toUserId: user.id,
+        status: "PENDING",
+      },
+    });
+    if (pendingInvite) {
+      return apiError("This team has already invited you. Please check your invites to accept.");
+    }
+
     // Build application as a teamInvite record (repurposing invites for applications)
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 48);

@@ -23,6 +23,12 @@ export async function DELETE(_request: NextRequest) {
       data: { deletedAt: new Date() },
     });
 
+    // Soft-delete all players on the disbanded team (retains stats & records)
+    await prisma.player.updateMany({
+      where: { teamId: team.id, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
+
     return apiSuccess({ message: "Team disbanded successfully" });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {

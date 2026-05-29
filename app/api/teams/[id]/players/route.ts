@@ -116,31 +116,24 @@ export async function POST(
       return apiError("Team is full (maximum 9 players)");
     }
 
-    // Check if IGN is already taken by another player
-    const ignExists = await prisma.player.findFirst({
-      where: {
-        ign,
-        deletedAt: null,
-        teamId: { not: id },
-      },
-    });
+    // Check if the user already has a player record by userId or case-insensitive IGN (active or soft-deleted)
+    let existingPlayerRecord = userId ? await prisma.player.findFirst({
+      where: { userId },
+    }) : null;
 
-    if (ignExists) {
-      return apiError("IGN already taken by another player");
+    if (!existingPlayerRecord) {
+      existingPlayerRecord = await prisma.player.findFirst({
+        where: { ign: { equals: ign, mode: "insensitive" } },
+      });
     }
 
-    // If userId provided, check if user is already on a team
-    if (userId) {
-      const existingPlayer = await prisma.player.findFirst({
-        where: {
-          userId,
-          deletedAt: null,
-          teamId: { not: id },
-        },
-      });
-
-      if (existingPlayer) {
-        return apiError("User is already on another team");
+    if (existingPlayerRecord) {
+      if (!existingPlayerRecord.deletedAt) {
+        if (existingPlayerRecord.teamId === id) {
+          return apiError("Player is already on your team");
+        } else {
+          return apiError("IGN or User is already an active member of another team");
+        }
       }
     }
 
@@ -156,36 +149,72 @@ export async function POST(
       }
     }
 
-    // Create player
-    const player = await prisma.player.create({
-      data: {
-        teamId: id,
-        userId: userId || null,
-        ign,
-        role: role as GameRole,
-        secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
-        signatureHero: signatureHero || null,
-        photo: photo || null,
-        realName: realName || null,
-        isSubstitute: Boolean(isSubstitute),
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            ign: true,
-            photo: true,
+    // Create or restore player
+    let player;
+    if (existingPlayerRecord) {
+      // Restore and update existing player record (preserves stats)
+      player = await prisma.player.update({
+        where: { id: existingPlayerRecord.id },
+        data: {
+          teamId: id,
+          ign,
+          role: role as GameRole,
+          secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
+          signatureHero: signatureHero || null,
+          photo: photo || null,
+          realName: realName || null,
+          isSubstitute: Boolean(isSubstitute),
+          deletedAt: null, // restore
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              ign: true,
+              photo: true,
+            },
+          },
+          team: {
+            select: {
+              id: true,
+              name: true,
+              tag: true,
+            },
           },
         },
-        team: {
-          select: {
-            id: true,
-            name: true,
-            tag: true,
+      });
+    } else {
+      // Create new player record
+      player = await prisma.player.create({
+        data: {
+          teamId: id,
+          userId: userId || null,
+          ign,
+          role: role as GameRole,
+          secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
+          signatureHero: signatureHero || null,
+          photo: photo || null,
+          realName: realName || null,
+          isSubstitute: Boolean(isSubstitute),
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              ign: true,
+              photo: true,
+            },
+          },
+          team: {
+            select: {
+              id: true,
+              name: true,
+              tag: true,
+            },
           },
         },
-      },
-    });
+      });
+    }
 
     // Fire-and-forget: notify captain + existing members
     void notifyTeamMemberJoined({

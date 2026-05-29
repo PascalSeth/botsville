@@ -104,6 +104,7 @@ export async function POST(request: NextRequest) {
             winRate: totalMatches > 0 
               ? ((user.player?.winRate ?? 0) * (user.player?.matchesPlayed ?? 0) + (placeholder.winRate * placeholder.matchesPlayed)) / totalMatches 
               : 0,
+            deletedAt: null, // restore if soft-deleted
           }
         });
 
