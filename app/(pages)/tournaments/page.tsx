@@ -5,6 +5,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { HeroBannerImage, OptimizedImage } from '@/app/components/OptimizedImage';
+import { optimizeImageUrl } from '@/lib/image-utils';
 import { useHero } from '../../contexts/HeroContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -219,7 +221,11 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
         onClick={e => e.stopPropagation()}
       >
         <div className="relative h-48 shrink-0 overflow-hidden">
-          <img src={tournament.banner || tournament.image || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80'} alt="" className="w-full h-full object-cover brightness-[0.2]" />
+          <HeroBannerImage
+            src={tournament.banner || tournament.image || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80'}
+            alt=""
+            className="w-full h-full brightness-[0.2]"
+          />
           <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at bottom left, ${accentColor}40, transparent 60%)` }} />
           <div className="absolute inset-0 bg-gradient-to-t from-[#08080d] via-transparent to-transparent" />
           <Scanlines />
@@ -321,7 +327,7 @@ const FeaturedCard = ({ t, onRegister, selectedHeroImage }: { t: Tournament; onR
   return (
     <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} className="relative w-full overflow-hidden bg-[#0a0a0f] border border-white/5 rounded-[2.5rem] shadow-2xl">
       <div className="absolute inset-0 z-0">
-        <img src={bannerSrc} alt="" className="w-full h-full object-cover brightness-[0.15]" />
+        <HeroBannerImage src={bannerSrc} alt="" className="w-full h-full brightness-[0.15]" />
         <div className="absolute inset-0" style={{ background: `radial-gradient(circle at 30% 50%, ${color}20, transparent 70%)` }} />
         <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-[#0a0a0f] to-transparent" />
       </div>
@@ -332,7 +338,7 @@ const FeaturedCard = ({ t, onRegister, selectedHeroImage }: { t: Tournament; onR
       <div className="absolute bottom-0 right-0 lg:right-[5%] h-[115%] w-[45%] pointer-events-none select-none z-10">
         <div className="relative w-full h-full">
           <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-64 h-12 rounded-full bg-[#e8a000] opacity-20 blur-3xl" />
-          <img src={heroSrc} alt="" className="w-full h-full object-contain object-bottom drop-shadow-[0_0_60px_rgba(232,160,0,0.3)]" style={floatingHeroStyle} />
+          <OptimizedImage src={heroSrc} alt="" className="w-full h-full object-contain object-bottom drop-shadow-[0_0_60px_rgba(232,160,0,0.3)]" style={floatingHeroStyle} quality={80} width={1200} height={1200} />
         </div>
       </div>
 
@@ -402,7 +408,7 @@ const SmallCard = ({ t, active, onSelect, onRegister }: { t: Tournament; active:
       active ? 'bg-white/[0.04] border-[#e8a000]' : 'bg-transparent border-white/5 hover:border-white/20'
     }`}>
       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
-        <img src={bannerSrc} alt="" className="w-full h-full object-cover brightness-[0.05]" />
+        <HeroBannerImage src={bannerSrc} alt="" className="w-full h-full brightness-[0.05]" />
       </div>
       <div className="relative z-10 flex flex-col gap-6">
         <div className="flex items-center justify-between">
@@ -437,7 +443,7 @@ const SmallCard = ({ t, active, onSelect, onRegister }: { t: Tournament; active:
 const PastCard = ({ t }: { t: Tournament }) => (
   <Link href={`/tournaments/${t.id}`} className="group relative bg-[#0a0a0f] border border-white/5 rounded-3xl overflow-hidden hover:border-[#e8a000]/30 transition-all">
     <div className="relative h-48 overflow-hidden">
-      <img src={t.banner || t.image || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80'} alt="" className="w-full h-full object-cover brightness-[0.2] transition-transform group-hover:scale-105 duration-700" />
+      <HeroBannerImage src={t.banner || t.image || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80'} alt="" className="w-full h-full brightness-[0.2] transition-transform group-hover:scale-105 duration-700" />
       <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0f] via-transparent to-transparent" />
       <Trophy size={20} className="absolute top-6 left-6 text-[#e8a000]" />
     </div>

@@ -7,6 +7,7 @@ import {
   createAuditLog,
 } from "@/lib/api-utils";
 import { SeasonStatus } from "@/app/generated/prisma/enums";
+import { cacheResult, invalidatePattern } from "@/lib/redis";
 
 import { prisma } from "@/lib/prisma";
 
@@ -16,23 +17,31 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
 
-    const where: Prisma.SeasonWhereInput = {};
-    if (status && Object.values(SeasonStatus).includes(status as SeasonStatus)) {
-      where.status = status as SeasonStatus;
-    }
+    const cacheKey = `seasons:${status || "all"}`;
 
-    const seasons = await prisma.season.findMany({
-      where,
-      orderBy: { startDate: "desc" },
-      include: {
-        _count: {
-          select: {
-            tournaments: true,
-            teamStandings: true,
+    const seasons = await cacheResult(
+      cacheKey,
+      async () => {
+        const where: Prisma.SeasonWhereInput = {};
+        if (status && Object.values(SeasonStatus).includes(status as SeasonStatus)) {
+          where.status = status as SeasonStatus;
+        }
+
+        return await prisma.season.findMany({
+          where,
+          orderBy: { startDate: "desc" },
+          include: {
+            _count: {
+              select: {
+                tournaments: true,
+                teamStandings: true,
+              },
+            },
           },
-        },
+        });
       },
-    });
+      { ttl: 600 } // Cache for 10 minutes
+    );
 
     return apiSuccess(seasons);
   } catch (error: unknown) {
@@ -101,6 +110,9 @@ export async function POST(request: NextRequest) {
       season.id,
       JSON.stringify({ name, startDate, endDate, status })
     );
+
+    // Invalidate season cache
+    await invalidatePattern("seasons:*");
 
     return apiSuccess(
       {

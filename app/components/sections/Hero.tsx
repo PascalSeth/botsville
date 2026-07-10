@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { ChevronRight } from 'lucide-react';
 import { useHero } from '../../contexts/HeroContext';
+import { getThumbnailUrl, getHeroImageUrl } from '@/lib/image-utils';
 
 // ─────────────────────────────────────────────────────────────
 // DATA
@@ -540,7 +541,7 @@ const ArcadeSelectorDeck = ({
                 {/* Crop Image */}
                 <div className="absolute inset-0 bg-[#070b1d]">
                   <Image
-                    src={hero.imageUrl}
+                    src={getThumbnailUrl(hero.imageUrl)}
                     alt={hero.name}
                     fill
                     className="object-cover object-top opacity-85 group-hover:scale-105 transition-transform duration-500"
@@ -672,7 +673,7 @@ const TeamTicker = () => {
             </div>
             <div className="relative w-6 h-6 rounded shrink-0 overflow-hidden"
               style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
-              <Image src={team.logo} alt={team.name} fill className="object-cover" />
+              <Image src={getThumbnailUrl(team.logo)} alt={team.name} fill className="object-cover" />
             </div>
             <div className="flex flex-col leading-none">
               <span className="text-[9px] font-black uppercase tracking-wider"
@@ -1138,7 +1139,7 @@ export const Hero = () => {
     return heroCatalog[activeCatalogIndex] || heroCatalog[0];
   }, [heroCatalog, activeCatalogIndex]);
 
-  const activeImage = activeHero?.imageUrl || '/stunchou.png';
+  const activeImage = getHeroImageUrl(activeHero?.imageUrl || '/stunchou.png');
   const activeName = activeHero?.name || 'CHOU';
   const activeKey = activeHero?.key || null;
 

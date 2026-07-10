@@ -55,6 +55,8 @@ function SetupContent() {
 
   // Tournament setup wizard state
   const [setupStep, setSetupStep] = useState<'select' | 'configure' | 'allocate' | 'bracket' | 'finals'>('select');
+  const [isShuffling, setIsShuffling] = useState(false);
+  const [draftedTeamIds, setDraftedTeamIds] = useState<Set<string>>(new Set());
 
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
 
@@ -193,7 +195,9 @@ function SetupContent() {
         const regs = await regRes.json();
         setApprovedTeams(regs.map((r: any) => ({ id: r.team.id, name: r.team.name, tag: r.team.tag })));
       }
-      
+
+      setProposedGroups([]);
+      setDraftedTeamIds(new Set());
       setSetupStep('allocate');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to configure group stage');
@@ -204,21 +208,57 @@ function SetupContent() {
 
   const handleAutoMatch = () => {
     if (approvedTeams.length === 0) return;
-    
-    // Shuffle teams
-    const shuffled = [...approvedTeams].sort(() => Math.random() - 0.5);
-    
-    // Split into groups
-    const newGroups = Array.from({ length: groupConfig.numGroups }, (_, i) => ({
+    setIsShuffling(true);
+    setDraftedTeamIds(new Set());
+
+    setProposedGroups(Array.from({ length: groupConfig.numGroups }, (_, i) => ({
       name: `Group ${String.fromCharCode(65 + i)}`,
       teams: [] as Team[]
-    }));
-    
-    shuffled.forEach((team, idx) => {
-      newGroups[idx % groupConfig.numGroups].teams.push(team);
-    });
-    
-    setProposedGroups(newGroups);
+    })));
+
+    // Extract org key from team name (first word, case-insensitive)
+    const getOrg = (name: string) => name.split(/[\s\-_]/)[0].toLowerCase();
+
+    // Pre-compute assignments: spread same-org teams across different groups
+    const shuffled = [...approvedTeams].sort(() => Math.random() - 0.5);
+    const buckets: Team[][] = Array.from({ length: groupConfig.numGroups }, () => []);
+    const assignment: { team: Team; groupIdx: number }[] = [];
+
+    for (const team of shuffled) {
+      const org = getOrg(team.name);
+      // Prefer groups that don't already have this org, then least-filled
+      const target = buckets
+        .map((teams, idx) => ({ idx, size: teams.length, hasOrg: teams.some(t => getOrg(t.name) === org) }))
+        .sort((a, b) => (Number(a.hasOrg) - Number(b.hasOrg)) || (a.size - b.size))[0].idx;
+      buckets[target].push(team);
+      assignment.push({ team, groupIdx: target });
+    }
+
+    // Animate assignments one-by-one
+    let currentIdx = 0;
+    const interval = setInterval(() => {
+      if (currentIdx >= assignment.length) {
+        clearInterval(interval);
+        setIsShuffling(false);
+        return;
+      }
+
+      const { team: draftedTeam, groupIdx: targetGroupIndex } = assignment[currentIdx];
+
+      setProposedGroups(prev =>
+        prev.map((g, idx) =>
+          idx === targetGroupIndex ? { ...g, teams: [...g.teams, draftedTeam] } : g
+        )
+      );
+
+      setDraftedTeamIds(prev => {
+        const updated = new Set(prev);
+        updated.add(draftedTeam.id);
+        return updated;
+      });
+
+      currentIdx++;
+    }, 500);
   };
 
   const handleConfirmAllocation = async () => {
@@ -260,10 +300,12 @@ function SetupContent() {
       }
 
       const orchResult = await orchRes.json();
-      setSuccess(`✅ Setup Complete! Groups saved and ${orchResult.matchCount} matches generated.`);
-      setTimeout(() => setSuccess(null), 5000);
+      setSuccess(`🚀 SUCCESS! Deployed ${orchResult.matchCount} orchestrated Round Robin matches perfectly. Redirecting to dashboard...`);
       
-      setSetupStep('bracket');
+      setTimeout(() => {
+        setSuccess(null);
+        router.push(`/dashboard/tournaments/${selectedTournament.id}`);
+      }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to finalize group setup');
     } finally {
@@ -459,14 +501,12 @@ function SetupContent() {
                   [
                     { id: 'select', label: 'Select', icon: Play },
                     { id: 'configure', label: 'Config', icon: Settings },
-                    { id: 'allocate', label: 'Match', icon: Users },
-                    { id: 'bracket', label: 'Autofill', icon: Zap },
-                    { id: 'finals', label: 'Finalize', icon: Trophy },
+                    { id: 'allocate', label: 'Deploy & Orchestrate', icon: Shield },
                   ] as const
                 ).map((step, idx) => {
 
-                  const stepIds = ['select', 'configure', 'allocate', 'bracket', 'finals'] as const;
-                  const stepIndex = stepIds.indexOf(setupStep);
+                  const stepIds = ['select', 'configure', 'allocate'] as const;
+                  const stepIndex = stepIds.indexOf(setupStep as any);
                   const isActive = setupStep === step.id;
                   const isCompleted = stepIndex > idx;
 
@@ -615,77 +655,171 @@ function SetupContent() {
                 )}
 
                 {setupStep === 'allocate' && selectedTournament && (
-                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} className="max-w-4xl mx-auto w-full">
-                    <GlassCard>
-                      <div className="flex items-center gap-4 mb-10 pb-6 border-b border-white/5">
-                        <div className="p-4 rounded-2xl bg-indigo-500/10 text-indigo-400"><Users size={28} /></div>
-                        <div>
-                          <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">Phase 1.5: Allocation</p>
-                          <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Match Teams <span className="text-indigo-400">to Groups</span></h3>
-                        </div>
-                      </div>
+                  <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} className="w-full space-y-6">
 
-                      <div className="flex items-center justify-between mb-8">
-                        <div>
-                          <h4 className="text-sm font-black text-white uppercase flex items-center gap-2">
-                             <CheckCircle size={14} className="text-emerald-400" />
-                             {approvedTeams.length} Approved Teams Found
-                          </h4>
-                          <p className="text-[10px] text-[#555] font-black uppercase tracking-widest mt-1">Ready for group distribution</p>
+                    {/* Stats Bar */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {[
+                        { label: 'Tournament', value: selectedTournament.name, accent: 'text-white' },
+                        { label: 'Groups', value: String(groupConfig.numGroups), accent: 'text-[#e8a000]' },
+                        { label: 'Per Group', value: `${groupConfig.teamsPerGroup} teams`, accent: 'text-indigo-400' },
+                        { label: 'Approved', value: `${approvedTeams.length} teams`, accent: 'text-emerald-400' },
+                      ].map((stat) => (
+                        <div key={stat.label} className="bg-white/[0.02] border border-white/[0.06] rounded-xl px-4 py-3">
+                          <p className="text-[9px] font-black text-[#555] uppercase tracking-wider mb-1">{stat.label}</p>
+                          <p className={`text-sm font-black uppercase truncate ${stat.accent}`}>{stat.value}</p>
                         </div>
-                        <button 
+                      ))}
+                    </div>
+
+                    {/* Main Grid */}
+                    <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+
+                      {/* Left: Roster Pool + Controls */}
+                      <div className="xl:col-span-3 flex flex-col gap-4">
+
+                        {/* Status Chip */}
+                        <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                          isShuffling
+                            ? 'border-[#e8a000]/30 bg-[#e8a000]/5 text-[#e8a000]'
+                            : draftedTeamIds.size === approvedTeams.length && approvedTeams.length > 0
+                            ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400'
+                            : 'border-white/[0.06] bg-white/[0.02] text-[#555]'
+                        }`}>
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            isShuffling ? 'bg-[#e8a000] animate-ping' :
+                            draftedTeamIds.size === approvedTeams.length && approvedTeams.length > 0 ? 'bg-emerald-500' : 'bg-[#444]'
+                          }`} />
+                          {isShuffling ? 'Drafting teams...' : draftedTeamIds.size === approvedTeams.length && approvedTeams.length > 0 ? 'Draft complete' : 'Ready to draft'}
+                        </div>
+
+                        {/* Roster List */}
+                        <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl flex flex-col flex-1 overflow-hidden">
+                          <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 shrink-0">
+                            <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Unassigned</span>
+                            <span className="text-[9px] font-mono text-[#555]">{approvedTeams.length - draftedTeamIds.size} left</span>
+                          </div>
+                          <div className="p-3 space-y-2 overflow-y-auto max-h-[340px]">
+                            {approvedTeams.map((team) => {
+                              const isDrafted = draftedTeamIds.has(team.id);
+                              return (
+                                <div key={team.id}>
+                                  {!isDrafted ? (
+                                    <motion.div
+                                      layoutId={team.id}
+                                      transition={{ type: "spring", stiffness: 35, damping: 11 }}
+                                      className="flex items-center gap-2.5 px-3 py-2.5 bg-white/[0.03] border border-white/[0.06] rounded-xl"
+                                    >
+                                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-500/80 shrink-0" />
+                                      <span className="text-[9px] font-black text-[#555] uppercase tracking-wider shrink-0">{team.tag}</span>
+                                      <span className="text-[11px] text-white/80 font-bold truncate">{team.name}</span>
+                                    </motion.div>
+                                  ) : (
+                                    <div className="flex items-center gap-2.5 px-3 py-2.5 opacity-20 rounded-xl">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/30 shrink-0" />
+                                      <span className="text-[9px] font-black text-white/20 uppercase tracking-wider line-through shrink-0">{team.tag}</span>
+                                      <span className="text-[11px] text-white/20 font-bold line-through truncate">{team.name}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Draft Button */}
+                        <button
                           onClick={handleAutoMatch}
-                          className="px-6 py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase text-white hover:bg-white/10 transition-all flex items-center gap-2"
+                          disabled={isShuffling}
+                          className={`w-full py-3.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2.5 active:scale-[0.98] ${
+                            isShuffling
+                              ? 'bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 animate-pulse cursor-not-allowed'
+                              : 'bg-gradient-to-r from-[#e8a000] to-indigo-600 text-white hover:brightness-110 shadow-lg shadow-indigo-900/20'
+                          }`}
                         >
-                          <Zap size={14} className="text-[#e8a000]" /> Shuffle Teams
+                          <Zap size={13} />
+                          {isShuffling ? 'Drafting...' : 'Auto-Draft Teams'}
                         </button>
                       </div>
 
-                      {proposedGroups.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-                           {proposedGroups.map((group, idx) => (
-                             <motion.div 
-                                key={group.name}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: idx * 0.05 }}
-                                className="bg-white/[0.02] border border-white/5 rounded-2xl p-6"
-                             >
-                                <div className="flex items-center justify-between mb-4">
-                                  <span className="text-xs font-black text-indigo-400 uppercase tracking-widest">{group.name}</span>
-                                  <span className="text-[9px] font-bold text-white/20 uppercase">{group.teams.length} Teams</span>
-                                </div>
-                                <div className="space-y-2">
-                                   {group.teams.map(team => (
-                                     <div key={team.id} className="flex items-center gap-3 p-2 bg-black/20 rounded-lg border border-white/5">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500/40" />
-                                        <span className="text-[10px] font-black text-[#888] uppercase tracking-wider">{team.tag}</span>
-                                        <span className="text-[10px] text-white/40 truncate">{team.name}</span>
-                                     </div>
-                                   ))}
-                                </div>
-                             </motion.div>
-                           ))}
-                        </div>
-                      ) : (
-                        <div className="py-20 text-center bg-white/[0.01] border border-dashed border-white/5 rounded-3xl mb-12">
-                           <Layout size={40} className="text-white/5 mx-auto mb-4" />
-                           <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Click Shuffle to generate preview</p>
-                        </div>
-                      )}
-
-                      <div className="flex gap-4">
-                        <button onClick={() => setSetupStep('configure')} className="px-8 py-4 bg-white/5 text-[#aaa] font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-white/10 transition-all">Back</button>
-                         <button 
-                          onClick={handleConfirmAllocation} 
-                          disabled={savingGroups || orchestrating || proposedGroups.length === 0} 
-                          className="flex-1 px-8 py-4 bg-indigo-500 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-xl hover:bg-indigo-600 shadow-xl shadow-indigo-500/10 flex items-center justify-center gap-3 active:scale-[0.98] transition-all disabled:opacity-30"
-                        >
-                          {(savingGroups || orchestrating) ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />}
-                          {orchestrating ? 'Generating Roadmap...' : 'Save & Confirm Assignments'}
-                        </button>
+                      {/* Right: Group Pods */}
+                      <div className="xl:col-span-9">
+                        {proposedGroups.length > 0 ? (
+                          <div className={`grid gap-4 overflow-y-auto max-h-[490px] pr-1 ${
+                            groupConfig.numGroups <= 2 ? 'grid-cols-2' :
+                            groupConfig.numGroups <= 4 ? 'grid-cols-2 md:grid-cols-4' :
+                            'grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
+                          }`}>
+                            {proposedGroups.map((group, idx) => {
+                              const palettes = [
+                                { text: 'text-[#e8a000]', border: 'border-[#e8a000]/20', bg: 'bg-[#e8a000]/[0.02]', badge: 'bg-[#e8a000]/10 text-[#e8a000]', bullet: 'bg-[#e8a000]/70' },
+                                { text: 'text-indigo-400', border: 'border-indigo-500/20', bg: 'bg-indigo-500/[0.02]', badge: 'bg-indigo-500/10 text-indigo-400', bullet: 'bg-indigo-500/70' },
+                                { text: 'text-emerald-400', border: 'border-emerald-500/20', bg: 'bg-emerald-500/[0.02]', badge: 'bg-emerald-500/10 text-emerald-400', bullet: 'bg-emerald-500/70' },
+                                { text: 'text-pink-400', border: 'border-pink-500/20', bg: 'bg-pink-500/[0.02]', badge: 'bg-pink-500/10 text-pink-400', bullet: 'bg-pink-500/70' },
+                                { text: 'text-cyan-400', border: 'border-cyan-500/20', bg: 'bg-cyan-500/[0.02]', badge: 'bg-cyan-500/10 text-cyan-400', bullet: 'bg-cyan-500/70' },
+                              ];
+                              const color = palettes[idx % palettes.length];
+                              return (
+                                <motion.div
+                                  layout
+                                  key={group.name}
+                                  className={`border ${color.border} ${color.bg} rounded-2xl p-4 flex flex-col`}
+                                >
+                                  <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/5">
+                                    <span className={`text-[11px] font-black uppercase tracking-[0.15em] ${color.text}`}>{group.name}</span>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${color.badge}`}>{group.teams.length} teams</span>
+                                  </div>
+                                  <div className="space-y-2 flex-1">
+                                    {group.teams.length === 0 ? (
+                                      <div className="py-8 flex items-center justify-center">
+                                        <span className="text-[9px] font-black text-white/10 uppercase tracking-[0.2em]">Empty</span>
+                                      </div>
+                                    ) : group.teams.map((team) => (
+                                      <motion.div
+                                        layoutId={team.id}
+                                        transition={{ type: "spring", stiffness: 35, damping: 11 }}
+                                        key={team.id}
+                                        className="flex items-center gap-2.5 px-3 py-2 bg-black/30 rounded-xl border border-white/[0.04]"
+                                      >
+                                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${color.bullet}`} />
+                                        <span className="text-[9px] font-black text-white/30 uppercase tracking-wider shrink-0">{team.tag}</span>
+                                        <span className="text-[10px] text-white/70 font-bold truncate">{team.name}</span>
+                                      </motion.div>
+                                    ))}
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="h-full min-h-[420px] flex flex-col items-center justify-center border border-dashed border-white/[0.08] rounded-2xl bg-white/[0.01]">
+                            <Layout size={36} className="text-white/[0.06] mb-4" />
+                            <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.2em] mb-1.5">No Groups Yet</p>
+                            <p className="text-[11px] text-white/10 text-center font-medium max-w-[220px] leading-relaxed">Click "Auto-Draft Teams" to randomly seed teams into groups.</p>
+                          </div>
+                        )}
                       </div>
-                    </GlassCard>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex items-center justify-between pt-5 border-t border-white/[0.05]">
+                      <button
+                        onClick={() => setSetupStep('configure')}
+                        className="flex items-center gap-2 px-6 py-3 bg-white/5 text-[#777] font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-white/[0.08] hover:text-white transition-all"
+                      >
+                        <ChevronLeft size={14} />
+                        Back
+                      </button>
+                      <button
+                        onClick={handleConfirmAllocation}
+                        disabled={savingGroups || orchestrating || proposedGroups.length === 0 || isShuffling}
+                        className="flex items-center gap-2.5 px-8 py-3.5 bg-indigo-500 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-xl hover:bg-indigo-600 shadow-xl shadow-indigo-500/10 active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        {(savingGroups || orchestrating) ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />}
+                        {orchestrating ? 'Generating Matches...' : savingGroups ? 'Saving Groups...' : 'Deploy & Generate Matches'}
+                      </button>
+                    </div>
+
                   </motion.div>
                 )}
 

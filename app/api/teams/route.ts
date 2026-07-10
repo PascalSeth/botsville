@@ -8,6 +8,7 @@ import {
   isValidRegion,
 } from "@/lib/api-utils";
 import { TeamStatus, MainRole, GameRole } from "@/app/generated/prisma/enums";
+import { cacheResult, invalidatePattern } from "@/lib/redis";
 
 import { prisma } from "@/lib/prisma";
 
@@ -48,15 +49,21 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "50");
     const skip = parseInt(searchParams.get("skip") || "0");
 
-    const where: { deletedAt: null; status?: TeamStatus; region?: string } = { deletedAt: null };
-    if (status && Object.values(TeamStatus).includes(status as TeamStatus)) {
-      where.status = status as TeamStatus;
-    }
-    if (region) {
-      where.region = region;
-    }
+    // Cache key based on query parameters
+    const cacheKey = `teams:${status || "all"}:${region || "all"}:${limit}:${skip}`;
 
-    const [teams, total] = await Promise.all([
+    const result = await cacheResult(
+      cacheKey,
+      async () => {
+        const where: { deletedAt: null; status?: TeamStatus; region?: string } = { deletedAt: null };
+        if (status && Object.values(TeamStatus).includes(status as TeamStatus)) {
+          where.status = status as TeamStatus;
+        }
+        if (region) {
+          where.region = region;
+        }
+
+        const [teams, total] = await Promise.all([
       prisma.team.findMany({
         where,
         include: {
@@ -118,28 +125,33 @@ export async function GET(request: NextRequest) {
       prisma.team.count({ where }),
     ]);
 
-    // Transform teams to include computed stats
-    const teamsWithStats = teams.map(team => {
-      const standing = team.standings[0];
-      return {
-        ...team,
-        rank: standing?.rank ?? 0,
-        points: standing?.points ?? 0,
-        wins: standing?.wins ?? 0,
-        losses: standing?.losses ?? 0,
-        tier: standing?.tier ?? 'C',
-        standings: undefined, // Remove raw standings from response
-      };
-    });
+        // Transform teams to include computed stats
+        const teamsWithStats = teams.map(team => {
+          const standing = team.standings[0];
+          return {
+            ...team,
+            rank: standing?.rank ?? 0,
+            points: standing?.points ?? 0,
+            wins: standing?.wins ?? 0,
+            losses: standing?.losses ?? 0,
+            tier: standing?.tier ?? 'C',
+            standings: undefined, // Remove raw standings from response
+          };
+        });
 
-    return apiSuccess({
-      teams: teamsWithStats,
-      pagination: {
-        total,
-        limit,
-        skip,
+        return {
+          teams: teamsWithStats,
+          pagination: {
+            total,
+            limit,
+            skip,
+          },
+        };
       },
-    }, 200, {
+      { ttl: 600 } // Cache for 10 minutes
+    );
+
+    return apiSuccess(result, 200, {
       "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30"
     });
   } catch (error: unknown) {

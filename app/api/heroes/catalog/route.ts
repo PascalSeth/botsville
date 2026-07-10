@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireActiveUser, apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
+import { cacheResult, invalidatePattern } from "@/lib/redis";
 
 function toHeroKey(value: string): string {
   return value
@@ -19,17 +20,23 @@ function isValidImageUrl(value: string): boolean {
 
 export async function GET() {
   try {
-    // Only return heroes that have images
-    const heroes = await prisma.heroCatalog.findMany({
-      where: { active: true, imageUrl: { not: null } },
-      orderBy: [{ name: "asc" }],
-      select: {
-        id: true,
-        key: true,
-        name: true,
-        imageUrl: true,
+    // Cache hero catalog for 1 hour (rarely changes)
+    const heroes = await cacheResult(
+      "hero-catalog",
+      async () => {
+        return await prisma.heroCatalog.findMany({
+          where: { active: true, imageUrl: { not: null } },
+          orderBy: [{ name: "asc" }],
+          select: {
+            id: true,
+            key: true,
+            name: true,
+            imageUrl: true,
+          },
+        });
       },
-    });
+      { ttl: 3600 } // Cache for 1 hour
+    );
 
     return apiSuccess({ heroes }, 200, {
       "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
@@ -76,6 +83,9 @@ export async function POST(request: NextRequest) {
         createdAt: true,
       },
     });
+
+    // Invalidate hero catalog cache
+    await invalidatePattern("hero-*");
 
     return apiSuccess({ message: "Hero added", hero }, 201);
   } catch (error: unknown) {

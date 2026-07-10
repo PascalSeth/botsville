@@ -7,6 +7,7 @@ import {
   isValidHexColor,
 } from "@/lib/api-utils";
 import { TournamentStatus, TournamentFormat } from "@/app/generated/prisma/enums";
+import { cacheResult, deleteFromCache, invalidatePattern } from "@/lib/redis";
 
 import { prisma } from "@/lib/prisma";
 
@@ -19,58 +20,69 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "50");
     const skip = parseInt(searchParams.get("skip") || "0");
 
-    const where: { deletedAt: null; status?: TournamentStatus; seasonId?: string } = { deletedAt: null };
-    if (status && Object.values(TournamentStatus).includes(status as TournamentStatus)) {
-      where.status = status as TournamentStatus;
-    }
-    if (seasonId) {
-      where.seasonId = seasonId;
-    }
+    // Generate cache key based on query params
+    const cacheKey = `tournaments:${status || "all"}:${seasonId || "all"}:${limit}:${skip}`;
 
-    const [tournaments, total] = await Promise.all([
-      prisma.tournament.findMany({
-        where,
-        include: {
-          season: {
-            select: {
-              id: true,
-              name: true,
-              status: true,
+    const data = await cacheResult(
+      cacheKey,
+      async () => {
+        const where: { deletedAt: null; status?: TournamentStatus; seasonId?: string } = { deletedAt: null };
+        if (status && Object.values(TournamentStatus).includes(status as TournamentStatus)) {
+          where.status = status as TournamentStatus;
+        }
+        if (seasonId) {
+          where.seasonId = seasonId;
+        }
+
+        const [tournaments, total] = await Promise.all([
+          prisma.tournament.findMany({
+            where,
+            include: {
+              season: {
+                select: {
+                  id: true,
+                  name: true,
+                  status: true,
+                },
+              },
+              registrations: {
+                where: { status: { in: ['APPROVED', 'PENDING'] } },
+                select: { id: true },
+              },
+              _count: {
+                select: {
+                  registrations: true,
+                  matches: true,
+                },
+              },
             },
-          },
-          registrations: {
-            where: { status: { in: ['APPROVED', 'PENDING'] } },
-            select: { id: true },
-          },
-          _count: {
-            select: {
-              registrations: true,
-              matches: true,
-            },
-          },
-        },
-        orderBy: { date: "asc" },
-        take: limit,
-        skip,
-      }),
-      prisma.tournament.count({ where }),
-    ]);
+            orderBy: { date: "asc" },
+            take: limit,
+            skip,
+          }),
+          prisma.tournament.count({ where }),
+        ]);
 
-    // Transform to include filled count
-    const tournamentsWithFilled = tournaments.map(t => ({
-      ...t,
-      filled: t.registrations.length,
-      registrations: undefined,
-    }));
+        // Transform to include filled count
+        const tournamentsWithFilled = tournaments.map(t => ({
+          ...t,
+          filled: t.registrations.length,
+          registrations: undefined,
+        }));
 
-    return apiSuccess({
-      tournaments: tournamentsWithFilled,
-      pagination: {
-        total,
-        limit,
-        skip,
+        return {
+          tournaments: tournamentsWithFilled,
+          pagination: {
+            total,
+            limit,
+            skip,
+          },
+        };
       },
-    });
+      { ttl: 300 } // Cache for 5 minutes
+    );
+
+    return apiSuccess(data);
   } catch (error: unknown) {
     console.error("Get tournaments error:", error);
     return apiError(error instanceof Error ? error.message : "Failed to fetch tournaments", 500);
@@ -191,6 +203,9 @@ export async function POST(request: NextRequest) {
       tournament.id,
       JSON.stringify({ name, format, slots })
     );
+
+    // Invalidate tournament cache
+    await invalidatePattern("tournaments:*");
 
     return apiSuccess(
       {

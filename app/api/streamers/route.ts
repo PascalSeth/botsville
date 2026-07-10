@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { apiError, apiSuccess, requireActiveUser } from "@/lib/api-utils";
+import { cacheResult, invalidatePattern } from "@/lib/redis";
 
 // GET - List all active streamers with their videos
 export async function GET(request: NextRequest) {
@@ -10,29 +11,37 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
     const includeInactive = searchParams.get("includeInactive") === "true";
 
-    const streamers = await prisma.streamer.findMany({
-      where: {
-        ...(includeInactive ? {} : { active: true }),
-        ...(featured ? { featured: true } : {}),
+    const cacheKey = `streamers:${featured}:${limit}:${includeInactive}`;
+
+    const streamers = await cacheResult(
+      cacheKey,
+      async () => {
+        return await prisma.streamer.findMany({
+          where: {
+            ...(includeInactive ? {} : { active: true }),
+            ...(featured ? { featured: true } : {}),
+          },
+          include: {
+            videos: {
+              where: { active: true },
+              orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
+              take: 6,
+            },
+            user: {
+              select: { id: true, ign: true, photo: true },
+            },
+            _count: { select: { videos: true } },
+          },
+          orderBy: [
+            { featured: "desc" },
+            { verified: "desc" },
+            { createdAt: "desc" },
+          ],
+          take: limit,
+        });
       },
-      include: {
-        videos: {
-          where: { active: true },
-          orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
-          take: 6,
-        },
-        user: {
-          select: { id: true, ign: true, photo: true },
-        },
-        _count: { select: { videos: true } },
-      },
-      orderBy: [
-        { featured: "desc" },
-        { verified: "desc" },
-        { createdAt: "desc" },
-      ],
-      take: limit,
-    });
+      { ttl: 1800 } // Cache for 30 minutes
+    );
 
     return apiSuccess({ streamers });
   } catch (error: unknown) {
@@ -121,6 +130,9 @@ export async function POST(request: NextRequest) {
             : true,
       },
     });
+
+    // Invalidate streamer cache
+    await invalidatePattern("streamers:*");
 
     return apiSuccess(
       {

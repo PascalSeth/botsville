@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { apiError, apiSuccess } from "@/lib/api-utils";
 import { SeasonStatus } from "@/app/generated/prisma/enums";
+import { cacheResult, invalidatePattern } from "@/lib/redis";
 
 import { prisma } from "@/lib/prisma";
 
@@ -12,20 +13,26 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "50");
     const skip = parseInt(searchParams.get("skip") || "0");
 
-    // If no seasonId provided, get the active season
-    let targetSeasonId = seasonId;
-    if (!targetSeasonId) {
-      const activeSeason = await prisma.season.findFirst({
-        where: { status: SeasonStatus.ACTIVE },
-        select: { id: true },
-      });
-      targetSeasonId = activeSeason?.id ?? null;
-    }
+    // Cache key based on query parameters
+    const cacheKey = `leaderboard:teams:${seasonId || "active"}:${limit}:${skip}`;
 
-    // Build standings query
-    const standingsWhere: Record<string, unknown> = targetSeasonId ? { seasonId: targetSeasonId } : {};
+    const response = await cacheResult(
+      cacheKey,
+      async () => {
+        // If no seasonId provided, get the active season
+        let targetSeasonId = seasonId;
+        if (!targetSeasonId) {
+          const activeSeason = await prisma.season.findFirst({
+            where: { status: SeasonStatus.ACTIVE },
+            select: { id: true },
+          });
+          targetSeasonId = activeSeason?.id ?? null;
+        }
 
-    const [teams, standings, season] = await Promise.all([
+        // Build standings query
+        const standingsWhere: Record<string, unknown> = targetSeasonId ? { seasonId: targetSeasonId } : {};
+
+        const [teams, standings, season] = await Promise.all([
       prisma.team.findMany({
         where: {
           deletedAt: null,
@@ -141,20 +148,24 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const paginatedWithBreakdown = paginated.map(p => ({
-      ...p,
-      tournamentBreakdown: breakdownByTeam[p.team.id] || [],
-    }));
+        const paginatedWithBreakdown = paginated.map(p => ({
+          ...p,
+          tournamentBreakdown: breakdownByTeam[p.team.id] || [],
+        }));
 
-    const response = {
-      standings: paginatedWithBreakdown,
-      season,
-      pagination: {
-        total: dedupedMerged.length,
-        limit,
-        skip,
+        return {
+          standings: paginatedWithBreakdown,
+          season,
+          pagination: {
+            total: dedupedMerged.length,
+            limit,
+            skip,
+          },
+        };
       },
-    };
+      { ttl: 300 } // Cache for 5 minutes
+    );
+
     return apiSuccess(response, 200, {
       "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
     });
