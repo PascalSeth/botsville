@@ -402,7 +402,7 @@ const DesktopHero = ({
               transition={{ duration: isGlitching ? 0.3 : 0.7, ease: [0.22, 1, 0.36, 1] }}
             >
               <motion.div
-                className="relative w-full h-full"
+                className="relative w-full h-full opacity-60 hover:opacity-100 transition-opacity duration-700"
                 animate={{ y: [0, -12, 0] }}
                 transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
               >
