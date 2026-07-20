@@ -859,7 +859,7 @@ export const StartingFiveModal: React.FC<{
           </div>
 
           {/* Mobile */}
-          <div className="sm:hidden relative z-10 flex flex-col flex-1 min-h-0">
+          <div className="sm:hidden relative z-10 flex flex-col flex-1 min-h-0" style={{ minHeight: 500 }}>
             {showStream && embedUrl ? (
               <div className="p-3 flex flex-col items-center justify-center flex-1 min-h-0 gap-3">
                 <div className="w-full aspect-video rounded-xl overflow-hidden border border-red-500/20 relative">
