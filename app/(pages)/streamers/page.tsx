@@ -62,15 +62,10 @@ function parseVideoInput(platform: StreamPlatform, url: string): { videoId: stri
     const parsed = new URL(trimmed)
 
     if (platform === 'YOUTUBE') {
-      const v = parsed.searchParams.get('v')
-      if (v) return { videoId: v, videoUrl: trimmed }
-
-      const parts = parsed.pathname.split('/').filter(Boolean)
-      const shortId = parsed.hostname.includes('youtu.be') ? parts[0] : undefined
-      const shortsId = parts[0] === 'shorts' ? parts[1] : undefined
-      const embedId = parts[0] === 'embed' ? parts[1] : undefined
-      const id = shortId || shortsId || embedId
-      if (id) return { videoId: id, videoUrl: trimmed }
+      const match = trimmed.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|live|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i)
+      if (match && match[1]) {
+        return { videoId: match[1], videoUrl: trimmed }
+      }
       return null
     }
 

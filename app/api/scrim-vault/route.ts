@@ -108,7 +108,10 @@ export async function POST(request: NextRequest) {
       return apiError("Title and video URL are required");
     }
 
-    const normalizedVideoUrl = typeof videoUrl === "string" ? videoUrl.trim() : "";
+    let normalizedVideoUrl = typeof videoUrl === "string" ? videoUrl.trim() : "";
+    if (normalizedVideoUrl && !/^https?:\/\//i.test(normalizedVideoUrl)) {
+      normalizedVideoUrl = `https://${normalizedVideoUrl}`;
+    }
     if (!normalizedVideoUrl || !isHttpUrl(normalizedVideoUrl)) {
       return apiError("Video URL must be a valid http(s) URL");
     }
@@ -184,7 +187,7 @@ export async function PUT(request: NextRequest) {
     }
 
     if (action === "update") {
-      const updateData: Prisma.ScrimVaultUpdateInput = {};
+      const updateData: Prisma.ScrimVaultUncheckedUpdateInput = {};
 
       if (title !== undefined) {
         const normalizedTitle = typeof title === "string" ? title.trim() : "";
@@ -197,7 +200,10 @@ export async function PUT(request: NextRequest) {
       if (thumbnail !== undefined) updateData.thumbnail = thumbnail || null;
       if (duration !== undefined) updateData.duration = duration || null;
       if (videoUrl !== undefined) {
-        const normalizedVideoUrl = typeof videoUrl === "string" ? videoUrl.trim() : "";
+        let normalizedVideoUrl = typeof videoUrl === "string" ? videoUrl.trim() : "";
+        if (normalizedVideoUrl && !/^https?:\/\//i.test(normalizedVideoUrl)) {
+          normalizedVideoUrl = `https://${normalizedVideoUrl}`;
+        }
         if (!normalizedVideoUrl || !isHttpUrl(normalizedVideoUrl)) {
           return apiError("Video URL must be a valid http(s) URL");
         }
@@ -205,9 +211,7 @@ export async function PUT(request: NextRequest) {
       }
       if (featured !== undefined) updateData.featured = Boolean(featured);
       if (tournamentId !== undefined) {
-        updateData.tournament = tournamentId
-          ? { connect: { id: tournamentId } }
-          : { disconnect: true };
+        updateData.tournamentId = tournamentId ? tournamentId : null;
       }
       if (category !== undefined) {
         updateData.category = category || "SCRIM";

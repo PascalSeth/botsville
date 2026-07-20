@@ -95,16 +95,10 @@ export default function DashboardScrimVaultPage() {
 
   const getYouTubeEmbedUrl = (url: string) => {
     try {
-      const parsed = new URL(url);
-      if (parsed.hostname.includes("youtu.be")) {
-        const id = parsed.pathname.slice(1);
-        return id ? `https://www.youtube.com/embed/${id}` : null;
-      }
-      if (parsed.hostname.includes("youtube.com")) {
-        const id = parsed.searchParams.get("v");
-        return id ? `https://www.youtube.com/embed/${id}` : null;
-      }
-      return null;
+      const match = url.match(
+        /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|live|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i
+      );
+      return match && match[1] ? `https://www.youtube.com/embed/${match[1]}` : null;
     } catch {
       return null;
     }
@@ -297,6 +291,8 @@ export default function DashboardScrimVaultPage() {
     await load();
   };
 
+  const isStorageUrl = (url: string) => url.includes("supabase") || url.includes("storage") || /\.(mp4|webm|mov|mkv)$/i.test(url);
+
   const startEdit = (video: VideoItem) => {
     setEditingId(video.id);
     setTitle(video.title);
@@ -304,14 +300,17 @@ export default function DashboardScrimVaultPage() {
     setFeatured(video.featured);
     setTournamentId(video.tournament?.id ?? "");
     setCategory(video.category ?? "SCRIM");
-    if (isYouTubeUrl(video.videoUrl) || isTwitchUrl(video.videoUrl)) {
-      setSourceType("link");
+    if (isStorageUrl(video.videoUrl)) {
+      setSourceType("upload");
       setYoutubeUrl(video.videoUrl);
     } else {
-      setSourceType("upload");
+      setSourceType("link");
       setYoutubeUrl(video.videoUrl);
     }
     setVideoFile(null);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   };
 
   return (
@@ -446,7 +445,9 @@ export default function DashboardScrimVaultPage() {
               required={!editingId}
             />
             {editingId && (
-              <p className="text-[11px] text-[#666]">Leave file empty to keep current uploaded video URL.</p>
+              <p className="text-[11px] text-[#888]">
+                Current video URL: <span className="text-zinc-300 font-mono text-[10px] break-all">{youtubeUrl || "(none)"}</span>. Leave file empty to keep existing video.
+              </p>
             )}
           </div>
         )}

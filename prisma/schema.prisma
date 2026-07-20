@@ -808,7 +808,7 @@ model MatchGameResult {
 model MatchChallenge {
   id               String               @id @default(uuid())
   challengerTeamId String
-  challengedTeamId String
+  challengedTeamId String?
   initiatedById    String
   respondedById    String?
   weekStart        DateTime
@@ -822,7 +822,7 @@ model MatchChallenge {
   updatedAt        DateTime             @updatedAt
 
   challengerTeam Team            @relation("ChallengeChallengerTeam", fields: [challengerTeamId], references: [id])
-  challengedTeam Team            @relation("ChallengeChallengedTeam", fields: [challengedTeamId], references: [id])
+  challengedTeam Team?           @relation("ChallengeChallengedTeam", fields: [challengedTeamId], references: [id])
   initiatedBy    User            @relation("ChallengeInitiator", fields: [initiatedById], references: [id])
   respondedBy    User?           @relation("ChallengeResponder", fields: [respondedById], references: [id])
   scheduledMatch Match?          @relation("ChallengeScheduledMatch", fields: [scheduledMatchId], references: [id])

@@ -135,14 +135,14 @@ export async function POST(request: NextRequest) {
     const weekStart = getWeekStart(rawWeekStart || undefined);
 
     const challengeData: any = {
-      challengerTeamId,
-      initiatedById: user.id,
+      challengerTeam: { connect: { id: challengerTeamId } },
+      initiatedBy: { connect: { id: user.id } },
       weekStart,
       message: message?.trim() || null,
       status: MatchChallengeStatus.PENDING,
     };
     if (targetTeam?.id) {
-      challengeData.challengedTeamId = targetTeam.id;
+      challengeData.challengedTeam = { connect: { id: targetTeam.id } };
     }
 
     const challenge = await prisma.matchChallenge.create({

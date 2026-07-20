@@ -8,16 +8,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// Minimal YouTube iframe API typings used locally to avoid `any`
-type YTReadyEvent = { target: { playVideo: () => void } };
-type YTPlayerInstance = { destroy?: () => void; playVideo?: () => void };
-type YTPlayerConstructor = new (el: Element | string | HTMLDivElement, options: {
-  height?: string; width?: string; videoId: string; playerVars?: Record<string, number | string>;
-  events?: { onReady?: (e: YTReadyEvent) => void };
-}) => YTPlayerInstance;
-type YTNamespace = { Player: YTPlayerConstructor };
-interface WindowWithYT extends Window { YT?: YTNamespace; onYouTubeIframeAPIReady?: () => void }
-
+// Minimal iframe embed logic from StartingFiveModal
 // ─── Scrim types ────────────────────────────────────────────
 type ScrimItem = {
   id: string;
@@ -69,16 +60,8 @@ type RoleMeta = typeof AWARD_ROLES[number];
 
 const getYoutubeThumbnail = (url: string): string | null => {
   try {
-    const parsed = new URL(url);
-    if (parsed.hostname.includes('youtu.be')) {
-      const id = parsed.pathname.slice(1);
-      return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
-    }
-    if (parsed.hostname.includes('youtube.com')) {
-      const id = parsed.searchParams.get('v');
-      return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
-    }
-    return null;
+    const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|live|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+    return match && match[1] ? `https://img.youtube.com/vi/${match[1]}/hqdefault.jpg` : null;
   } catch {
     return null;
   }
@@ -86,37 +69,20 @@ const getYoutubeThumbnail = (url: string): string | null => {
 
 // (removed unused helper) getYoutubeEmbedUrl
 
-const getYoutubeIdFromUrl = (url?: string | null): string | null => {
+function getEmbedUrl(url: string | null | undefined): string | null {
   if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname.includes('youtu.be')) {
-      return parsed.pathname.slice(1) || null;
-    }
-    if (parsed.hostname.includes('youtube.com')) {
-      return parsed.searchParams.get('v') || null;
-    }
-    return null;
-  } catch {
-    return null;
+  // YouTube matches:
+  let match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|live|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+  if (match && match[1]) {
+    return `https://www.youtube.com/embed/${match[1]}?autoplay=1&mute=1`;
   }
-};
-
-const loadYouTubeApi = (() => {
-  let promise: Promise<YTNamespace | null> | null = null;
-  return () => {
-    if (promise) return promise;
-    promise = new Promise<YTNamespace | null>((resolve) => {
-      const w = window as unknown as WindowWithYT;
-      if (w.YT && w.YT.Player) return resolve(w.YT);
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      document.body.appendChild(tag);
-      w.onYouTubeIframeAPIReady = () => resolve(w.YT ?? null);
-    });
-    return promise;
-  };
-})();
+  // Twitch match:
+  match = url.match(/twitch\.tv\/([a-z0-9_]+)/i);
+  if (match && match[1]) {
+    return `https://player.twitch.tv/?channel=${match[1]}&parent=${typeof window !== "undefined" ? window.location.hostname : "localhost"}&muted=true&autoplay=true`;
+  }
+  return null;
+}
 
 const useRealtimeScrims = (category?: string) => {
   const [scrims, setScrims] = useState<ScrimItem[]>([]);
@@ -479,8 +445,19 @@ export const ScrimVault = () => {
       {activeVideoUrl && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md" onClick={() => setActiveVideoUrl(null)}>
           <div className="relative w-[90%] max-w-4xl" onClick={(e) => e.stopPropagation()}>
-            <video className="w-full h-auto rounded-xl bg-black shadow-2xl border border-white/10" controls autoPlay src={activeVideoUrl} />
-            <button onClick={() => setActiveVideoUrl(null)} className="absolute -top-3 -right-3 w-8 h-8 bg-black/80 text-white rounded-full border border-white/20 flex items-center justify-center">
+            <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black shadow-2xl border border-white/10">
+              {getEmbedUrl(activeVideoUrl) ? (
+                <iframe
+                  src={getEmbedUrl(activeVideoUrl)!}
+                  allow="autoplay; encrypted-media"
+                  allowFullScreen
+                  className="w-full h-full border-0"
+                />
+              ) : (
+                <video className="w-full h-full" controls autoPlay src={activeVideoUrl} />
+              )}
+            </div>
+            <button onClick={() => setActiveVideoUrl(null)} className="absolute -top-3 -right-3 w-8 h-8 bg-black/80 hover:bg-black text-white hover:text-amber-400 rounded-full border border-white/20 hover:border-amber-400 transition-colors flex items-center justify-center font-black">
               ×
             </button>
           </div>
@@ -747,46 +724,17 @@ export const MobileScrimAndAwards = () => {
   const { season, grouped, loading } = useRoleNominees();
   const [videoOpen, setVideoOpen] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [videoYoutubeId, setVideoYoutubeId] = useState<string | null>(null);
-  const playerContainerRef = useRef<HTMLDivElement | null>(null);
-  const playerRef = useRef<YTPlayerInstance | null>(null);
 
   const openVideo = (url: string | null) => {
     if (!url) return;
     setVideoUrl(url);
-    setVideoYoutubeId(getYoutubeIdFromUrl(url));
     setVideoOpen(true);
   };
 
   const closeVideo = () => {
-    try {
-      if (playerRef.current && typeof playerRef.current.destroy === 'function') playerRef.current.destroy();
-    } catch {}
-    playerRef.current = null;
     setVideoOpen(false);
     setVideoUrl(null);
-    setVideoYoutubeId(null);
   };
-
-  useEffect(() => {
-    let mounted = true;
-    if (!videoOpen) return;
-    if (videoYoutubeId && playerContainerRef.current) {
-      loadYouTubeApi().then((YT) => {
-        if (!mounted) return;
-        if (!YT) return;
-        const container = playerContainerRef.current;
-        if (!container) return;
-        try { if (playerRef.current && typeof playerRef.current.destroy === 'function') playerRef.current.destroy(); } catch {}
-        playerRef.current = new (YT.Player as YTPlayerConstructor)(container, {
-          height: '360', width: '640', videoId: videoYoutubeId,
-          playerVars: { autoplay: 1, controls: 1, rel: 0 },
-          events: { onReady: (e: YTReadyEvent) => { try { e.target.playVideo(); } catch {} } },
-        });
-      }).catch(() => {});
-    }
-    return () => { mounted = false; };
-  }, [videoOpen, videoYoutubeId]);
 
   const featured = scrims.find(s => s.featured) || scrims[0];
   const rest = scrims.filter(s => s.id !== featured?.id).slice(0, 3);
@@ -854,14 +802,23 @@ export const MobileScrimAndAwards = () => {
         )}
       </div>
       {videoOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeVideo}>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md" onClick={closeVideo}>
           <div className="relative w-[95%] max-w-lg" onClick={(e) => e.stopPropagation()}>
-            {videoYoutubeId ? (
-              <div ref={playerContainerRef} className="w-full h-[50vh] rounded bg-black" />
-            ) : (
-              <video className="w-full h-auto rounded bg-black" controls autoPlay src={videoUrl || undefined} />
-            )}
-            <button onClick={closeVideo} className="absolute -top-3 -right-3 w-8 h-8 bg-black/80 text-white rounded-full">×</button>
+            <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black shadow-2xl border border-white/10">
+              {getEmbedUrl(videoUrl) ? (
+                <iframe
+                  src={getEmbedUrl(videoUrl)!}
+                  allow="autoplay; encrypted-media"
+                  allowFullScreen
+                  className="w-full h-full border-0"
+                />
+              ) : (
+                <video className="w-full h-full" controls autoPlay src={videoUrl || undefined} />
+              )}
+            </div>
+            <button onClick={closeVideo} className="absolute -top-3 -right-3 w-8 h-8 bg-black/80 hover:bg-black text-white hover:text-amber-400 rounded-full border border-white/20 hover:border-amber-400 transition-colors flex items-center justify-center font-black">
+              ×
+            </button>
           </div>
         </div>
       )}
