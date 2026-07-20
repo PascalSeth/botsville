@@ -266,7 +266,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0d0d12] py-6 px-4">
+    <div className="min-h-screen bg-[#0d0d12] pt-24 lg:pt-28 pb-6 px-4">
       <div className="max-w-xl mx-auto space-y-4">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-[10px] text-[#444] uppercase tracking-widest mb-6">

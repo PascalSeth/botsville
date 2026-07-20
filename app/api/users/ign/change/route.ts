@@ -3,6 +3,7 @@ import { requireActiveUser, apiError, apiSuccess, isValidIGN } from "@/lib/api-u
 import { findUserByEmailOrIgn } from "@/lib/auth";
 
 import { prisma } from "@/lib/prisma";
+import { deleteFromCache } from "@/lib/redis";
 
 export async function POST(request: NextRequest) {
   try {
@@ -59,6 +60,8 @@ export async function POST(request: NextRequest) {
         updatedAt: true,
       },
     });
+
+    await deleteFromCache(`user-session:${user.id}`);
 
     return apiSuccess({
       message: "IGN changed successfully",

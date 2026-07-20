@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/auth";
 import { Prisma } from "@/app/generated/prisma/client";
+import { getFromCache, setInCache } from "@/lib/redis";
 
 // Define the type for user with relations included
 type UserWithAdmin = Prisma.UserGetPayload<{
@@ -171,23 +172,30 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       });
 
       if (session.user) {
-        // Refetch user data from database to get latest values (including updated IGN)
         try {
-          const freshUser = await prisma.user.findUnique({
-            where: { id: token.id as string },
-            select: {
-              id: true,
-              email: true,
-              ign: true,
-              photo: true,
-              status: true,
-              emailVerified: true,
-              mainRole: true,
-              adminRole: {
-                select: { role: true },
+          const cacheKey = `user-session:${token.id}`;
+          let freshUser = await getFromCache<any>(cacheKey);
+
+          if (!freshUser) {
+            freshUser = await prisma.user.findUnique({
+              where: { id: token.id as string },
+              select: {
+                id: true,
+                email: true,
+                ign: true,
+                photo: true,
+                status: true,
+                emailVerified: true,
+                mainRole: true,
+                adminRole: {
+                  select: { role: true },
+                },
               },
-            },
-          });
+            });
+            if (freshUser) {
+              await setInCache(cacheKey, freshUser, { ttl: 60 });
+            }
+          }
 
           if (freshUser) {
             session.user.id = freshUser.id;

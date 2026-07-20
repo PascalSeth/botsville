@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
 // POST - Create news article
 export async function POST(request: NextRequest) {
   try {
-    const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR, AdminRoleType.INTERVIEWER]);
     const payload = await request.json();
     const {
       category,
@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
       subtitle,
       body: articleBody,
       image,
+      images,
       tags,
       featured,
       status,
@@ -109,6 +110,11 @@ export async function POST(request: NextRequest) {
       return apiError("Invalid category");
     }
 
+    // INTERVIEWER can only publish interview posts, not other news categories
+    if (admin.role === AdminRoleType.INTERVIEWER && category !== NewsCategory.INTERVIEW) {
+      return apiError("Interviewers can only publish INTERVIEW category posts", 403);
+    }
+
     const article = await prisma.news.create({
       data: {
         category: category as NewsCategory,
@@ -116,6 +122,7 @@ export async function POST(request: NextRequest) {
         subtitle: subtitle || null,
         body: articleBody ?? null,
         image: image || null,
+        images: images || [],
         tags: tags || [],
         featured: Boolean(featured),
         status: (status || NewsStatus.DRAFT) as NewsStatus,

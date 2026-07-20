@@ -191,7 +191,7 @@ export default function LeaderboardPage() {
   );
 
   return (
-    <main className="min-h-screen bg-[#08080d] text-white selection:bg-[#e8a000]/30 pb-20">
+    <main className="min-h-screen bg-[#08080d] text-white selection:bg-[#e8a000]/30 pt-24 lg:pt-28 pb-20">
 
       {/* ── HEADER ─────────────────────────────────────────────── */}
       <div className="relative pt-12 pb-8 px-4 overflow-hidden border-b border-white/[0.05]">

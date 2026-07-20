@@ -72,7 +72,7 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR, AdminRoleType.INTERVIEWER]);
     const { id } = await context.params;
     const body = await request.json();
 
@@ -84,8 +84,18 @@ export async function PUT(
       return apiError("Article not found", 404);
     }
 
+    // INTERVIEWER can only edit interview posts and can't move them to another category
+    if (admin.role === AdminRoleType.INTERVIEWER) {
+      if (article.category !== NewsCategory.INTERVIEW) {
+        return apiError("Interviewers can only edit INTERVIEW category posts", 403);
+      }
+      if (body.category !== undefined && body.category !== NewsCategory.INTERVIEW) {
+        return apiError("Interviewers can only publish INTERVIEW category posts", 403);
+      }
+    }
+
     const updateData: Prisma.NewsUpdateInput = {};
-    
+
     if (body.category !== undefined) {
       if (!Object.values(NewsCategory).includes(body.category)) {
         return apiError("Invalid category");
@@ -96,6 +106,7 @@ export async function PUT(
     if (body.subtitle !== undefined) updateData.subtitle = body.subtitle;
     if (body.body !== undefined) updateData.body = body.body;
     if (body.image !== undefined) updateData.image = body.image;
+    if (body.images !== undefined) updateData.images = body.images;
     if (body.tags !== undefined) updateData.tags = body.tags;
     if (body.featured !== undefined) updateData.featured = body.featured;
     if (body.status !== undefined) {
@@ -145,7 +156,7 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR]);
     const { id } = await context.params;
 
     await prisma.news.update({

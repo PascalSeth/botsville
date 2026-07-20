@@ -57,13 +57,42 @@ export async function POST(request: NextRequest) {
       return apiError("Team code must be 6 uppercase letters or numbers");
     }
 
-    let teamToJoin: { id: string; name: string; isRecruiting: boolean } | null = null;
-    if (normalizedTeamCode) {
-      teamToJoin = await prisma.team.findUnique({
-        where: { teamCode: normalizedTeamCode },
-        select: { id: true, name: true, isRecruiting: true },
-      });
+    // Perform all initial DB reads in parallel
+    const [existingUsers, rosterEntry, teamToJoin] = await Promise.all([
+      // Check if email or IGN already exists as an actual User
+      prisma.user.findMany({
+        where: {
+          OR: [
+            { email: { equals: email, mode: "insensitive" } },
+            { ign: { equals: ign, mode: "insensitive" } },
+          ],
+        },
+        select: { email: true, ign: true },
+      }),
+      // Check Player roster for identity overlaps
+      prisma.player.findFirst({
+        where: {
+          ign: { equals: ign, mode: "insensitive" },
+          deletedAt: null,
+        },
+        select: { 
+          id: true, 
+          userId: true,
+          teamId: true,
+          team: { select: { name: true } },
+        },
+      }),
+      // Find the team to join if code is provided
+      normalizedTeamCode
+        ? prisma.team.findUnique({
+            where: { teamCode: normalizedTeamCode },
+            select: { id: true, name: true, isRecruiting: true },
+          })
+        : Promise.resolve(null),
+    ]);
 
+    // Validate team code
+    if (normalizedTeamCode) {
       if (!teamToJoin) {
         return apiError("Invalid team code");
       }
@@ -72,40 +101,26 @@ export async function POST(request: NextRequest) {
         return apiError("This team is currently not accepting new members");
       }
 
+      // Check active player count
       const activePlayerCount = await prisma.player.count({
         where: { teamId: teamToJoin.id, deletedAt: null },
       });
 
-      if (activePlayerCount >= 9) {
-        return apiError("This team is already full (maximum 9 players)");
+      if (activePlayerCount >= 20) {
+        return apiError("This team is already full (maximum 20 players)");
       }
     }
 
-    // Check if email or IGN already exists as an actual User
-    const existingUser = await findUserByEmailOrIgn(email);
-    if (existingUser) {
-      return apiError("Email already registered");
-    }
-
-    const existingIGNUser = await findUserByEmailOrIgn(ign);
-    if (existingIGNUser) {
+    // Validate email/IGN uniqueness
+    if (existingUsers.length > 0) {
+      const hasEmail = existingUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
+      if (hasEmail) {
+        return apiError("Email already registered");
+      }
       return apiError("IGN already taken");
     }
 
-    // Check Player roster for identity overlaps
-    const rosterEntry = await prisma.player.findFirst({
-      where: {
-        ign: { equals: ign, mode: "insensitive" },
-        deletedAt: null,
-      },
-      select: { 
-        id: true, 
-        userId: true,
-        teamId: true,
-        team: { select: { name: true } } 
-      },
-    });
-
+    // Validate roster overlaps
     if (rosterEntry) {
       // Scenario 1: Actual linked player (userId exists)
       if (rosterEntry.userId) {

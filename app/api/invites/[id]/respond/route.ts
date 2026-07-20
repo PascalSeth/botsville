@@ -5,8 +5,10 @@ import {
   apiSuccess,
 } from "@/lib/api-utils";
 import { InviteStatus, GameRole } from "@/app/generated/prisma/enums";
+import { invalidatePattern } from "@/lib/redis";
 
 import { prisma } from "@/lib/prisma";
+
 
 // POST - Accept or decline invite
 export async function POST(
@@ -84,39 +86,41 @@ export async function POST(
     }
 
     if (action === "decline") {
-      try {
-        await prisma.teamInvite.update({
-          where: { id },
-          data: {
-            status: InviteStatus.DECLINED,
-            respondedAt: new Date(),
-          },
-        });
-      } catch (err: unknown) {
-        // Handle unique constraint violation
-        if (err instanceof Error && err.message.includes("Unique constraint failed")) {
-          console.log("Invite already in declined or another state (unique constraint)");
-          return apiSuccess({ message: "Invite declined" });
-        }
-        throw err;
-      }
+      // Delete any older non-pending records for this team and player to prevent @@unique([teamId, toIGN, status]) collisions
+      await prisma.teamInvite.deleteMany({
+        where: {
+          teamId: invite.teamId,
+          toIGN: { equals: invite.toIGN, mode: "insensitive" },
+          id: { not: id },
+          status: { in: [InviteStatus.DECLINED, InviteStatus.EXPIRED, InviteStatus.CANCELLED] },
+        },
+      });
+
+      await prisma.teamInvite.update({
+        where: { id },
+        data: {
+          status: InviteStatus.DECLINED,
+          respondedAt: new Date(),
+        },
+      });
+
 
       // If declined by recipient (invite target), notify sender; if declined by captain (application), notify applicant
-      const notifyUserId = isRecipient ? invite.fromUserId : invite.fromUserId;
+      const notifyUserId = isCaptain ? invite.fromUserId : invite.fromUserId;
       if (notifyUserId) {
         await prisma.notification.create({
           data: {
             userId: notifyUserId,
-            // Use existing notification types; titles/messages differentiate applications vs invites
             type: "TEAM_INVITE_DECLINED",
             title: isCaptain ? "Application Declined" : "Invite Declined",
             message: isCaptain
-              ? `${invite.team?.name} declined the application from ${invite.fromUserId}`
-              : `${user.ign} declined your team invite`,
-            linkUrl: isCaptain ? `/my-team` : `/teams/${invite.teamId}`,
+              ? `Your application to join ${invite.team?.name || 'the squad'} was declined by the team captain.`
+              : `${user.ign} declined your team invite to join ${invite.team?.name || 'the squad'}.`,
+            linkUrl: isCaptain ? `/teams` : `/teams/${invite.teamId}`,
           },
         });
       }
+
 
       return apiSuccess({ message: "Invite declined" });
     }
@@ -137,7 +141,7 @@ export async function POST(
       });
       if (playerRecord && !playerRecord.deletedAt) throw new Error('User is already on a team');
 
-      if (invite.team.players.length >= 9) throw new Error('Team is full (maximum 9 players)');
+      if (invite.team.players.length >= 20) throw new Error('Team is full (maximum 20 players)');
 
       const roleTaken = invite.team.players.find((p) => p.role === acceptRole && !p.isSubstitute);
       const isSubstitute = Boolean(roleTaken);
@@ -234,7 +238,7 @@ export async function POST(
         return apiError("You are already on a team");
       }
 
-      if (invite.team.players.length >= 9) return apiError('Team is full (maximum 9 players)');
+      if (invite.team.players.length >= 20) return apiError('Team is full (maximum 20 players)');
 
       const roleTaken = invite.team.players.find((p) => p.role === role && !p.isSubstitute);
       const isSubstitute = Boolean(roleTaken);
@@ -346,32 +350,39 @@ export async function POST(
           }
         }
 
-        // Cancel other pending invites for this user (they've now joined a team)
+        // Cancel other pending invites/applications for this user (they've now joined a team)
         await prisma.teamInvite.updateMany({
           where: {
-            toUserId: applicantId,
+            OR: [
+              { toUserId: applicantId },
+              { fromUserId: applicantId },
+            ],
             status: InviteStatus.PENDING,
             id: { not: id },
           },
           data: { status: InviteStatus.CANCELLED, respondedAt: new Date() },
         });
 
-        // Notify applicant (use existing notification type)
+        // Notify applicant when application is accepted
         await prisma.notification.create({
           data: {
             userId: applicantId!,
             type: 'TEAM_INVITE_ACCEPTED',
-            title: 'Application Accepted',
-            message: `${invite.team?.name} accepted your application`,
+            title: 'Application Accepted 🎉',
+            message: `Congratulations! ${invite.team?.name || 'The squad'} accepted your application. You are now officially on their roster!`,
             linkUrl: `/my-team`,
           },
         });
+
+        await invalidatePattern('teams:*');
+        await invalidatePattern('leaderboard:*');
 
         return apiSuccess({ message: 'Application accepted', player, isSubstitute }, 201);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Failed to accept application';
         return apiError(msg);
       }
+
     }
 
     return apiError('Unable to process accept request');

@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
 // PUT - Approve/reject fan art
 export async function PUT(request: NextRequest) {
   try {
-    const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR]);
     const body = await request.json();
     const { artworkId, action, rejectionReason } = body; // action: "approve" | "reject"
 

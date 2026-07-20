@@ -14,7 +14,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (gameNumber === undefined || !winnerId) return apiError('gameNumber and winnerId are required');
 
     // Only referees/tournament admins or super admin can set persisted game winners
-    const allowed = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
+    const allowed = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.COMMENTATOR || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
     if (!allowed) return apiError('Only referees or tournament admins can set game winners', 403);
 
     const match = await prisma.match.findUnique({ where: { id }, select: { teamAId: true, teamBId: true } });

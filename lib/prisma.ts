@@ -1,11 +1,17 @@
 import { PrismaClient } from "@/app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 import "dotenv/config";
 import { broadcastToUser } from "@/lib/socket-server";
 
-const adapter = new PrismaPg({
+const pool = new Pool({
   connectionString: process.env.DATABASE_URL!,
+  max: 15,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
 });
+
+const adapter = new PrismaPg(pool);
 
 const globalForPrisma = globalThis as unknown as {
   prisma: ReturnType<typeof buildPrismaClient> | undefined;
@@ -28,8 +34,6 @@ function buildPrismaClient() {
         },
         async createMany({ args, query }) {
           const result = await query(args);
-          // createMany doesn't return rows in Prisma by default;
-          // fire a generic "reload" event so clients re-fetch.
           try {
             const rows = Array.isArray(args.data) ? args.data : [args.data];
             const userIds = [...new Set(rows.map((r: { userId?: string }) => r.userId).filter(Boolean))];

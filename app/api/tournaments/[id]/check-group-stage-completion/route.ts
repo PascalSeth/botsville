@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireAdmin, apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
-import { MatchStatus } from "@/app/generated/prisma/enums";
+import { MatchStatus, AdminRoleType } from "@/app/generated/prisma/enums";
 
 /**
  * GET /api/tournaments/[id]/check-group-stage-completion
@@ -20,7 +20,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin();
+    await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const { id: tournamentId } = await params;
 
     // Get tournament with match data

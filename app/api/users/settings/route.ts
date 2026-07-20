@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth-config";
 import { hashPassword, verifyPassword } from "@/lib/auth";
+import { deleteFromCache } from "@/lib/redis";
 
 /**
  * PUT /api/users/settings
@@ -59,6 +60,8 @@ export async function PUT(request: Request) {
         where: { id: user.id },
         data: { password: hashedPassword },
       });
+
+      await deleteFromCache(`user-session:${user.id}`);
 
       return NextResponse.json({ success: true, message: "Password updated successfully" });
     }
@@ -137,6 +140,8 @@ export async function PUT(request: Request) {
 
       await prisma.$transaction(updateOps);
 
+      await deleteFromCache(`user-session:${user.id}`);
+
       return NextResponse.json({
         success: true,
         message: "IGN updated successfully",
@@ -185,6 +190,8 @@ export async function PUT(request: Request) {
         where: { id: user.id },
         data: { email: trimmedEmail },
       });
+
+      await deleteFromCache(`user-session:${user.id}`);
 
       return NextResponse.json({
         success: true,

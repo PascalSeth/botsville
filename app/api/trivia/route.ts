@@ -24,7 +24,7 @@ function parseImages(value: unknown): string[] | undefined {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR]);
     const { searchParams } = new URL(request.url);
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50")));
     const skip = Math.max(0, parseInt(searchParams.get("skip") || "0"));
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR]);
     const body = await request.json();
     const { category, title, teaser, choices, correctAnswerIndex, reveal, heroSlug, isActive, periodFrom, periodTo, images } = body;
 

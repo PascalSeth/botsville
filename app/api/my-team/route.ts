@@ -80,6 +80,11 @@ export async function GET() {
     });
 
     if (playerRecord?.team) {
+      // Auto-cleanup: if the team has been disbanded (soft-deleted), free the player silently
+      if (playerRecord.team.deletedAt) {
+        await prisma.player.delete({ where: { id: playerRecord.id } });
+        return apiSuccess(null);
+      }
       return apiSuccess({
         ...playerRecord.team,
         isCaptain: playerRecord.team.captainId === user.id,

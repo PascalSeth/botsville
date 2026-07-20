@@ -12,6 +12,10 @@ import { cacheResult, invalidatePattern } from "@/lib/redis";
 
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+
 const ROLE_TO_GAME_ROLE: Record<MainRole, GameRole> = {
   EXP: GameRole.EXP,
   JUNGLE: GameRole.JUNGLE,
@@ -55,10 +59,13 @@ export async function GET(request: NextRequest) {
     const result = await cacheResult(
       cacheKey,
       async () => {
-        const where: { deletedAt: null; status?: TeamStatus; region?: string } = { deletedAt: null };
+        const where: any = {
+          deletedAt: null,
+        };
         if (status && Object.values(TeamStatus).includes(status as TeamStatus)) {
           where.status = status as TeamStatus;
         }
+
         if (region) {
           where.region = region;
         }
@@ -148,12 +155,13 @@ export async function GET(request: NextRequest) {
           },
         };
       },
-      { ttl: 600 } // Cache for 10 minutes
+      { ttl: 10 }
     );
 
     return apiSuccess(result, 200, {
-      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30"
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     });
+
   } catch (error: unknown) {
     console.error("Get teams error:", error);
     return apiError(error instanceof Error ? error.message : "Failed to fetch teams", 500);
@@ -313,6 +321,10 @@ export async function POST(request: NextRequest) {
       return created;
     });
 
+    // Invalidate cached team and leaderboard listings
+    await invalidatePattern("teams:*");
+    await invalidatePattern("leaderboard:*");
+
     return apiSuccess(
       {
         message: "Team created successfully",
@@ -320,6 +332,7 @@ export async function POST(request: NextRequest) {
       },
       201
     );
+
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return apiError("Unauthorized", 401);

@@ -4,6 +4,7 @@ import { requireActiveUser, apiError, apiSuccess, isValidRegion } from "@/lib/ap
 import { MainRole } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
+import { deleteFromCache } from "@/lib/redis";
 
 const VALID_RANK_BADGES = [
   "WARRIOR",
@@ -180,6 +181,8 @@ export async function PUT(request: NextRequest) {
         updatedAt: true,
       },
     });
+
+    await deleteFromCache(`user-session:${user.id}`);
 
     return apiSuccess(updated);
   } catch (error: unknown) {

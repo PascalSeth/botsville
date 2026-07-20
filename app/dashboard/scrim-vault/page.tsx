@@ -1,5 +1,7 @@
 "use client";
 
+
+import { useRoleGuard } from "../lib/useRole";
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
 import { Check, X, Loader2, Pencil, Trash2, ExternalLink } from "lucide-react";
@@ -12,6 +14,7 @@ type VideoItem = {
   matchup: string | null;
   status: string;
   featured: boolean;
+  category: string;
   duration: string | null;
   rejectionReason: string | null;
   createdAt: string;
@@ -24,7 +27,11 @@ type Payload = {
   pagination: { total: number; limit: number; skip: number };
 };
 
+type TournamentOption = { id: string; name: string; status: string };
+
 export default function DashboardScrimVaultPage() {
+  const { role, userId } = useRoleGuard(["CONTENT_ADMIN", "EDITOR", "STREAMER"]);
+  const canModerate = ["SUPER_ADMIN", "CONTENT_ADMIN", "EDITOR"].includes(role ?? "");
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [pagination, setPagination] = useState({ total: 0, limit: 50, skip: 0 });
   const [loading, setLoading] = useState(true);
@@ -35,10 +42,53 @@ export default function DashboardScrimVaultPage() {
   const [title, setTitle] = useState("");
   const [matchup, setMatchup] = useState("");
   const [featured, setFeatured] = useState(false);
-  const [sourceType, setSourceType] = useState<"youtube" | "upload" | "twitch">("youtube");
+  const [sourceType, setSourceType] = useState<"link" | "upload">("link");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [popupVideo, setPopupVideo] = useState<VideoItem | null>(null);
+  const [category, setCategory] = useState("SCRIM");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [tournamentMatches, setTournamentMatches] = useState<any[]>([]);
+  const [loadingMatches, setLoadingMatches] = useState(false);
+  const [matchId, setMatchId] = useState("");
+  // Tournament linking: "" = plain scrim, otherwise VOD for that tournament
+  const [tournaments, setTournaments] = useState<TournamentOption[]>([]);
+  const [tournamentId, setTournamentId] = useState("");
+
+  useEffect(() => {
+    setMatchId("");
+    if (!tournamentId) {
+      setTournamentMatches([]);
+      return;
+    }
+    (async () => {
+      setLoadingMatches(true);
+      const { data } = await dashboardFetch<any[]>(`/api/tournaments/${tournamentId}/matches`);
+      const matches = data ?? [];
+      setTournamentMatches(matches);
+      setLoadingMatches(false);
+
+      if (editingId && youtubeUrl) {
+        const found = matches.find((m) => m.streamUrl === youtubeUrl);
+        if (found) {
+          setMatchId(found.id);
+        }
+      }
+    })();
+  }, [tournamentId, editingId, youtubeUrl]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await dashboardFetch<{ tournaments: TournamentOption[] }>("/api/tournaments?limit=100");
+      const list = data?.tournaments ?? [];
+      // Active/upcoming first so streamers find the current tournament quickly
+      list.sort((a, b) => {
+        const rank = (s: string) => (s === "COMPLETED" ? 1 : 0);
+        return rank(a.status) - rank(b.status);
+      });
+      setTournaments(list);
+    })();
+  }, []);
 
   const isYouTubeUrl = (url: string) => /(?:youtube\.com|youtu\.be)/i.test(url);
   const isTwitchUrl = (url: string) => /(?:twitch\.tv)/i.test(url);
@@ -103,9 +153,12 @@ export default function DashboardScrimVaultPage() {
     setTitle("");
     setMatchup("");
     setFeatured(false);
-    setSourceType("youtube");
+    setSourceType("link");
     setYoutubeUrl("");
     setVideoFile(null);
+    setTournamentId("");
+    setCategory("SCRIM");
+    setMatchId("");
   };
 
   const uploadVideoToStorage = async (file: File): Promise<string> => {
@@ -123,6 +176,7 @@ export default function DashboardScrimVaultPage() {
     const params = new URLSearchParams();
     params.set("limit", "50");
     if (status) params.set("status", status);
+    if (filterCategory) params.set("category", filterCategory);
     const { data, error: err } = await dashboardFetch<Payload>(`/api/scrim-vault?${params}`);
     setLoading(false);
     if (err) {
@@ -133,7 +187,7 @@ export default function DashboardScrimVaultPage() {
     setError(null);
     setVideos(data?.videos ?? []);
     if (data?.pagination) setPagination(data.pagination);
-  }, [status]);
+  }, [status, filterCategory]);
 
   useEffect(() => {
     load();
@@ -177,6 +231,8 @@ export default function DashboardScrimVaultPage() {
             matchup: matchup.trim() || null,
             featured,
             videoUrl: finalVideoUrl,
+            tournamentId: tournamentId || null,
+            category,
           }),
         });
         if (updateError) throw new Error(updateError);
@@ -188,9 +244,18 @@ export default function DashboardScrimVaultPage() {
             matchup: matchup.trim() || null,
             featured,
             videoUrl: finalVideoUrl,
+            tournamentId: tournamentId || null,
+            category,
           }),
         });
         if (createError) throw new Error(createError);
+      }
+
+      if (matchId) {
+        await dashboardFetch(`/api/matches/${matchId}/stream`, {
+          method: "PATCH",
+          body: JSON.stringify({ streamUrl: finalVideoUrl }),
+        });
       }
 
       resetForm();
@@ -237,11 +302,10 @@ export default function DashboardScrimVaultPage() {
     setTitle(video.title);
     setMatchup(video.matchup ?? "");
     setFeatured(video.featured);
-    if (isYouTubeUrl(video.videoUrl)) {
-      setSourceType("youtube");
-      setYoutubeUrl(video.videoUrl);
-    } else if (isTwitchUrl(video.videoUrl)) {
-      setSourceType("twitch");
+    setTournamentId(video.tournament?.id ?? "");
+    setCategory(video.category ?? "SCRIM");
+    if (isYouTubeUrl(video.videoUrl) || isTwitchUrl(video.videoUrl)) {
+      setSourceType("link");
       setYoutubeUrl(video.videoUrl);
     } else {
       setSourceType("upload");
@@ -261,20 +325,32 @@ export default function DashboardScrimVaultPage() {
             Create, edit, approve, reject, and delete scrim videos. Supports uploaded files and YouTube links with in-site playback.
           </p>
         </div>
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-        >
-          <option value="">All statuses</option>
-          <option value="PENDING">PENDING</option>
-          <option value="APPROVED">APPROVED</option>
-          <option value="REJECTED">REJECTED</option>
-        </select>
+        <div className="flex gap-2">
+          <select
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+          >
+            <option value="">All categories</option>
+            <option value="SCRIM">SCRIM</option>
+            <option value="TOURNAMENT">TOURNAMENT</option>
+            <option value="COMMUNITY">COMMUNITY</option>
+          </select>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+          >
+            <option value="">All statuses</option>
+            <option value="PENDING">PENDING</option>
+            <option value="APPROVED">APPROVED</option>
+            <option value="REJECTED">REJECTED</option>
+          </select>
+        </div>
       </div>
 
       <form onSubmit={handleCreateOrUpdate} className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 p-4 sm:p-5 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
@@ -288,6 +364,35 @@ export default function DashboardScrimVaultPage() {
             placeholder="Matchup (optional)"
             className="bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
           />
+          <select
+            value={tournamentId}
+            onChange={(event) => {
+              const val = event.target.value;
+              setTournamentId(val);
+              if (val) {
+                setCategory("TOURNAMENT");
+              } else if (category === "TOURNAMENT") {
+                setCategory("SCRIM");
+              }
+            }}
+            className="bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+          >
+            <option value="">Scrim — no tournament</option>
+            {tournaments.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}{t.status !== "COMPLETED" ? " (active)" : ""}
+              </option>
+            ))}
+          </select>
+          <select
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+            className="bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+          >
+            <option value="SCRIM">Scrim VOD</option>
+            <option value="TOURNAMENT">Tournament VOD</option>
+            <option value="COMMUNITY">Community / Random Video</option>
+          </select>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
@@ -296,21 +401,11 @@ export default function DashboardScrimVaultPage() {
             <input
               type="radio"
               name="sourceType"
-              checked={sourceType === "youtube"}
-              onChange={() => setSourceType("youtube")}
+              checked={sourceType === "link"}
+              onChange={() => setSourceType("link")}
               className="accent-[#e8a000]"
             />
-            YouTube
-          </label>
-          <label className="flex items-center gap-2 text-sm text-[#aaa]">
-            <input
-              type="radio"
-              name="sourceType"
-              checked={sourceType === "twitch"}
-              onChange={() => setSourceType("twitch")}
-              className="accent-[#9146ff]"
-            />
-            Twitch
+            YouTube / Twitch Link
           </label>
           <label className="flex items-center gap-2 text-sm text-[#aaa]">
             <input
@@ -333,20 +428,12 @@ export default function DashboardScrimVaultPage() {
           </label>
         </div>
 
-        {sourceType === "youtube" ? (
+        {sourceType === "link" ? (
           <input
             value={youtubeUrl}
             onChange={(event) => setYoutubeUrl(event.target.value)}
-            placeholder="https://www.youtube.com/watch?v=..."
+            placeholder="https://www.youtube.com/watch?v=... or https://www.twitch.tv/videos/..."
             className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-            required
-          />
-        ) : sourceType === "twitch" ? (
-          <input
-            value={youtubeUrl}
-            onChange={(event) => setYoutubeUrl(event.target.value)}
-            placeholder="https://www.twitch.tv/channel or https://www.twitch.tv/videos/123456789"
-            className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#9146ff]/50"
             required
           />
         ) : (
@@ -361,6 +448,46 @@ export default function DashboardScrimVaultPage() {
             {editingId && (
               <p className="text-[11px] text-[#666]">Leave file empty to keep current uploaded video URL.</p>
             )}
+          </div>
+        )}
+
+        {tournamentId && (
+          <div className="flex flex-col gap-1.5 bg-[#0d0d14]/40 p-3 rounded border border-white/5">
+            <label className="text-[10px] font-bold text-[#e8a000] uppercase tracking-wide">
+              Link to Match (optional)
+            </label>
+            {loadingMatches ? (
+              <span className="text-xs text-[#666] flex items-center gap-1">
+                <Loader2 size={12} className="animate-spin" /> Loading tournament matches...
+              </span>
+            ) : (
+              <select
+                value={matchId}
+                onChange={(event) => {
+                  const mId = event.target.value;
+                  setMatchId(mId);
+                  const m = tournamentMatches.find((x) => x.id === mId);
+                  if (m) {
+                    setTitle(`${m.teamA?.name ?? "TBD"} vs ${m.teamB?.name ?? "TBD"}`);
+                    setMatchup(`${m.teamA?.tag ?? "TBD"} vs ${m.teamB?.tag ?? "TBD"}`);
+                    if (m.streamUrl) {
+                      setYoutubeUrl(m.streamUrl);
+                    }
+                  }
+                }}
+                className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
+              >
+                <option value="">-- Select a Match to link/set stream link --</option>
+                {tournamentMatches.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.stage ? `[${m.stage}] ` : ""}{m.teamA?.name ?? "TBD"} vs {m.teamB?.name ?? "TBD"} ({new Date(m.scheduledTime).toLocaleDateString()}) {m.streamUrl ? "🔗" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+            <p className="text-[10px] text-[#666]">
+              Linking a match will automatically set the stream link for that match and fill the title/matchup fields.
+            </p>
           </div>
         )}
 
@@ -403,6 +530,8 @@ export default function DashboardScrimVaultPage() {
                 <tr className="border-b border-white/10 text-[10px] font-black uppercase tracking-wider text-[#666]">
                   <th className="p-3">Title</th>
                   <th className="p-3">Preview</th>
+                  <th className="p-3">Tournament</th>
+                  <th className="p-3">Category</th>
                   <th className="p-3">Submitted by</th>
                   <th className="p-3">Status</th>
                   <th className="p-3">Featured</th>
@@ -454,6 +583,8 @@ export default function DashboardScrimVaultPage() {
                         )}
                       </div>
                     </td>
+                    <td className="p-3 text-[#aaa] text-sm">{v.tournament?.name ?? "Scrim"}</td>
+                    <td className="p-3 text-[#aaa] text-sm">{v.category}</td>
                     <td className="p-3 text-[#aaa] text-sm">{v.submittedBy?.ign ?? "—"}</td>
                     <td className="p-3">
                       <span
@@ -472,7 +603,7 @@ export default function DashboardScrimVaultPage() {
                     <td className="p-3 text-[#666] text-sm">{new Date(v.createdAt).toLocaleDateString()}</td>
                     <td className="p-3">
                       <div className="flex gap-2 flex-wrap">
-                        {v.status === "PENDING" && (
+                        {canModerate && v.status === "PENDING" && (
                           <>
                             <button
                               type="button"
@@ -493,22 +624,26 @@ export default function DashboardScrimVaultPage() {
                             </button>
                           </>
                         )}
-                        <button
-                          type="button"
-                          disabled={acting === v.id}
-                          onClick={() => startEdit(v)}
-                          className="flex items-center gap-1 text-[#e8a000] hover:text-[#ffb800] text-xs font-bold uppercase disabled:opacity-50"
-                        >
-                          <Pencil size={12} /> Edit
-                        </button>
-                        <button
-                          type="button"
-                          disabled={acting === v.id}
-                          onClick={() => handleDelete(v.id)}
-                          className="flex items-center gap-1 text-red-400 hover:text-red-300 text-xs font-bold uppercase disabled:opacity-50"
-                        >
-                          <Trash2 size={12} /> Delete
-                        </button>
+                        {(canModerate || v.submittedBy?.id === userId) && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={acting === v.id}
+                              onClick={() => startEdit(v)}
+                              className="flex items-center gap-1 text-[#e8a000] hover:text-[#ffb800] text-xs font-bold uppercase disabled:opacity-50"
+                            >
+                              <Pencil size={12} /> Edit
+                            </button>
+                            <button
+                              type="button"
+                              disabled={acting === v.id}
+                              onClick={() => handleDelete(v.id)}
+                              className="flex items-center gap-1 text-red-400 hover:text-red-300 text-xs font-bold uppercase disabled:opacity-50"
+                            >
+                              <Trash2 size={12} /> Delete
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

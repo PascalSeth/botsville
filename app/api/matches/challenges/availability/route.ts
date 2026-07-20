@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
     const availabilities = await prisma.weeklyScrimAvailability.findMany({
       where: {
         weekStart: selectedWeekStart,
+        team: { deletedAt: null },
       },
       include: {
         team: {
@@ -68,13 +69,15 @@ export async function GET(request: NextRequest) {
             name: true,
             tag: true,
             captainId: true,
+            deletedAt: true,
           },
         },
       },
       orderBy: [{ isAvailable: "desc" }, { updatedAt: "desc" }],
     });
 
-    const availableTeams = availabilities.filter((entry) => entry.isAvailable);
+    const availableTeams = availabilities.filter((entry) => entry.isAvailable && entry.team && !entry.team.deletedAt);
+
 
     if (user.role) {
       return apiSuccess({

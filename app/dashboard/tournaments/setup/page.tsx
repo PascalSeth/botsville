@@ -1,5 +1,7 @@
 'use client';
 
+
+import { useRoleGuard } from "../../lib/useRole";
 import React, { useState, useEffect, Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -1018,6 +1020,7 @@ function SetupContent() {
 }
 
 export default function TournamentSetupPage() {
+  const { isAllowed: __roleAllowed } = useRoleGuard(["TOURNAMENT_ADMIN"]);
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-[#05050a] flex items-center justify-center">

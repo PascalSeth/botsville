@@ -3,7 +3,9 @@ import {
   requireActiveUser,
   apiError,
   apiSuccess,
+  formatHumanError,
 } from "@/lib/api-utils";
+
 import { GameRole } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
@@ -27,25 +29,31 @@ export async function POST(
     }
 
     // Find invite link
-    const link = await prisma.teamInviteLink.findUnique({
-      where: { code },
-      include: {
-        team: {
-          include: {
-            players: {
-              where: { deletedAt: null },
-            },
-            captain: {
-              select: {
-                id: true,
-                ign: true,
+    // Find invite link and user's current player record in parallel
+    const [link, playerRecord] = await Promise.all([
+      prisma.teamInviteLink.findUnique({
+        where: { code },
+        include: {
+          team: {
+            include: {
+              players: {
+                where: { deletedAt: null },
+              },
+              captain: {
+                select: {
+                  id: true,
+                  ign: true,
+                },
               },
             },
           },
+          usages: true,
         },
-        usages: true,
-      },
-    });
+      }),
+      prisma.player.findFirst({
+        where: { userId: user.id },
+      })
+    ]);
 
     if (!link) {
       return apiError("Invalid invite code", 404);
@@ -69,18 +77,13 @@ export async function POST(
       return apiError("You have already used this invite link");
     }
 
-    // Find the player's active or inactive player record
-    const playerRecord = await prisma.player.findFirst({
-      where: { userId: user.id },
-    });
-
     if (playerRecord && !playerRecord.deletedAt) {
       return apiError("You are already on a team");
     }
 
-    // Check team size (max 9 players — 5 starters + up to 4 substitutes)
-    if (link.team.players.length >= 9) {
-      return apiError("Team is full (maximum 9 players)");
+    // Check team size (max 20 players — 5 starters + up to 15 substitutes)
+    if (link.team.players.length >= 20) {
+      return apiError("Team is full (maximum 20 players)");
     }
 
     // Check if role is already taken by a starter
@@ -158,12 +161,12 @@ export async function POST(
       201
     );
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to join team";
-    if (message === "Unauthorized") return apiError("Unauthorized", 401);
+    const formatted = formatHumanError(error);
     console.error("Join via invite link error:", error);
-    return apiError(message, 500);
+    return apiError(formatted, 500);
   }
 }
+
 
 
 

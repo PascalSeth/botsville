@@ -31,7 +31,18 @@ export async function GET(
       return apiError("Only team captain can view invites", 403);
     }
 
+    // Auto-expire outdated pending invites
+    await prisma.teamInvite.updateMany({
+      where: {
+        teamId: id,
+        status: InviteStatus.PENDING,
+        expiresAt: { lte: new Date() },
+      },
+      data: { status: InviteStatus.DECLINED },
+    });
+
     const where: Prisma.TeamInviteWhereInput = { teamId: id };
+
     
     // Always show only PENDING and non-expired invites by default
     if (status && Object.values(InviteStatus).includes(status as InviteStatus)) {
@@ -112,9 +123,9 @@ export async function POST(
       return apiError("Only team captain can send invites", 403);
     }
 
-    // Check team size (max 9 players — 5 starters + up to 4 substitutes)
-    if (team.players.length >= 9) {
-      return apiError("Team is full (maximum 9 players)");
+    // Check team size (max 20 players — 5 starters + up to 15 substitutes)
+    if (team.players.length >= 20) {
+      return apiError("Team is full (maximum 20 players)");
     }
 
     // Find target user by IGN

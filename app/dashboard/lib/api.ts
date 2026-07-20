@@ -8,6 +8,7 @@ export async function dashboardFetch<T = unknown>(
 ): Promise<{ data?: T; error?: string }> {
   try {
     const res = await fetch(url, {
+      cache: "no-store",
       ...options,
       credentials: "include",
       headers: {
@@ -15,6 +16,7 @@ export async function dashboardFetch<T = unknown>(
         ...options?.headers,
       },
     });
+
     const json = await res.json();
     if (!res.ok) {
       return { error: (json as { error?: string }).error ?? `Request failed (${res.status})` };

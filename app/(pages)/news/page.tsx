@@ -30,12 +30,14 @@ const CATEGORY_COLORS: Record<string, string> = {
   PATCH_NOTES: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
   NEW_EVENT: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
   NEW_HERO: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  INTERVIEW: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
   PATCH_NOTES: 'Patch Notes',
   NEW_EVENT: 'New Event',
   NEW_HERO: 'New Hero',
+  INTERVIEW: 'Interview',
 };
 
 export default function NewsPage() {
@@ -79,7 +81,7 @@ export default function NewsPage() {
   const regularArticles = filteredArticles.filter((a) => !a.featured);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-[#0a0a0f] text-white pt-24 lg:pt-28">
       {/* ── Header ────────────────────────────────────────────── */}
       <div className="border-b border-white/10 bg-linear-to-b from-white/2 to-transparent">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24">

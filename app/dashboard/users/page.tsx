@@ -42,6 +42,11 @@ export default function DashboardUsersPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [skip, setSkip] = useState(0);
+
+  useEffect(() => {
+    setSkip(0);
+  }, [debouncedSearch, status, activeTab]);
 
   // Merge Flow State
   const [mergingUser, setMergingUser] = useState<UserWithTeam | null>(null);
@@ -65,10 +70,11 @@ export default function DashboardUsersPage() {
     setLoading(true);
     const params = new URLSearchParams();
     params.set("limit", "50");
+    params.set("skip", String(skip));
     if (debouncedSearch) params.set("search", debouncedSearch);
 
     if (activeTab === "users") {
-      if (status) params.set("status", status);
+       if (status) params.set("status", status);
       const { data, error: err } = await dashboardFetch<Payload>(`/api/admin/users?${params}`);
       setLoading(false);
       if (err) {
@@ -91,10 +97,13 @@ export default function DashboardUsersPage() {
         setPagination({ total: data?.length ?? 0, limit: 50, skip: 0 });
       }
     }
-  }, [debouncedSearch, status, activeTab]);
+  }, [debouncedSearch, status, activeTab, skip]);
 
   useEffect(() => {
-    void load();
+    const t = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
   const searchPlaceholders = useCallback(async (query: string) => {
@@ -145,7 +154,7 @@ export default function DashboardUsersPage() {
           void load();
         }, 1500);
       }
-    } catch (err) {
+    } catch {
       setMergeError("An unexpected error occurred");
     } finally {
       setSubmittingMerge(false);
@@ -317,8 +326,26 @@ export default function DashboardUsersPage() {
           </div>
         )}
         {pagination.total > 0 && (
-          <div className="p-4 border-t border-white/10 text-[10px] text-[#444] font-black uppercase tracking-widest flex justify-between items-center bg-white/[0.01]">
-            <span>Total: {pagination.total} {activeTab === "users" ? "Users" : "Orphaned Records"}</span>
+          <div className="p-4 border-t border-white/10 text-[10px] text-[#888] font-black uppercase tracking-widest flex justify-between items-center bg-white/[0.01]">
+            <span>Showing {skip + 1} - {Math.min(skip + 50, pagination.total)} of {pagination.total} {activeTab === "users" ? "Users" : "Orphaned Records"}</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={skip === 0}
+                onClick={() => setSkip(s => Math.max(0, s - 50))}
+                className="px-3 py-1.5 border border-white/10 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={skip + 50 >= pagination.total}
+                onClick={() => setSkip(s => s + 50)}
+                className="px-3 py-1.5 border border-white/10 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -444,7 +471,7 @@ export default function DashboardUsersPage() {
                                 </div>
                               </div>
                               <button
-                                onClick={() => handleMerge(mergingPlaceholder?.id!, u.id)}
+                                onClick={() => { if (mergingPlaceholder) handleMerge(mergingPlaceholder.id, u.id); }}
                                 disabled={submittingMerge}
                                 className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                               >

@@ -1,89 +1,36 @@
 import { NextRequest } from "next/server";
 import { requireActiveUser, requireAdmin, apiError, apiSuccess, createAuditLog } from "@/lib/api-utils";
-import { MatchChallengeStatus, MatchStatus, TournamentFormat, TournamentStatus, AdminRoleType } from "@/app/generated/prisma/enums";
+import { MatchChallengeStatus, AdminRoleType, ScrimVaultStatus } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
-function parseDateTime(value: string): Date | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date;
-}
-
-async function getSeasonScrimTournament() {
-  const activeSeason = await prisma.season.findFirst({
-    where: { status: "ACTIVE" },
+async function getCaptainTeam(userId: string) {
+  return prisma.team.findFirst({
+    where: {
+      captainId: userId,
+      deletedAt: null,
+      status: "ACTIVE",
+    },
     select: {
       id: true,
       name: true,
-      endDate: true,
-      scrimTournamentId: true,
-      scrimTournament: { select: { id: true, name: true } },
+      tag: true,
+      captainId: true,
     },
   });
-
-  if (!activeSeason) {
-    throw new Error("No active season found for scrim scheduling");
-  }
-
-  // If season has a designated scrim tournament, use it
-  if (activeSeason.scrimTournamentId && activeSeason.scrimTournament) {
-    return activeSeason.scrimTournament;
-  }
-
-  // Otherwise, create or find a default scrim tournament for the season
-  const defaultName = `${activeSeason.name} Scrims`;
-  const existing = await prisma.tournament.findFirst({
-    where: {
-      seasonId: activeSeason.id,
-      name: defaultName,
-      deletedAt: null,
-    },
-  });
-
-  if (existing) {
-    // Set it as the season's scrim tournament for future use
-    await prisma.season.update({
-      where: { id: activeSeason.id },
-      data: { scrimTournamentId: existing.id },
-    });
-    return existing;
-  }
-
-  const registrationDeadline = new Date();
-  registrationDeadline.setDate(registrationDeadline.getDate() + 7);
-
-  const tournament = await prisma.tournament.create({
-    data: {
-      seasonId: activeSeason.id,
-      name: defaultName,
-      subtitle: "Weekly community scrims",
-      format: TournamentFormat.ROUND_ROBIN,
-      location: "Online",
-      isOnline: true,
-      date: activeSeason.endDate,
-      registrationDeadline,
-      slots: 128,
-      status: TournamentStatus.OPEN,
-      prizePool: null,
-    },
-  });
-
-  // Set it as the season's scrim tournament
-  await prisma.season.update({
-    where: { id: activeSeason.id },
-    data: { scrimTournamentId: tournament.id },
-  });
-
-  return tournament;
 }
-
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireActiveUser();
     const { id } = await context.params;
     const body = await request.json();
-    const { action } = body as { action?: string };
+    const { action, streamUrl, streamerName, scheduledTime, bestOf } = body as {
+      action?: string;
+      streamUrl?: string;
+      streamerName?: string;
+      scheduledTime?: string;
+      bestOf?: number;
+    };
 
     if (!action) {
       return apiError("action is required");
@@ -93,10 +40,10 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       where: { id },
       include: {
         challengerTeam: {
-          select: { id: true, name: true, captainId: true },
+          select: { id: true, name: true, captainId: true, tag: true },
         },
         challengedTeam: {
-          select: { id: true, name: true, captainId: true },
+          select: { id: true, name: true, captainId: true, tag: true },
         },
       },
     });
@@ -105,44 +52,143 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       return apiError("Challenge not found", 404);
     }
 
+    // ── ACTION: Accept Challenge ────────────────────────────────
     if (action === "accept") {
       if (challenge.status !== MatchChallengeStatus.PENDING) {
         return apiError("Only pending challenges can be accepted");
       }
-      if (challenge.challengedTeam.captainId !== user.id) {
-        return apiError("Only the challenged team captain can accept", 403);
+
+      const userCaptainTeam = await getCaptainTeam(user.id);
+      if (!userCaptainTeam && !user.role) {
+        return apiError("Only an active team captain can accept match challenges", 403);
+      }
+
+      let acceptingTeamId: string | null = challenge.challengedTeamId;
+      if (!acceptingTeamId) {
+        if (userCaptainTeam && userCaptainTeam.id === challenge.challengerTeamId) {
+          return apiError("You cannot accept your own team's challenge", 400);
+        }
+        acceptingTeamId = userCaptainTeam?.id || null;
+      } else {
+        if (challenge.challengedTeam?.captainId !== user.id && !user.role) {
+          return apiError("Only the challenged team captain can accept this match", 403);
+        }
+      }
+
+      if (!acceptingTeamId) {
+        return apiError("Could not identify accepting team", 400);
       }
 
       const updated = await prisma.matchChallenge.update({
         where: { id },
         data: {
+          challengedTeamId: acceptingTeamId,
           status: MatchChallengeStatus.ACCEPTED,
           respondedById: user.id,
           acceptedAt: new Date(),
         },
+        include: {
+          challengerTeam: { select: { id: true, name: true } },
+          challengedTeam: { select: { id: true, name: true } },
+        },
       });
 
+      // 1. Notify Challenger Captain
       if (challenge.challengerTeam.captainId) {
         await prisma.notification.create({
           data: {
             userId: challenge.challengerTeam.captainId,
             type: "MATCH_SCHEDULED",
-            title: "Challenge Accepted",
-            message: `${challenge.challengedTeam.name} accepted your challenge. Admin will schedule the match date.`,
-            linkUrl: "/my-team",
+            title: "⚔️ Public Scrim Challenge Accepted!",
+            message: `${userCaptainTeam?.name || 'A rival squad'} accepted your public challenge. Tournament admins & streamers have been notified!`,
+            linkUrl: "/challenge-arena",
           },
         });
       }
 
-      return apiSuccess({ message: "Challenge accepted", challenge: updated });
+      // 2. Notify Accepting Captain
+      if (userCaptainTeam?.captainId) {
+        await prisma.notification.create({
+          data: {
+            userId: userCaptainTeam.captainId,
+            type: "MATCH_SCHEDULED",
+            title: "⚔️ Match Challenge Accepted!",
+            message: `You accepted the challenge from ${challenge.challengerTeam.name}. Match details are now live on the Challenge Arena!`,
+            linkUrl: "/challenge-arena",
+          },
+        });
+      }
+
+      return apiSuccess({ message: "Challenge accepted successfully!", challenge: updated });
     }
 
+    // ── ACTION: Schedule & Assign Streamer (Admin / Streamer) ──
+    if (action === "schedule" || action === "assign_streamer") {
+      if (!user.role) {
+        return apiError("Only tournament admins or assigned streamers can schedule/stream matches", 403);
+      }
+
+      const updated = await prisma.matchChallenge.update({
+        where: { id },
+        data: {
+          status: MatchChallengeStatus.SCHEDULED,
+          scheduledAt: scheduledTime ? new Date(scheduledTime) : new Date(),
+        },
+      });
+
+      // If YouTube / Stream URL was provided, automatically publish to Scrim Vault!
+      let scrimVaultEntry = null;
+      if (streamUrl && streamUrl.trim().length > 0) {
+        const teamAName = challenge.challengerTeam?.name || "Team A";
+        const teamBName = challenge.challengedTeam?.name || "Team B";
+
+        scrimVaultEntry = await prisma.scrimVault.create({
+          data: {
+            title: `[CHALLENGE LIVE] ${teamAName} vs ${teamBName}`,
+            matchup: `${challenge.challengerTeam?.tag || 'A'} vs ${challenge.challengedTeam?.tag || 'B'}`,
+            videoUrl: streamUrl.trim(),
+            category: "CHALLENGE",
+            status: ScrimVaultStatus.APPROVED,
+            submittedById: user.id,
+            approvedById: user.id,
+            featured: true,
+          },
+        });
+
+        // Notify both captains that match is live in Scrim Vault!
+        const captains = [
+          challenge.challengerTeam?.captainId,
+          challenge.challengedTeam?.captainId,
+        ].filter(Boolean) as string[];
+
+        for (const captainId of captains) {
+          await prisma.notification.create({
+            data: {
+              userId: captainId,
+              type: "MATCH_SCHEDULED",
+              title: "🎥 Live Stream Published to Scrim Vault!",
+              message: `Streamer ${streamerName || 'Admin'} has published your challenge live stream link to the Scrim Vault!`,
+              linkUrl: "/challenge-arena",
+            },
+          });
+        }
+      }
+
+      return apiSuccess({
+        message: streamUrl ? "Streamer assigned & published to Scrim Vault!" : "Challenge scheduled",
+        challenge: updated,
+        scrimVault: scrimVaultEntry,
+      });
+    }
+
+    // ── ACTION: Reject Challenge ────────────────────────────────
     if (action === "reject") {
       if (challenge.status !== MatchChallengeStatus.PENDING) {
         return apiError("Only pending challenges can be rejected");
       }
-      if (challenge.challengedTeam.captainId !== user.id) {
-        return apiError("Only the challenged team captain can reject", 403);
+
+      if (challenge.challengedTeam?.captainId !== user.id && !user.role) {
+        return apiError("Only the challenged team captain can decline", 403);
       }
 
       const updated = await prisma.matchChallenge.update({
@@ -159,26 +205,20 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
           data: {
             userId: challenge.challengerTeam.captainId,
             type: "MATCH_SCHEDULED",
-            title: "Challenge Rejected",
-            message: `${challenge.challengedTeam.name} declined your challenge this week.`,
-            linkUrl: "/my-team",
+            title: "Challenge Declined",
+            message: `${challenge.challengedTeam?.name || 'The requested squad'} declined your challenge request.`,
+            linkUrl: "/challenge-arena",
           },
         });
       }
 
-      return apiSuccess({ message: "Challenge rejected", challenge: updated });
+      return apiSuccess({ message: "Challenge declined", challenge: updated });
     }
 
+    // ── ACTION: Cancel Challenge ────────────────────────────────
     if (action === "cancel") {
-      if (challenge.challengerTeam.captainId !== user.id) {
-        return apiError("Only the challenging captain can cancel", 403);
-      }
-      const cancellableStatuses = new Set<MatchChallengeStatus>([
-        MatchChallengeStatus.PENDING,
-        MatchChallengeStatus.ACCEPTED,
-      ]);
-      if (!cancellableStatuses.has(challenge.status)) {
-        return apiError("Only pending or accepted challenges can be cancelled");
+      if (challenge.challengerTeam.captainId !== user.id && !user.role) {
+        return apiError("Only the challenging team captain can cancel", 403);
       }
 
       const updated = await prisma.matchChallenge.update({
@@ -192,102 +232,10 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
       return apiSuccess({ message: "Challenge cancelled", challenge: updated });
     }
 
-    if (action === "schedule") {
-      const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
-
-      if (challenge.status !== MatchChallengeStatus.ACCEPTED) {
-        return apiError("Only accepted challenges can be scheduled");
-      }
-
-      if (challenge.scheduledMatchId) {
-        return apiError("Challenge is already scheduled");
-      }
-
-      const scheduledTime = parseDateTime(body.scheduledTime);
-      if (!scheduledTime) {
-        return apiError("scheduledTime is required and must be a valid date");
-      }
-
-      const availableTeams = await prisma.weeklyScrimAvailability.findMany({
-        where: {
-          weekStart: challenge.weekStart,
-          isAvailable: true,
-          teamId: {
-            in: [challenge.challengerTeamId, challenge.challengedTeamId],
-          },
-        },
-        select: { teamId: true },
-      });
-
-      if (availableTeams.length < 2) {
-        return apiError("Both teams must confirm weekly availability before scheduling", 400);
-      }
-
-      const tournament = body.tournamentId
-        ? await prisma.tournament.findFirst({
-            where: {
-              id: body.tournamentId,
-              deletedAt: null,
-            },
-          })
-        : await getSeasonScrimTournament();
-
-      if (!tournament) {
-        return apiError("Tournament not found", 404);
-      }
-
-      const match = await prisma.match.create({
-        data: {
-          tournamentId: tournament.id,
-          teamAId: challenge.challengerTeamId,
-          teamBId: challenge.challengedTeamId,
-          scheduledTime,
-          stage: typeof body.stage === "string" && body.stage.trim() ? body.stage.trim() : "Weekly Scrim",
-          bestOf: typeof body.bestOf === "number" && body.bestOf > 0 ? body.bestOf : 3,
-          refereeId: typeof body.refereeId === "string" && body.refereeId ? body.refereeId : null,
-          status: MatchStatus.UPCOMING,
-        },
-      });
-
-      const updated = await prisma.matchChallenge.update({
-        where: { id },
-        data: {
-          status: MatchChallengeStatus.SCHEDULED,
-          scheduledAt: new Date(),
-          scheduledMatchId: match.id,
-          respondedById: admin.id,
-        },
-      });
-
-      const captainIds = [challenge.challengerTeam.captainId, challenge.challengedTeam.captainId].filter(Boolean) as string[];
-      if (captainIds.length > 0) {
-        await prisma.notification.createMany({
-          data: captainIds.map((captainId) => ({
-            userId: captainId,
-            type: "MATCH_SCHEDULED",
-            title: "Weekly Scrim Scheduled",
-            message: `${challenge.challengerTeam.name} vs ${challenge.challengedTeam.name} is scheduled for ${scheduledTime.toLocaleString()}.`,
-            linkUrl: `/matches/${match.id}`,
-          })),
-        });
-      }
-
-      await createAuditLog(
-        admin.id,
-        "SCHEDULE_MATCH_CHALLENGE",
-        "MatchChallenge",
-        challenge.id,
-        JSON.stringify({ matchId: match.id, tournamentId: tournament.id })
-      );
-
-      return apiSuccess({ message: "Challenge scheduled", challenge: updated, match });
-    }
-
-    return apiError("Unsupported action");
+    return apiError("Invalid action specified");
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to process challenge";
+    const message = error instanceof Error ? error.message : "Failed to update challenge";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
-    if (message.includes("Forbidden")) return apiError(message, 403);
     return apiError(message, 500);
   }
 }

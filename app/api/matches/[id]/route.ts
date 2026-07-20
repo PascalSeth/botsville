@@ -110,7 +110,7 @@ export async function PUT(
     const user = await requireActiveUser();
     const { id } = await context.params;
     const body = await request.json();
-    const { status, scoreA, scoreB, elapsed, winnerId, forfeitedById, scheduledTime, bestOf } = body;
+    const { status, scoreA, scoreB, elapsed, winnerId, forfeitedById, scheduledTime, flyerUrl, flyerType } = body;
 
     const match = await prisma.match.findUnique({
       where: { id },
@@ -129,7 +129,7 @@ export async function PUT(
     }
 
     // Check permissions
-    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
+    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.COMMENTATOR || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
     const isCaptain = match.teamA.captainId === user.id || match.teamB?.captainId === user.id;
 
     if (!isReferee && !isCaptain) {
@@ -175,6 +175,14 @@ export async function PUT(
 
     if (scheduledTime !== undefined) {
       updateData.scheduledTime = new Date(scheduledTime);
+    }
+
+    if (flyerUrl !== undefined) {
+      updateData.flyerUrl = flyerUrl;
+    }
+
+    if (flyerType !== undefined) {
+      updateData.flyerType = flyerType;
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -271,7 +279,7 @@ export async function DELETE(
     const match = await prisma.match.findUnique({ where: { id } });
     if (!match) return apiError("Match not found", 404);
 
-    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
+    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.COMMENTATOR || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
     if (!isReferee) return apiError('Only referees and admins can delete matches', 403);
 
     // Remove related child records first, clear any scheduledMatchId on challenges, then delete the match

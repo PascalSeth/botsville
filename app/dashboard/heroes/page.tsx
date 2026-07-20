@@ -1,9 +1,11 @@
 "use client";
 
+
+import { useRoleGuard } from "../lib/useRole";
 /* eslint-disable @next/next/no-img-element */
 
 import { FormEvent, useEffect, useState } from "react";
-import { AlertCircle, Loader2, Plus, Trash2, Upload, Image as ImageIcon } from "lucide-react";
+import { AlertCircle, Loader2, Plus, Trash2, Upload, Image as ImageIcon, Pencil } from "lucide-react";
 
 type HeroCatalogItem = {
   id: string;
@@ -21,6 +23,7 @@ const toHeroKey = (value: string): string =>
     .slice(0, 60);
 
 export default function DashboardHeroesPage() {
+  const { isAllowed: __roleAllowed } = useRoleGuard(["CONTENT_ADMIN","EDITOR"]);
   const [heroes, setHeroes] = useState<HeroCatalogItem[]>([]);
   const [name, setName] = useState("");
   const [key, setKey] = useState("");
@@ -34,9 +37,16 @@ export default function DashboardHeroesPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "with-image" | "without-image">("all");
 
+  // Edit modal state
+  const [editingHero, setEditingHero] = useState<HeroCatalogItem | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editKey, setEditKey] = useState("");
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const load = async () => {
     try {
-      const response = await fetch("/api/admin/heroes");
+      const response = await fetch(`/api/admin/heroes?t=${Date.now()}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Failed to load heroes");
       setHeroes(Array.isArray(data?.heroes) ? data.heroes : []);
@@ -166,6 +176,65 @@ export default function DashboardHeroesPage() {
       setError(err instanceof Error ? err.message : "Failed to delete hero");
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const openEditModal = (hero: HeroCatalogItem) => {
+    setEditingHero(hero);
+    setEditName(hero.name);
+    setEditKey(hero.key);
+    setEditFile(null);
+  };
+
+  const handleSaveEdit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!editingHero) return;
+    setSavingEdit(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      let imageUrl = editingHero.imageUrl;
+
+      if (editFile) {
+        const imageDataUrl = await fileToDataUrl(editFile);
+        const uploadResponse = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image: imageDataUrl,
+            type: "heroes",
+            bucket: "images",
+          }),
+        });
+        const uploadData = await uploadResponse.json();
+        if (!uploadResponse.ok || !uploadData?.url) {
+          throw new Error(uploadData?.error || "Failed to upload image");
+        }
+        imageUrl = uploadData.url;
+      }
+
+      const response = await fetch("/api/admin/heroes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingHero.id,
+          name: editName.trim(),
+          key: editKey.trim(),
+          imageUrl,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Failed to update hero");
+
+      setSuccess("Hero updated successfully!");
+      setEditingHero(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update hero");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -302,7 +371,15 @@ export default function DashboardHeroesPage() {
                 </div>
                 <p className="mt-2 text-sm font-bold text-white uppercase tracking-wide">{hero.name}</p>
                 <p className="text-[10px] text-[#888] uppercase tracking-widest">{hero.key}</p>
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEditModal(hero)}
+                    className="inline-flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                  >
+                    <Pencil size={12} />
+                    Edit
+                  </button>
                   {!hero.imageUrl && (
                     <label className="inline-flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 cursor-pointer">
                       {uploadingId === hero.id ? (
@@ -339,6 +416,89 @@ export default function DashboardHeroesPage() {
           </div>
         )}
       </div>
+
+      {/* Edit Hero Modal */}
+      {editingHero && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-md rounded-lg border border-white/10 bg-[#0a0a0f] p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#e8a000]">
+                Edit Hero: {editingHero.name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingHero(null)}
+                className="text-xs text-[#888] hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#888] mb-1">
+                  Hero Name
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-[#0d0d14] border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-[#e8a000]/50"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#888] mb-1">
+                  Hero Key
+                </label>
+                <input
+                  type="text"
+                  value={editKey}
+                  onChange={(e) => setEditKey(e.target.value)}
+                  className="w-full bg-[#0d0d14] border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-[#e8a000]/50"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#888] mb-1">
+                  Replace Cutout Image (Optional)
+                </label>
+                {editingHero.imageUrl && (
+                  <div className="mb-2 h-20 w-20 bg-black/50 border border-white/10 flex items-center justify-center overflow-hidden">
+                    <img src={editingHero.imageUrl} alt="Current cutout" className="h-full w-full object-contain" />
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
+                  className="w-full bg-[#0d0d14] border border-white/10 px-3 py-2 text-sm text-white file:mr-3 file:px-2 file:py-1 file:border file:border-white/20 file:bg-transparent file:text-[10px] file:uppercase file:tracking-wider file:text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingHero(null)}
+                  className="px-4 py-2 text-xs font-bold uppercase tracking-wider border border-white/10 text-[#aaa] hover:bg-white/5"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider bg-[#e8a000] text-black hover:bg-[#ffb800] disabled:opacity-50"
+                >
+                  {savingEdit && <Loader2 size={12} className="animate-spin" />}
+                  {savingEdit ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -13,7 +13,7 @@ function parseDate(value: unknown) {
 
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR]);
     const { id } = await context.params;
 
     const poll = await prisma.poll.findUnique({ where: { id }, include: { options: true, _count: { select: { votes: true } } } });
@@ -31,7 +31,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR]);
     const { id } = await context.params;
     const body = await request.json();
 
@@ -77,7 +77,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
 export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR]);
     const { id } = await context.params;
 
     await prisma.$transaction([

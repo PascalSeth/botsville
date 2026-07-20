@@ -2,10 +2,11 @@ import { NextRequest } from "next/server";
 import { requireAdmin, apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/app/generated/prisma/client";
+import { AdminRoleType } from "@/app/generated/prisma/enums";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAdmin();
+    await requireAdmin([AdminRoleType.SUPER_ADMIN, AdminRoleType.TOURNAMENT_ADMIN]);
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") ?? "";
     const isPlaceholder = searchParams.get("isPlaceholder") === "true";

@@ -16,7 +16,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin();
+    await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const { id } = await context.params;
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");

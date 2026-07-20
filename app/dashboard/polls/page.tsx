@@ -1,5 +1,7 @@
 "use client";
 
+
+import { useRoleGuard } from "../lib/useRole";
 import { useEffect, useMemo, useState } from "react";
 import { dashboardFetch } from "../lib/api";
 import { Sparkles, Plus, Loader2, Trash2, RefreshCcw, CheckCircle2, CircleDashed, Lock } from "lucide-react";
@@ -32,6 +34,7 @@ function formatDate(value: string | null) {
 }
 
 export default function DashboardPollsPage() {
+  const { isAllowed: __roleAllowed } = useRoleGuard(["CONTENT_ADMIN","EDITOR"]);
   const [polls, setPolls] = useState<Poll[]>([]);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "DRAFT" | "CLOSED">("ALL");
   const [loading, setLoading] = useState(true);

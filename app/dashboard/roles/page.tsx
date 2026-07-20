@@ -1,10 +1,21 @@
 "use client";
 
+
+import { useRoleGuard } from "../lib/useRole";
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
 import { Shield, UserPlus, Trash2, Loader2 } from "lucide-react";
 
-const ROLES = ["SUPER_ADMIN", "TOURNAMENT_ADMIN", "CONTENT_ADMIN", "REFEREE"] as const;
+const ROLES = [
+  "SUPER_ADMIN",
+  "TOURNAMENT_ADMIN",
+  "CONTENT_ADMIN",
+  "REFEREE",
+  "COMMENTATOR",
+  "STREAMER",
+  "INTERVIEWER",
+  "EDITOR",
+] as const;
 
 type AdminRoleRow = {
   id: string;
@@ -23,6 +34,7 @@ type UserRow = {
 };
 
 export default function DashboardRolesPage() {
+  const { isAllowed: __roleAllowed } = useRoleGuard([]);
   const [roles, setRoles] = useState<AdminRoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +123,7 @@ export default function DashboardRolesPage() {
           Admin roles
         </h1>
         <p className="mt-1 text-sm text-[#888]">
-          Assign or revoke SUPER_ADMIN, TOURNAMENT_ADMIN, CONTENT_ADMIN, REFEREE. Only SUPER_ADMIN can manage roles.
+          Assign or revoke admin and broadcast crew roles. Only SUPER_ADMIN can manage roles.
         </p>
       </div>
 

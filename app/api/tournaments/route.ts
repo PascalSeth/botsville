@@ -6,8 +6,8 @@ import {
   createAuditLog,
   isValidHexColor,
 } from "@/lib/api-utils";
-import { TournamentStatus, TournamentFormat } from "@/app/generated/prisma/enums";
-import { cacheResult, deleteFromCache, invalidatePattern } from "@/lib/redis";
+import { TournamentStatus, TournamentFormat, AdminRoleType } from "@/app/generated/prisma/enums";
+import { cacheResult, invalidatePattern } from "@/lib/redis";
 
 import { prisma } from "@/lib/prisma";
 
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
 // POST - Create tournament
 export async function POST(request: NextRequest) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const body = await request.json();
     const {
       seasonId,

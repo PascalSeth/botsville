@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireAdmin, apiError, apiSuccess } from "@/lib/api-utils";
-import { MatchStatus, BracketType } from "@/app/generated/prisma/enums";
+import { MatchStatus, BracketType, AdminRoleType } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -14,7 +14,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin();
+    await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const { id: tournamentId } = await params;
 
     const tournament = await prisma.tournament.findUnique({

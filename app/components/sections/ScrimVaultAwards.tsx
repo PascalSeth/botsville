@@ -118,51 +118,44 @@ const loadYouTubeApi = (() => {
   };
 })();
 
-const useRealtimeScrims = () => {
+const useRealtimeScrims = (category?: string) => {
   const [scrims, setScrims] = useState<ScrimItem[]>([]);
 
   useEffect(() => {
-    let mounted = true;
-
+    let active = true;
     const load = async () => {
       try {
-        const response = await fetch('/api/scrim-vault?limit=9', { cache: 'no-store' });
+        const query = category ? `&category=${category}` : '';
+        // Fetch last 12 scrims
+        const response = await fetch(`/api/scrim-vault?limit=12${query}`, { cache: 'no-store' });
         if (!response.ok) return;
-
         const data = await response.json();
         const videos: ScrimVaultApiItem[] = Array.isArray(data?.videos) ? data.videos : [];
-        if (!mounted) return;
-
         const mapped: ScrimItem[] = videos.map((video) => ({
           id: video.id,
           title: video.title,
-          tournament: video.tournament?.name || '—',
-          matchup: video.matchup || '—',
-          image:
-            video.thumbnail ||
-            getYoutubeThumbnail(video.videoUrl) ||
-            '/mlbb_logo.png',
-          duration: video.duration || '—',
-          featured: Boolean(video.featured),
+          tournament: video.tournament?.name || 'Scrim',
+          matchup: video.matchup || 'Casual Match',
+          image: video.thumbnail || getYoutubeThumbnail(video.videoUrl) || '/img/placeholder-vod.jpg',
+          duration: video.duration || 'VOD',
+          featured: video.featured,
           videoUrl: video.videoUrl,
         }));
-
-        setScrims(mapped);
+        if (active) {
+          setScrims(mapped);
+        }
       } catch {
-        setScrims([]);
+        if (active) {
+          setScrims([]);
+        }
       }
     };
 
     load().catch(() => undefined);
-    const interval = setInterval(() => {
-      load().catch(() => undefined);
-    }, 15000);
-
     return () => {
-      mounted = false;
-      clearInterval(interval);
+      active = false;
     };
-  }, []);
+  }, [category]);
 
   return scrims;
 };
@@ -242,255 +235,347 @@ const DesktopScrimCard = ({ scrim, onPlay }: { scrim: ScrimItem; onPlay?: (url: 
   </div>
 );
 
-// ─── Awards Slider Slide ───────────────────────────────────────
+// ─── Awards Showcase Slide (Eye-Catching Redesign) ─────────────
 const AwardSlide = ({
-  meta, nominee, isActive,
+  meta,
+  nominees,
 }: {
   meta: RoleMeta;
-  nominee: AwardNominee | null;
-  isActive: boolean;
+  nominees: AwardNominee[];
 }) => {
   const { color, Icon } = meta;
-  
+  const leader = nominees[0] ?? null;
+  const contenders = nominees.slice(1, 4);
+  const totalVotes = nominees.reduce((acc, n) => acc + n.votes, 0) || 1;
+
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: isActive ? 1 : 0, scale: isActive ? 1 : 0.95 }}
-      transition={{ duration: 0.4 }}
-      className={`absolute inset-0 flex items-center justify-center ${isActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
-    >
-      <div className="w-full max-w-xs mx-auto">
-        {/* Award Title */}
-        <div className="text-center mb-5">
-          <div className="inline-flex items-center gap-2 px-4 py-2 mb-3"
-            style={{ background: `${color}12`, border: `1px solid ${color}25` }}>
-            <Icon size={14} style={{ color }} />
-            <span className="text-[11px] font-black tracking-[0.25em] uppercase" style={{ color }}>{meta.label}</span>
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+      {/* Featured Leader Card (#1 Rank Spotlight) */}
+      <div className="lg:col-span-7 relative flex flex-col">
+        {/* Dynamic Role Background Light Glow */}
+        <div 
+          className="absolute -inset-4 rounded-3xl opacity-20 blur-3xl transition-all duration-700 pointer-events-none" 
+          style={{ background: color }} 
+        />
+
+        <div 
+          className="relative flex-1 bg-gradient-to-b from-[#12121a] to-[#0a0a0e] border rounded-3xl overflow-hidden p-6 sm:p-8 flex flex-col justify-between shadow-2xl transition-all group"
+          style={{ borderColor: `${color}35` }}
+        >
+          {/* Header Crown & Role Tag */}
+          <div className="flex items-center justify-between gap-4 mb-6 z-10">
+            <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10">
+              <span className="w-2 h-2 rounded-full animate-ping" style={{ background: color }} />
+              <span className="text-[10px] font-black tracking-[0.25em] uppercase text-white">#1 Current Leader</span>
+            </div>
+
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10">
+              <Trophy size={13} style={{ color }} />
+              <span className="text-white text-xs font-black tracking-wider tabular-nums">{leader?.votes ?? 0}</span>
+              <span className="text-[#888] text-[10px] font-bold uppercase tracking-widest">Votes</span>
+            </div>
           </div>
-          <h3 className="text-xl font-black tracking-[0.18em] uppercase" style={{ color }}>{meta.award}</h3>
-        </div>
-        
-        {/* Leader Card */}
-        {nominee ? (
-          <div className="relative">
-            {/* Glow effect */}
-            <div className="absolute -inset-2 opacity-20 blur-2xl" style={{ background: color }} />
-            
-            <div className="relative bg-[#0a0a0f] border overflow-hidden" style={{ borderColor: `${color}35` }}>
-              {/* Player Image */}
-              <div className="relative aspect-[3/4] overflow-hidden">
-                {nominee.photo ? (
-                  <Image src={nominee.photo} alt={nominee.ign} fill className="object-cover object-top" />
+
+          {/* Leader Body */}
+          {leader ? (
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-6 items-center my-auto z-10">
+              {/* Leader Avatar */}
+              <div className="sm:col-span-5 relative aspect-[3/4] w-full rounded-2xl overflow-hidden border border-white/15 shadow-2xl group-hover:border-white/30 transition-all">
+                {leader.photo ? (
+                  <Image src={leader.photo} alt={leader.ign} fill className="object-cover object-top group-hover:scale-105 transition-transform duration-700" />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-[#0c0c12]">
-                    <Users size={48} style={{ color, opacity: 0.2 }} />
+                  <div className="absolute inset-0 flex items-center justify-center bg-[#09090f]">
+                    <Users size={56} style={{ color, opacity: 0.25 }} />
                   </div>
                 )}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0e] via-transparent to-transparent" />
                 
-                {/* Gradient overlay */}
-                <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0f] via-[#0a0a0f]/40 to-transparent" />
-                
-                {/* Team badge - top left */}
-                <div className="absolute top-3 left-3 max-w-[45%] px-2 py-1 bg-black/60 backdrop-blur-sm border border-white/10">
-                  <span className="text-[#999] text-[9px] font-bold tracking-wider uppercase truncate block">{nominee.team.name}</span>
+                {/* Crown badge */}
+                <div className="absolute top-3 left-3 w-8 h-8 rounded-xl bg-black/80 backdrop-blur-md border border-amber-500/40 flex items-center justify-center text-amber-400 font-black text-xs shadow-lg">
+                  👑
                 </div>
-                
-                {/* Vote count - top right */}
-                <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm border border-white/10">
-                  <Trophy size={10} style={{ color }} />
-                  <span className="text-white text-[10px] font-black tabular-nums">{nominee.votes}</span>
+              </div>
+
+              {/* Leader Details */}
+              <div className="sm:col-span-7 space-y-4 text-left">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded bg-white/5 border border-white/10 text-zinc-400">
+                      {leader.team?.name || 'Free Agent'}
+                    </span>
+                    {leader.signatureHero && (
+                      <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded border" style={{ borderColor: `${color}40`, color }}>
+                        ⚔️ {leader.signatureHero}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight text-white drop-shadow-md">
+                    {leader.ign}
+                  </h3>
+                  <p className="text-xs font-bold uppercase tracking-widest mt-1" style={{ color }}>
+                    {meta.award}
+                  </p>
                 </div>
-                
-                {/* Player Info - bottom overlay */}
-                <div className="absolute bottom-0 left-0 right-0 p-4">
-                  <p className="text-white font-black text-2xl uppercase tracking-wider text-center">{nominee.ign}</p>
-                  {nominee.signatureHero && (
-                    <p className="text-center mt-1.5">
-                      <span className="text-[11px] font-medium tracking-wide" style={{ color }}>{nominee.signatureHero}</span>
-                    </p>
-                  )}
+
+                {/* Vote Percentage Share Bar */}
+                <div className="space-y-1.5 pt-2">
+                  <div className="flex items-center justify-between text-[10px] font-mono font-bold">
+                    <span className="text-zinc-400 uppercase tracking-widest">Community Share</span>
+                    <span style={{ color }}>{Math.round(((leader.votes || 0) / totalVotes) * 100)}% of Votes</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-black/50 overflow-hidden p-0.5 border border-white/10">
+                    <div 
+                      className="h-full rounded-full transition-all duration-700" 
+                      style={{ width: `${Math.max(8, Math.round(((leader.votes || 0) / totalVotes) * 100))}%`, background: `linear-gradient(90deg, ${color}, #ffffff)` }} 
+                    />
+                  </div>
+                </div>
+
+                {/* Action CTA */}
+                <div className="pt-2">
+                  <a 
+                    href="/awards" 
+                    className="inline-flex items-center justify-center gap-2 w-full py-3 px-5 rounded-xl font-black text-xs uppercase tracking-wider text-black transition-all shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+                    style={{ background: color }}
+                  >
+                    <Vote size={15} />
+                    <span>{leader.votedByMe ? 'You Voted This Leader 👑' : 'Vote For This Nominee'}</span>
+                  </a>
                 </div>
               </div>
             </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+              <Icon size={48} style={{ color, opacity: 0.3 }} />
+              <p className="text-zinc-500 text-xs font-black uppercase tracking-widest">No Nominees Registered Yet</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Contenders & Runner-Ups List (#2, #3, #4) */}
+      <div className="lg:col-span-5 flex flex-col space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs font-black uppercase tracking-widest text-zinc-400 flex items-center gap-2">
+            <Trophy size={14} className="text-[#e8a000]" /> Contenders & Top Nominees
+          </span>
+          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{nominees.length} Registered</span>
+        </div>
+
+        {contenders.length > 0 ? (
+          <div className="space-y-3 flex-1 flex flex-col justify-between">
+            {contenders.map((item, idx) => {
+              const rank = idx + 2;
+              const votePct = Math.round(((item.votes || 0) / totalVotes) * 100);
+              return (
+                <div 
+                  key={item.id}
+                  className="p-4 rounded-2xl bg-[#0f0f17] border border-white/10 hover:border-white/20 transition-all flex items-center justify-between gap-4 group"
+                >
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <span className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-xs font-mono font-black text-zinc-400">
+                      #{rank}
+                    </span>
+
+                    <div className="relative w-11 h-11 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 shrink-0">
+                      {item.photo ? (
+                        <Image src={item.photo} alt={item.ign} fill className="object-cover object-top" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-zinc-700 font-bold text-xs">
+                          {item.ign.slice(0, 2)}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-black uppercase tracking-wide text-white group-hover:text-[#e8a000] transition-colors truncate">
+                        {item.ign}
+                      </h4>
+                      <p className="text-[10px] font-bold text-zinc-500 uppercase truncate">
+                        {item.team?.name || 'Free Agent'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-end shrink-0 gap-1">
+                    <span className="text-xs font-mono font-black text-white">{item.votes} <span className="text-[9px] text-zinc-500 font-bold">pts</span></span>
+                    <a 
+                      href="/awards"
+                      className="text-[9px] font-black uppercase tracking-wider text-[#e8a000] hover:underline"
+                    >
+                      Vote →
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-16 border border-white/5 bg-[#0a0a0f]">
-            <Icon size={36} style={{ color, opacity: 0.25 }} />
-            <p className="text-[#444] text-sm uppercase tracking-widest mt-4">No nominees yet</p>
+          <div className="flex-1 p-8 rounded-2xl bg-[#0f0f17] border border-dashed border-white/10 flex flex-col items-center justify-center text-center opacity-50 space-y-2">
+            <Users size={32} className="text-zinc-600" />
+            <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">More contenders coming soon</p>
           </div>
         )}
+
+        {/* View All Nominees Link */}
+        <a 
+          href="/awards" 
+          className="p-3.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-center text-xs font-black uppercase tracking-widest text-white transition-all flex items-center justify-center gap-2"
+        >
+          <span>Explore All Nominees & Vote</span>
+          <ChevronRight size={14} className="text-[#e8a000]" />
+        </a>
       </div>
-    </motion.div>
+    </div>
   );
 };
 
 // ─── Desktop Exported Sections ────────────────────────────────
 export const ScrimVault = () => {
-  const scrims = useRealtimeScrims();
-  const [videoOpen, setVideoOpen] = useState(false);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [videoYoutubeId, setVideoYoutubeId] = useState<string | null>(null);
-  const playerContainerRef = useRef<HTMLDivElement | null>(null);
-  const playerRef = useRef<YTPlayerInstance | null>(null);
-
-  const openVideo = (url: string | null) => {
-    if (!url) return;
-    setVideoUrl(url);
-    setVideoYoutubeId(getYoutubeIdFromUrl(url));
-    setVideoOpen(true);
-  };
-
-  const closeVideo = () => {
-    // destroy YT player if present
-    try {
-      if (playerRef.current && typeof playerRef.current.destroy === 'function') playerRef.current.destroy();
-    } catch {
-      // ignore
-    }
-    playerRef.current = null;
-    setVideoOpen(false);
-    setVideoUrl(null);
-    setVideoYoutubeId(null);
-  };
-
-  useEffect(() => {
-    let mounted = true;
-    if (!videoOpen) return;
-    // if we have a YouTube id, load API and create player
-    if (videoYoutubeId && playerContainerRef.current) {
-      loadYouTubeApi().then((YT) => {
-        if (!mounted) return;
-        if (!YT) return;
-        const container = playerContainerRef.current;
-        if (!container) return;
-        // destroy existing
-        try {
-          if (playerRef.current && typeof playerRef.current.destroy === 'function') playerRef.current.destroy();
-        } catch {}
-        playerRef.current = new (YT.Player as YTPlayerConstructor)(container, {
-          height: '360',
-          width: '640',
-          videoId: videoYoutubeId,
-          playerVars: { autoplay: 1, controls: 1, rel: 0 },
-          events: {
-            onReady: (e: YTReadyEvent) => { try { e.target.playVideo(); } catch {} },
-          },
-        });
-      }).catch(() => {});
-    }
-
-    return () => { mounted = false; };
-  }, [videoOpen, videoYoutubeId]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const scrims = useRealtimeScrims(selectedCategory);
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
 
   return (
     <section className="hidden lg:block bg-[#0d0d12] py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <SectionLabel>Scrim Vault</SectionLabel>
+        <div className="flex items-center justify-between mb-6">
+          <SectionLabel>Scrim Vault</SectionLabel>
+          <div className="flex items-center gap-2">
+            {[
+              { key: '', label: 'All' },
+              { key: 'SCRIM', label: 'Scrims' },
+              { key: 'TOURNAMENT', label: 'Tournaments' },
+              { key: 'COMMUNITY', label: 'Community' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setSelectedCategory(tab.key)}
+                className={`px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-all duration-300 rounded ${
+                  selectedCategory === tab.key
+                    ? 'bg-[#e8a000] text-black shadow-[0_0_10px_rgba(232,160,0,0.2)]'
+                    : 'text-white/40 hover:text-white/70 bg-white/3 hover:bg-white/5 border border-white/5'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {scrims.length === 0 ? (
           <div className="border border-white/10 bg-[#0b0b11] flex items-center justify-center text-[#666] text-sm py-10">
-            No scrim videos available yet.
+            No videos available in this category.
           </div>
         ) : (
-          <>
-            <div className="grid grid-cols-3 gap-3">
-              {scrims.slice(0, 3).map(s => <DesktopScrimCard key={s.id} scrim={s} onPlay={openVideo} />)}
-            </div>
-            {videoOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={closeVideo}>
-                <div className="relative w-[90%] max-w-4xl" onClick={(e) => e.stopPropagation()}>
-                  {videoYoutubeId ? (
-                    <div ref={playerContainerRef} className="w-full h-[60vh] rounded bg-black" />
-                  ) : (
-                    <video className="w-full h-auto rounded bg-black" controls autoPlay src={videoUrl || undefined} />
-                  )}
-                  <button onClick={closeVideo} className="absolute -top-3 -right-3 w-8 h-8 bg-black/80 text-white rounded-full">×</button>
-                </div>
-              </div>
-            )}
-          </>
+          <div className="grid grid-cols-3 gap-3">
+            {scrims.slice(0, 6).map(s => (
+              <DesktopScrimCard key={s.id} scrim={s} onPlay={(url) => setActiveVideoUrl(url)} />
+            ))}
+          </div>
         )}
       </div>
+
+      {activeVideoUrl && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md" onClick={() => setActiveVideoUrl(null)}>
+          <div className="relative w-[90%] max-w-4xl" onClick={(e) => e.stopPropagation()}>
+            <video className="w-full h-auto rounded-xl bg-black shadow-2xl border border-white/10" controls autoPlay src={activeVideoUrl} />
+            <button onClick={() => setActiveVideoUrl(null)} className="absolute -top-3 -right-3 w-8 h-8 bg-black/80 text-white rounded-full border border-white/20 flex items-center justify-center">
+              ×
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 };
 
 export const BestRoleAwards = () => {
   const { season, grouped, loading } = useRoleNominees();
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeRoleKey, setActiveRoleKey] = useState<string>('EXP');
 
-  // Auto-slide every 4 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveIndex(prev => (prev + 1) % AWARD_ROLES.length);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
+  const activeMeta = AWARD_ROLES.find(r => r.key === activeRoleKey) || AWARD_ROLES[0];
+  const nominees = grouped[activeRoleKey] ?? [];
 
   return (
-    <section className="hidden lg:block bg-[#0d0d12] pb-10 border-t border-white/4">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-7">
-        <div className="flex items-center justify-between mb-4">
-          <SectionLabel>Best Role Awards</SectionLabel>
+    <section className="hidden lg:block bg-[#08080d] py-16 border-t border-white/10 relative overflow-hidden">
+      {/* Background Decor Ambient */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-[#e8a000]/5 blur-[140px] pointer-events-none rounded-full" />
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        {/* Header Title */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-8 h-[2px] bg-[#e8a000]" />
+              <span className="text-[#e8a000] text-[10px] font-black uppercase tracking-[0.4em]">Hall of Fame</span>
+            </div>
+            <h2 className="text-4xl lg:text-5xl font-black uppercase tracking-tighter text-white">
+              Best Role <span className="text-[#e8a000]">Awards</span>
+            </h2>
+          </div>
+
           {season && (
-            <div className="flex items-center gap-2 -mt-4">
-              <Trophy size={10} className="text-[#e8a000]" />
-              <span className="text-[#555] text-[10px] font-mono">{season.name}</span>
-              {season.status === 'ACTIVE' && (
-                <a href="/awards" className="text-[#e8a000] text-[9px] font-black tracking-widest uppercase hover:underline ml-1">· Vote Now →</a>
-              )}
+            <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-2 rounded-xl">
+              <Trophy size={16} className="text-[#e8a000]" />
+              <div className="text-left">
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">{season.name}</span>
+                <span className="text-xs font-bold text-white uppercase">{season.status === 'ACTIVE' ? 'Voting Open' : 'Season Complete'}</span>
+              </div>
             </div>
           )}
         </div>
-        
+
+        {/* Role Navigation Tabs Bar */}
+        <div className="flex items-center gap-3 overflow-x-auto pb-4 scrollbar-hide mb-10 border-b border-white/10">
+          {AWARD_ROLES.map((meta) => {
+            const { key, label, Icon, color } = meta;
+            const isActive = activeRoleKey === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveRoleKey(key)}
+                className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 relative shrink-0 ${
+                  isActive
+                    ? 'text-black shadow-xl shadow-' + color + '/20'
+                    : 'bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10 border border-white/5'
+                }`}
+                style={{
+                  background: isActive ? color : undefined,
+                }}
+              >
+                <Icon size={16} className={isActive ? 'text-black' : 'text-zinc-400'} />
+                <span>{label}</span>
+                {isActive && (
+                  <motion.div
+                    layoutId="activeRoleTab"
+                    className="absolute inset-0 rounded-2xl border-2 border-white/40 pointer-events-none"
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Award Content Slide */}
         {loading ? (
-          <div className="flex items-center justify-center py-10 gap-3">
-            <Loader2 size={18} className="animate-spin text-[#e8a000]" />
-            <span className="text-[#444] text-xs font-mono">Loading…</span>
+          <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+            <Loader2 size={32} className="animate-spin text-[#e8a000]" />
+            <span className="text-xs font-mono font-black uppercase tracking-widest text-zinc-500">Loading Nominees...</span>
           </div>
         ) : (
-          <div className="relative">
-            {/* Slider Container */}
-            <div className="relative h-[480px] overflow-hidden">
-              {AWARD_ROLES.map((meta, i) => {
-                const leader = (grouped[meta.key] ?? [])[0] ?? null;
-                return (
-                  <AwardSlide key={meta.key} meta={meta} nominee={leader} isActive={i === activeIndex} />
-                );
-              })}
-            </div>
-            
-            {/* Navigation Dots */}
-            <div className="flex items-center justify-center gap-3 mt-5">
-              {AWARD_ROLES.map((meta, i) => (
-                <button
-                  key={meta.key}
-                  onClick={() => setActiveIndex(i)}
-                  className="group relative flex items-center justify-center w-7 h-7 transition-all"
-                >
-                  <div
-                    className={`w-2.5 h-2.5 transition-all duration-300 ${i === activeIndex ? 'scale-110' : 'scale-100 opacity-30 hover:opacity-60'}`}
-                    style={{ background: i === activeIndex ? meta.color : '#555' }}
-                  />
-                  {/* Tooltip */}
-                  <span className="absolute -top-7 left-1/2 -translate-x-1/2 px-2.5 py-1 bg-black/95 text-[8px] font-black tracking-widest uppercase whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity border border-white/5"
-                    style={{ color: meta.color }}>
-                    {meta.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-            
-            {/* CTA Button */}
-            {season?.status === 'ACTIVE' && (
-              <div className="text-center mt-5">
-                <a href="/awards" className="inline-flex items-center gap-2.5 px-7 py-3 bg-[#e8a000] text-black text-[10px] font-black tracking-[0.2em] uppercase hover:bg-[#ffb800] transition-colors">
-                  <Vote size={13} />
-                  Vote for your favorites
-                  <ChevronRight size={13} />
-                </a>
-              </div>
-            )}
-          </div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeRoleKey}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.3 }}
+            >
+              <AwardSlide meta={activeMeta} nominees={nominees} />
+            </motion.div>
+          </AnimatePresence>
         )}
       </div>
     </section>
@@ -558,140 +643,107 @@ const MobileScrimRow = ({ scrim, index, onPlay }: { scrim: ScrimItem; index: num
 
 const MobileAwardsSlider = ({ grouped, season }: { grouped: AwardGrouped; season?: { status: string } | null }) => {
   const [current, setCurrent] = useState(0);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrent(c => (c + 1) % AWARD_ROLES.length);
-    }, 4000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const handleTouchStart = (e: React.TouchEvent) => setTouchStart(e.touches[0].clientX);
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    const diff = touchStart - e.changedTouches[0].clientX;
-    if (Math.abs(diff) > 50) {
-      setCurrent(c => diff > 0 ? (c + 1) % AWARD_ROLES.length : (c - 1 + AWARD_ROLES.length) % AWARD_ROLES.length);
-    }
-    setTouchStart(null);
-  };
 
   const meta = AWARD_ROLES[current];
   const { color, Icon } = meta;
-  const nominee = (grouped[meta.key] ?? [])[0] ?? null;
+  const nominees = grouped[meta.key] ?? [];
+  const nominee = nominees[0] ?? null;
 
   return (
-    <div className="relative" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <div className="relative">
+      {/* Mobile Role Pills Navigation */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-3 scrollbar-hide mb-4">
+        {AWARD_ROLES.map((r, i) => {
+          const isActive = i === current;
+          return (
+            <button
+              key={r.key}
+              onClick={() => setCurrent(i)}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                isActive ? 'text-black font-black' : 'bg-white/5 text-zinc-400 border border-white/5'
+              }`}
+              style={{ background: isActive ? r.color : undefined }}
+            >
+              <r.Icon size={12} className={isActive ? 'text-black' : 'text-zinc-400'} />
+              <span>{r.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Award Title */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={meta.key + '-title'}
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 10 }}
-          transition={{ duration: 0.3 }}
-          className="text-center mb-4"
-        >
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-2"
-            style={{ background: `${color}15`, border: `1px solid ${color}30` }}>
-            <Icon size={11} style={{ color }} />
-            <span className="text-[9px] font-black tracking-[0.2em] uppercase" style={{ color }}>{meta.label}</span>
-          </div>
-          <h3 className="text-base font-black tracking-[0.15em] uppercase" style={{ color }}>{meta.award}</h3>
-        </motion.div>
-      </AnimatePresence>
+      <div className="text-center mb-4">
+        <h3 className="text-sm font-black tracking-[0.2em] uppercase text-white">{meta.award}</h3>
+      </div>
 
       {/* Leader Card */}
       <AnimatePresence mode="wait">
         <motion.div
           key={meta.key}
-          initial={{ opacity: 0, scale: 0.95 }}
+          initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.35 }}
+          exit={{ opacity: 0, scale: 0.96 }}
+          transition={{ duration: 0.25 }}
         >
           {nominee ? (
             <div className="relative max-w-xs mx-auto">
-              {/* Glow effect */}
-              <div className="absolute -inset-1 opacity-25 blur-xl" style={{ background: color }} />
+              <div className="absolute -inset-2 opacity-25 blur-xl rounded-2xl" style={{ background: color }} />
               
-              <div className="relative bg-[#0c0c12] border overflow-hidden" style={{ borderColor: `${color}40` }}>
-                {/* Player Image */}
-                <div className="relative aspect-[4/3] overflow-hidden">
+              <div className="relative bg-[#0b0b12] border rounded-2xl overflow-hidden p-4 shadow-xl" style={{ borderColor: `${color}40` }}>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-black/60 text-amber-400 border border-amber-500/30">
+                    👑 #1 Leader
+                  </span>
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-black/60 text-white text-[9px] font-black">
+                    <Trophy size={10} style={{ color }} />
+                    <span>{nominee.votes} votes</span>
+                  </div>
+                </div>
+
+                {/* Player Portrait */}
+                <div className="relative aspect-[4/3] w-full rounded-xl overflow-hidden bg-zinc-900 border border-white/10 mb-3">
                   {nominee.photo ? (
                     <Image src={nominee.photo} alt={nominee.ign} fill className="object-cover object-top" />
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center bg-[#111]">
-                      <Users size={36} style={{ color, opacity: 0.3 }} />
+                      <Users size={32} style={{ color, opacity: 0.3 }} />
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-linear-to-t from-[#0c0c12] via-transparent to-transparent" />
-                  
-                  {/* Vote count badge */}
-                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1 px-2 py-1 bg-black/70 backdrop-blur-sm">
-                    <Trophy size={9} style={{ color }} />
-                    <span className="text-white text-[9px] font-black tabular-nums">{nominee.votes}</span>
-                    <span className="text-[#666] text-[8px]">votes</span>
-                  </div>
                 </div>
                 
-                {/* Player Info */}
-                <div className="p-3 text-center">
-                  <p className="text-white font-black text-lg uppercase tracking-wide">{nominee.ign}</p>
-                  <div className="flex items-center justify-center gap-2 mt-0.5">
-                    <span className="text-[#666] text-[9px] tracking-widest uppercase">{nominee.team.name}</span>
-                    {nominee.signatureHero && (
-                      <>
-                        <span className="text-[#333]">·</span>
-                        <span className="text-[9px] tracking-wide" style={{ color }}>{nominee.signatureHero}</span>
-                      </>
-                    )}
-                  </div>
+                {/* Player Details */}
+                <div className="text-center space-y-1">
+                  <h4 className="text-xl font-black uppercase tracking-wide text-white">{nominee.ign}</h4>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                    {nominee.team?.name || 'Free Agent'} {nominee.signatureHero ? `· ${nominee.signatureHero}` : ''}
+                  </p>
+
+                  <a 
+                    href="/awards" 
+                    className="inline-flex items-center justify-center gap-1.5 w-full py-2.5 mt-2 rounded-xl text-[10px] font-black uppercase tracking-wider text-black transition-all"
+                    style={{ background: color }}
+                  >
+                    <Vote size={12} />
+                    <span>Vote for Nominee</span>
+                  </a>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-8 border border-white/5 bg-[#0c0c12] max-w-xs mx-auto">
+            <div className="flex flex-col items-center justify-center py-10 border border-white/5 bg-[#0c0c12] max-w-xs mx-auto rounded-2xl text-center space-y-2">
               <Icon size={28} style={{ color, opacity: 0.3 }} />
-              <p className="text-[#333] text-xs uppercase tracking-wide mt-2">No nominees yet</p>
+              <p className="text-zinc-500 text-xs font-black uppercase tracking-wider">No nominees yet</p>
             </div>
           )}
         </motion.div>
       </AnimatePresence>
-
-      {/* Navigation Dots */}
-      <div className="flex items-center justify-center gap-3 mt-5">
-        {AWARD_ROLES.map((r, i) => (
-          <button
-            key={r.key}
-            onClick={() => setCurrent(i)}
-            className="relative w-6 h-6 flex items-center justify-center"
-          >
-            <div
-              className={`w-2 h-2 transition-all duration-300 ${i === current ? 'scale-125' : 'scale-100 opacity-40'}`}
-              style={{ background: i === current ? r.color : '#444' }}
-            />
-          </button>
-        ))}
-      </div>
-
-      {/* CTA Button */}
-      {season?.status === 'ACTIVE' && (
-        <div className="text-center mt-4">
-          <a href="/awards" className="inline-flex items-center gap-2 px-5 py-2 bg-[#e8a000] text-black text-[9px] font-black tracking-[0.2em] uppercase hover:bg-[#ffb800] transition-colors">
-            <Vote size={11} />
-            Vote Now
-            <ChevronRight size={11} />
-          </a>
-        </div>
-      )}
     </div>
   );
 };
 
 export const MobileScrimAndAwards = () => {
-  const scrims = useRealtimeScrims();
+  const [activeCategory, setActiveCategory] = useState<string>('');
+  const scrims = useRealtimeScrims(activeCategory);
   const { season, grouped, loading } = useRoleNominees();
   const [videoOpen, setVideoOpen] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -739,49 +791,45 @@ export const MobileScrimAndAwards = () => {
   const featured = scrims.find(s => s.featured) || scrims[0];
   const rest = scrims.filter(s => s.id !== featured?.id).slice(0, 3);
 
-  if (!featured) {
-    return (
-      <section className="lg:hidden bg-[#0d0d12] py-6">
-        <div className="px-4 sm:px-6 mb-6">
-          <SectionLabel>Scrim Vault</SectionLabel>
-          <div className="border border-white/10 bg-[#0b0b11] px-4 py-8 text-center text-[#666] text-sm">
-            No scrim videos available yet.
-          </div>
-        </div>
-
-        <div className="h-px mx-4 sm:mx-6 bg-white/4 mb-6" />
-
-        <div className="px-4 sm:px-6">
-          <div className="flex items-center justify-between mb-4">
-            <SectionLabel>Best Role Awards</SectionLabel>
-            {season && (
-              <div className="flex items-center gap-2 -mt-4">
-                <Trophy size={9} className="text-[#e8a000]" />
-                <span className="text-[#555] text-[9px] font-mono">{season.name}</span>
-              </div>
-            )}
-          </div>
-          {loading ? (
-            <div className="flex items-center justify-center py-6 gap-2">
-              <Loader2 size={16} className="animate-spin text-[#e8a000]" />
-              <span className="text-[#444] text-xs font-mono">Loading…</span>
-            </div>
-          ) : (
-            <MobileAwardsSlider grouped={grouped} season={season} />
-          )}
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className="lg:hidden bg-[#0d0d12] py-6">
       <div className="px-4 sm:px-6 mb-6">
-        <SectionLabel>Scrim Vault</SectionLabel>
-        <MobileFeaturedScrim scrim={featured} onPlay={openVideo} />
-        <div className="flex flex-col gap-3">
-          {rest.map((s, i) => <MobileScrimRow key={s.id} scrim={s} index={i} onPlay={openVideo} />)}
+        <div className="flex items-center justify-between mb-4">
+          <SectionLabel>Scrim Vault</SectionLabel>
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+            {[
+              { key: '', label: 'All' },
+              { key: 'SCRIM', label: 'Scrims' },
+              { key: 'TOURNAMENT', label: 'Tournaments' },
+              { key: 'COMMUNITY', label: 'Community' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveCategory(tab.key)}
+                className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider transition-all duration-300 rounded whitespace-nowrap ${
+                  activeCategory === tab.key
+                    ? 'bg-[#e8a000] text-black shadow-[0_0_8px_rgba(232,160,0,0.2)]'
+                    : 'text-white/40 bg-white/3 hover:bg-white/5 border border-white/5'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {!featured ? (
+          <div className="border border-white/10 bg-[#0b0b11] px-4 py-8 text-center text-[#666] text-sm">
+            No videos available in this category.
+          </div>
+        ) : (
+          <>
+            <MobileFeaturedScrim scrim={featured} onPlay={openVideo} />
+            <div className="flex flex-col gap-3">
+              {rest.map((s, i) => <MobileScrimRow key={s.id} scrim={s} index={i} onPlay={openVideo} />)}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="h-px mx-4 sm:mx-6 bg-white/4 mb-6" />

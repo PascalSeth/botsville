@@ -151,7 +151,7 @@ export default function TriviaRankingPage() {
   const listPlayers = filteredRankings.slice(3);
 
   return (
-    <main className="min-h-screen bg-[#05060b] text-white selection:bg-[#e8a000]/30 pb-20 relative overflow-hidden">
+    <main className="min-h-screen bg-[#05060b] text-white selection:bg-[#e8a000]/30 pt-24 lg:pt-28 pb-20 relative overflow-hidden">
       
       {/* Decorative Cyberpunk Background overlays */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">

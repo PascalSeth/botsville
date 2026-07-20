@@ -1,8 +1,10 @@
 "use client";
 
+
+import { useRoleGuard } from "../lib/useRole";
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { dashboardFetch } from "../lib/api";
-import { Loader2, CheckCircle, RefreshCw, BarChart3, Trash2, Zap, Clock, Edit2, RotateCcw } from "lucide-react";
+import { Loader2, CheckCircle, RefreshCw, BarChart3, Trash2, Zap, Clock, Edit2, RotateCcw, Radio } from "lucide-react";
 import Link from "next/link";
 import { BracketVisualization } from "@/app/components/sections/BracketVisualization";
 
@@ -16,6 +18,7 @@ type Match = {
   scheduledTime: string;
   bestOf: number;
   statsFinalized?: boolean;
+  streamUrl?: string | null;
   teamA?: { id: string; name: string; tag: string } | null;
   teamB?: { id: string; name: string; tag: string } | null;
   winner?: { id: string; name: string } | null;
@@ -25,6 +28,11 @@ type Match = {
 };
 
 export default function DashboardMatchesPage() {
+  const { role } = useRoleGuard(["TOURNAMENT_ADMIN", "REFEREE", "COMMENTATOR", "STREAMER"]);
+  // What this role can do on this page
+  const canScore = ["SUPER_ADMIN", "TOURNAMENT_ADMIN", "REFEREE", "COMMENTATOR"].includes(role ?? "");
+  const canStream = ["SUPER_ADMIN", "TOURNAMENT_ADMIN", "STREAMER"].includes(role ?? "");
+  const canAdmin = ["SUPER_ADMIN", "TOURNAMENT_ADMIN"].includes(role ?? "");
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [selectedTournamentId, setSelectedTournamentId] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
@@ -51,6 +59,10 @@ export default function DashboardMatchesPage() {
   const [editingMetadataId, setEditingMetadataId] = useState<string | null>(null);
   const [editScheduledTime, setEditScheduledTime] = useState("");
   const [updatingMetadata, setUpdatingMetadata] = useState(false);
+  // Stream panel (STREAMER role)
+  const [streamMatchId, setStreamMatchId] = useState<string | null>(null);
+  const [streamUrlInput, setStreamUrlInput] = useState("");
+  const [updatingStream, setUpdatingStream] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
   const [recalcSuccess, setRecalcSuccess] = useState<string | null>(null);
 
@@ -147,6 +159,7 @@ export default function DashboardMatchesPage() {
     setResultSuccess(null);
     setError(null);
     setEditingMetadataId(null);
+    setStreamMatchId(null);
   };
 
   const submitResult = async (match: Match) => {
@@ -228,6 +241,7 @@ export default function DashboardMatchesPage() {
     }
     setEditingMetadataId(m.id);
     setResultMatchId(null); // Close result panel if open
+    setStreamMatchId(null);
     
     // Format date for datetime-local input (YYYY-MM-DDTHH:mm)
     if (m.scheduledTime) {
@@ -274,6 +288,46 @@ export default function DashboardMatchesPage() {
 
     setResultSuccess(data?.message ?? "Match updated successfully");
     setEditingMetadataId(null);
+    await loadMatches();
+  };
+
+  const openStreamPanel = (m: Match) => {
+    if (streamMatchId === m.id) {
+      setStreamMatchId(null);
+      return;
+    }
+    setStreamMatchId(m.id);
+    setStreamUrlInput(m.streamUrl ?? "");
+    setResultMatchId(null);
+    setEditingMetadataId(null);
+    setError(null);
+    setResultSuccess(null);
+  };
+
+  const submitStreamUpdate = async (matchId: string, status?: "LIVE" | "UPCOMING") => {
+    setUpdatingStream(true);
+    setError(null);
+    setResultSuccess(null);
+
+    const { data, error: err } = await dashboardFetch<{ message: string }>(
+      `/api/matches/${matchId}/stream`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          streamUrl: streamUrlInput.trim() || null,
+          ...(status ? { status } : {}),
+        }),
+      }
+    );
+
+    setUpdatingStream(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+
+    setResultSuccess(data?.message ?? "Stream info updated");
+    setStreamMatchId(null);
     await loadMatches();
   };
 
@@ -400,7 +454,7 @@ export default function DashboardMatchesPage() {
                 {matches.length} matches
               </span>
             )}
-            {selectedTournamentId && (
+            {selectedTournamentId && canAdmin && (
               <button
                 type="button"
                 onClick={recalculateGroupStandings}
@@ -493,13 +547,15 @@ export default function DashboardMatchesPage() {
                         {m.scheduledTime ? new Date(m.scheduledTime).toLocaleString() : "—"}
                       </td>
                       <td className="p-3 flex items-center gap-2">
-                        <Link
-                          href={`/dashboard/matches/${m.id}`}
-                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 border border-white/20 text-[#aaa] hover:border-[#e8a000] hover:text-[#e8a000] transition-colors flex items-center gap-1"
-                        >
-                          <BarChart3 size={10} /> KDA
-                        </Link>
-                        {(m.status === "UPCOMING" || m.status === "LIVE") && (
+                        {canScore && (
+                          <Link
+                            href={`/dashboard/matches/${m.id}`}
+                            className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 border border-white/20 text-[#aaa] hover:border-[#e8a000] hover:text-[#e8a000] transition-colors flex items-center gap-1"
+                          >
+                            <BarChart3 size={10} /> KDA
+                          </Link>
+                        )}
+                        {canScore && (m.status === "UPCOMING" || m.status === "LIVE") && (
                           <button
                             type="button"
                             onClick={() => openResultPanel(m)}
@@ -512,7 +568,7 @@ export default function DashboardMatchesPage() {
                             {resultMatchId === m.id ? "Cancel" : "Enter Result"}
                           </button>
                         )}
-                        {(m.status === "COMPLETED" || m.status === "FORFEITED") && (
+                        {canScore && (m.status === "COMPLETED" || m.status === "FORFEITED") && (
                           <button
                             type="button"
                             onClick={() => openResultPanel(m)}
@@ -525,29 +581,112 @@ export default function DashboardMatchesPage() {
                             {resultMatchId === m.id ? "Cancel" : "Edit Result"}
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteMatch(m)}
-                          disabled={deletingId === m.id}
-                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 border border-white/20 text-[#aaa] hover:border-red-400 hover:text-red-400 transition-colors flex items-center gap-1"
-                        >
-                          {deletingId === m.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={10} />}
-                          Delete
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openMetadataPanel(m)}
-                          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 border transition-colors ${
-                            editingMetadataId === m.id
-                              ? "border-[#e8a000] text-[#e8a000] bg-[#e8a000]/10"
-                              : "border-white/20 text-[#aaa] hover:border-[#e8a000] hover:text-[#e8a000]"
-                          }`}
-                        >
-                          <Edit2 size={10} className="inline mr-1" />
-                          {editingMetadataId === m.id ? "Cancel" : "Edit"}
-                        </button>
+                        {canAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMatch(m)}
+                            disabled={deletingId === m.id}
+                            className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 border border-white/20 text-[#aaa] hover:border-red-400 hover:text-red-400 transition-colors flex items-center gap-1"
+                          >
+                            {deletingId === m.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={10} />}
+                            Delete
+                          </button>
+                        )}
+                        {canScore && (
+                          <button
+                            type="button"
+                            onClick={() => openMetadataPanel(m)}
+                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 border transition-colors ${
+                              editingMetadataId === m.id
+                                ? "border-[#e8a000] text-[#e8a000] bg-[#e8a000]/10"
+                                : "border-white/20 text-[#aaa] hover:border-[#e8a000] hover:text-[#e8a000]"
+                            }`}
+                          >
+                            <Edit2 size={10} className="inline mr-1" />
+                            {editingMetadataId === m.id ? "Cancel" : "Edit"}
+                          </button>
+                        )}
+                        {canStream && (m.status === "UPCOMING" || m.status === "LIVE") && (
+                          <button
+                            type="button"
+                            onClick={() => openStreamPanel(m)}
+                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 border transition-colors flex items-center gap-1 ${
+                              streamMatchId === m.id
+                                ? "border-red-400 text-red-400 bg-red-500/10"
+                                : m.streamUrl
+                                ? "border-red-500/40 text-red-400 hover:border-red-400"
+                                : "border-white/20 text-[#aaa] hover:border-red-400 hover:text-red-400"
+                            }`}
+                          >
+                            <Radio size={10} />
+                            {streamMatchId === m.id ? "Cancel" : "Stream"}
+                          </button>
+                        )}
                       </td>
                     </tr>
+                    {streamMatchId === m.id && (
+                      <tr className="bg-[#0d0d14]">
+                        <td colSpan={7} className="p-4">
+                          <div className="border border-red-500/30 rounded p-4 space-y-3">
+                            <p className="text-[10px] font-black uppercase tracking-wider text-red-400 mb-2 flex items-center gap-2">
+                              <Radio size={12} /> Stream Controls — {m.stage ?? m.id}
+                            </p>
+                            <div className="flex flex-wrap gap-4 items-end">
+                              <div className="flex-1 max-w-md">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-[#666] block mb-2">
+                                  Stream URL (Twitch / YouTube / Facebook)
+                                </label>
+                                <input
+                                  type="url"
+                                  value={streamUrlInput}
+                                  onChange={(e) => setStreamUrlInput(e.target.value)}
+                                  placeholder="https://twitch.tv/yourchannel"
+                                  className="w-full bg-[#0a0a0f] border border-white/10 text-white px-3 py-2.5 text-sm outline-none focus:border-red-400/50 transition-colors"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                disabled={updatingStream}
+                                onClick={() => submitStreamUpdate(m.id)}
+                                className="flex items-center gap-2 px-4 py-2.5 border border-white/20 text-white text-xs font-black uppercase tracking-wider hover:border-[#e8a000] hover:text-[#e8a000] transition-colors disabled:opacity-50"
+                              >
+                                {updatingStream ? <Loader2 size={12} className="animate-spin" /> : null}
+                                Save Link
+                              </button>
+                              {m.status === "UPCOMING" ? (
+                                <button
+                                  type="button"
+                                  disabled={updatingStream}
+                                  onClick={() => submitStreamUpdate(m.id, "LIVE")}
+                                  className="flex items-center gap-2 px-6 py-2.5 bg-red-500 text-white text-xs font-black uppercase tracking-wider hover:bg-red-400 transition-all disabled:opacity-50 active:scale-95"
+                                >
+                                  {updatingStream ? <Loader2 size={14} className="animate-spin" /> : <Radio size={14} />}
+                                  Go Live
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={updatingStream}
+                                  onClick={() => submitStreamUpdate(m.id, "UPCOMING")}
+                                  className="flex items-center gap-2 px-6 py-2.5 bg-white/10 text-white text-xs font-black uppercase tracking-wider hover:bg-white/20 transition-all disabled:opacity-50 active:scale-95 border border-white/20"
+                                >
+                                  {updatingStream ? <Loader2 size={14} className="animate-spin" /> : <Clock size={14} />}
+                                  End Live (back to Upcoming)
+                                </button>
+                              )}
+                            </div>
+                            {m.streamUrl && (
+                              <p className="text-[10px] text-[#888]">
+                                Current link:{" "}
+                                <a href={m.streamUrl} target="_blank" rel="noopener noreferrer" className="text-red-400 hover:underline break-all">
+                                  {m.streamUrl}
+                                </a>
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {resultMatchId === m.id && (
                       <tr className="bg-[#0d0d14]">
                         <td colSpan={7} className="p-4">

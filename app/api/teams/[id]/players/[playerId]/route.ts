@@ -141,9 +141,9 @@ export async function PUT(
         return apiError("Target team not found", 404);
       }
 
-      // Check target team size (max 9)
-      if (targetTeam.players.length >= 9) {
-        return apiError("Target team is full (maximum 9 players)");
+      // Check target team size (max 20)
+      if (targetTeam.players.length >= 20) {
+        return apiError("Target team is full (maximum 20 players)");
       }
 
       // Prevent transferring into same team

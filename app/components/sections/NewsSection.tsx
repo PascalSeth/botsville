@@ -12,7 +12,7 @@ import { motion } from 'framer-motion';
 
 interface NewsArticle {
   id: string;
-  category: 'PATCH_NOTES' | 'NEW_EVENT' | 'NEW_HERO';
+  category: 'PATCH_NOTES' | 'NEW_EVENT' | 'NEW_HERO' | 'INTERVIEW';
   title: string;
   subtitle: string | null;
   body: string;
@@ -89,6 +89,7 @@ const CATEGORY_META: Record<string, { label: string; icon: React.ReactNode; colo
   PATCH_NOTES: { label: 'Patch Notes', icon: <Shield size={10} />, color: 'text-sky-400 bg-sky-400/10 border-sky-400/20', dot: 'bg-sky-400' },
   NEW_EVENT:   { label: 'New Event',   icon: <Star size={10} />,   color: 'text-amber-400 bg-amber-400/10 border-amber-400/20', dot: 'bg-amber-400' },
   NEW_HERO:    { label: 'New Hero',    icon: <Tag size={10} />,    color: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20', dot: 'bg-emerald-400' },
+  INTERVIEW:   { label: 'Interview',   icon: <Newspaper size={10} />, color: 'text-purple-400 bg-purple-400/10 border-purple-400/20', dot: 'bg-purple-400' },
 };
 
 function categoryMeta(cat: string) {

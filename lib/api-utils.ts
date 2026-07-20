@@ -26,20 +26,21 @@ export async function requireAuth() {
 }
 
 /**
- * Require admin role - throws error if not admin
+ * Require admin role - throws error if not admin.
+ * Pass an array to accept any of several roles (e.g. CONTENT_ADMIN or its EDITOR alias).
  */
-export async function requireAdmin(requiredRole?: AdminRoleType) {
+export async function requireAdmin(requiredRole?: AdminRoleType | AdminRoleType[]) {
   const user = await requireAuth();
-  
+
   if (!user.role) {
     throw new Error("Forbidden: Admin access required");
   }
 
-  // If specific role required, check it
-  if (requiredRole && user.role !== requiredRole) {
+  if (requiredRole) {
+    const allowedRoles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
     // SUPER_ADMIN can access anything
-    if (user.role !== AdminRoleType.SUPER_ADMIN) {
-      throw new Error(`Forbidden: ${requiredRole} access required`);
+    if (!allowedRoles.includes(user.role) && user.role !== AdminRoleType.SUPER_ADMIN) {
+      throw new Error(`Forbidden: ${allowedRoles.join(" or ")} access required`);
     }
   }
 
@@ -58,6 +59,18 @@ export async function requireSuperAdmin() {
  */
 export async function requireActiveUser() {
   const user = await requireAuth();
+  
+  if (user.status === 'ACTIVE') {
+    return user;
+  }
+
+  if (user.status === 'BANNED') {
+    throw new Error("Account has been banned");
+  }
+
+  if (user.status === 'SUSPENDED') {
+    throw new Error("Account is suspended");
+  }
   
   const dbUser = await prisma.user.findUnique({
     where: { id: user.id },
@@ -91,15 +104,19 @@ export async function createAuditLog(
   action: string,
   targetType: string,
   targetId: string,
-  details?: string
+  details?: string | Record<string, any>
 ) {
+  const detailsStr = typeof details === "object" && details !== null
+    ? JSON.stringify(details)
+    : details;
+
   return prisma.adminAuditLog.create({
     data: {
       actorId,
       action,
       targetType,
       targetId,
-      details,
+      details: detailsStr,
     },
   });
 }
@@ -231,3 +248,44 @@ export function isValidRegion(region: string): boolean {
   const validRegions = ["Accra", "Kumasi", "Takoradi", "Tema", "Cape Coast", "Tamale"];
   return validRegions.includes(region);
 }
+
+/**
+ * Format any technical error (Prisma, DB, network) into a clear human-readable string.
+ */
+export function formatHumanError(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) {
+    const msg = error.message;
+
+    if (msg === "Unauthorized" || msg.includes("Unauthorized")) {
+      return "You must be signed in to perform this action.";
+    }
+    if (msg.includes("Unique constraint failed") || msg.includes("P2002")) {
+      if (msg.includes("ign") || msg.includes("toIGN")) return "This In-Game Name (IGN) is already registered on another team.";
+      if (msg.includes("teamId") || msg.includes("userId")) return "You are already registered on a team.";
+      return "An entry with these details already exists.";
+    }
+    if (msg.includes("Foreign key constraint failed") || msg.includes("P2003")) {
+      return "The referenced team, player, or user no longer exists.";
+    }
+    if (msg.includes("Record to update not found") || msg.includes("P2025")) {
+      return "The requested record was not found.";
+    }
+    if (msg.includes("EAUTHTIMEOUT") || msg.includes("timeout")) {
+      return "Database operation timed out. Please try again.";
+    }
+
+    // If it's a clean user-defined message without technical jargon, return it
+    if (
+      !msg.includes("PrismaClient") &&
+      !msg.includes("DriverAdapter") &&
+      !msg.includes("__TURBOPACK") &&
+      !msg.includes("invocation in")
+    ) {
+      return msg;
+    }
+  }
+
+  return "An unexpected error occurred. Please refresh the page and try again.";
+}
+

@@ -7,8 +7,7 @@ import {
   createAuditLog,
   isValidHexColor,
 } from "@/lib/api-utils";
-import { TournamentStatus } from "@/app/generated/prisma/enums";
-import { TournamentFormat } from "@/app/generated/prisma/enums";
+import { TournamentStatus, TournamentFormat, AdminRoleType } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
 
@@ -138,8 +137,6 @@ export async function GET(
       return apiError("Tournament not found", 404);
     }
 
-    // Transform to include filled count
-    const tournamentIdForCount = tournament.id;
     const filled = await prisma.tournamentRegistration.count({
       where: {
         tournamentId: tournament.id,
@@ -164,7 +161,7 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const { id } = await context.params;
     const body = await request.json();
 

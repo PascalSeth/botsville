@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireAdmin, apiError, apiSuccess, createAuditLog } from "@/lib/api-utils";
-import { SeasonPhase, TournamentFormat, TournamentStatus, MatchStatus } from "@/app/generated/prisma/enums";
+import { SeasonPhase, TournamentFormat, TournamentStatus, MatchStatus, AdminRoleType } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
 // ── Round-robin schedule generator (circle method) ───────────
@@ -35,7 +35,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const { id: seasonId } = await params;
     const body = await request.json();
     const {

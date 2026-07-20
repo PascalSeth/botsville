@@ -944,7 +944,7 @@ export default function RegisterTeamPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white" style={{ fontFamily: "'Rajdhani', 'Barlow Condensed', sans-serif" }}>
+    <div className="min-h-screen bg-[#0a0a0f] text-white pt-24 lg:pt-28" style={{ fontFamily: "'Rajdhani', 'Barlow Condensed', sans-serif" }}>
 
       {/* Google Fonts */}
       <style>{`

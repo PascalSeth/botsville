@@ -10,6 +10,10 @@ import {
 
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+
 // GET - Get team by ID
 export async function GET(
   request: NextRequest,

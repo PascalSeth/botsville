@@ -1,5 +1,7 @@
 "use client";
 
+
+import { useRoleGuard } from "../lib/useRole";
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
 import { Check, X, Loader2 } from "lucide-react";
@@ -22,6 +24,7 @@ type Payload = {
 };
 
 export default function DashboardFanArtPage() {
+  const { isAllowed: __roleAllowed } = useRoleGuard(["CONTENT_ADMIN","EDITOR"]);
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [pagination, setPagination] = useState({ total: 0, limit: 50, skip: 0 });
   const [loading, setLoading] = useState(true);

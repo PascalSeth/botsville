@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { requireAdmin, apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
+import { AdminRoleType } from "@/app/generated/prisma/enums";
+import { invalidatePattern, deleteFromCache } from "@/lib/redis";
 
 function toHeroKey(value: string): string {
   return value
@@ -20,7 +22,7 @@ function isValidImageUrl(value: string): boolean {
 // GET /api/admin/heroes - Get ALL heroes (including those without images)
 export async function GET() {
   try {
-    await requireAdmin();
+    await requireAdmin([AdminRoleType.SUPER_ADMIN, AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR]);
 
     const heroes = await prisma.heroCatalog.findMany({
       where: { active: true },
@@ -30,10 +32,13 @@ export async function GET() {
         key: true,
         name: true,
         imageUrl: true,
+        active: true,
       },
     });
 
-    return apiSuccess({ heroes });
+    return apiSuccess({ heroes }, 200, {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+    });
   } catch (error: unknown) {
     console.error("Admin hero catalog GET error:", error);
     const message = error instanceof Error ? error.message : "Failed to fetch heroes";
@@ -46,7 +51,7 @@ export async function GET() {
 // POST /api/admin/heroes - Add a new hero
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireAdmin();
+    const user = await requireAdmin([AdminRoleType.SUPER_ADMIN, AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR]);
 
     const body = await request.json();
     const { name, imageUrl, key } = body;
@@ -77,6 +82,10 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Invalidate Redis hero cache
+    await invalidatePattern("hero-*");
+    await deleteFromCache("hero-catalog");
+
     return apiSuccess({ message: "Hero added", hero }, 201);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to add hero";
@@ -86,28 +95,56 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH /api/admin/heroes - Update hero image
+// PATCH /api/admin/heroes - Update hero details (name, key, imageUrl, active)
 export async function PATCH(request: NextRequest) {
   try {
-    await requireAdmin();
+    await requireAdmin([AdminRoleType.SUPER_ADMIN, AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR]);
 
     const body = await request.json();
-    const { id, imageUrl } = body;
+    const { id, name, key, imageUrl, active } = body;
 
     if (!id || typeof id !== "string") return apiError("id is required");
 
+    const updateData: Record<string, any> = {};
+
+    if (typeof name === "string" && name.trim()) {
+      updateData.name = name.trim();
+    }
+
+    if (typeof key === "string" && key.trim()) {
+      const heroKey = toHeroKey(key);
+      if (heroKey) {
+        const existing = await prisma.heroCatalog.findFirst({
+          where: { key: heroKey, NOT: { id } },
+        });
+        if (existing) return apiError("Hero key already exists");
+        updateData.key = heroKey;
+      }
+    }
+
+    if (imageUrl !== undefined) {
+      updateData.imageUrl = imageUrl && isValidImageUrl(imageUrl) ? imageUrl.trim() : null;
+    }
+
+    if (typeof active === "boolean") {
+      updateData.active = active;
+    }
+
     const hero = await prisma.heroCatalog.update({
       where: { id },
-      data: {
-        imageUrl: imageUrl && isValidImageUrl(imageUrl) ? imageUrl.trim() : null,
-      },
+      data: updateData,
       select: {
         id: true,
         key: true,
         name: true,
         imageUrl: true,
+        active: true,
       },
     });
+
+    // Invalidate Redis hero cache
+    await invalidatePattern("hero-*");
+    await deleteFromCache("hero-catalog");
 
     return apiSuccess({ message: "Hero updated", hero });
   } catch (error: unknown) {

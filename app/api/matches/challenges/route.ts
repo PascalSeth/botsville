@@ -25,11 +25,13 @@ async function getCaptainTeam(userId: string) {
     select: {
       id: true,
       name: true,
+      tag: true,
       captainId: true,
     },
   });
 }
 
+// GET - List challenges (public arena listings + team challenges)
 export async function GET(request: NextRequest) {
   try {
     const user = await requireActiveUser();
@@ -37,7 +39,10 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const weekStartParam = searchParams.get("weekStart");
 
-    const where: Prisma.MatchChallengeWhereInput = {};
+    const where: Prisma.MatchChallengeWhereInput = {
+      challengerTeam: { deletedAt: null },
+    };
+
 
     if (status && Object.values(MatchChallengeStatus).includes(status as MatchChallengeStatus)) {
       where.status = status as MatchChallengeStatus;
@@ -53,25 +58,15 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    if (!user.role) {
-      const captainTeam = await getCaptainTeam(user.id);
-      if (!captainTeam) {
-        return apiSuccess({ challenges: [] });
-      }
-      where.OR = [
-        { challengerTeamId: captainTeam.id },
-        { challengedTeamId: captainTeam.id },
-      ];
-    }
-
+    // Public Arena Mode: Return all challenges (or public listings + user team challenges)
     const challenges = await prisma.matchChallenge.findMany({
       where,
       include: {
         challengerTeam: {
-          select: { id: true, name: true, tag: true },
+          select: { id: true, name: true, tag: true, logo: true },
         },
         challengedTeam: {
-          select: { id: true, name: true, tag: true },
+          select: { id: true, name: true, tag: true, logo: true },
         },
         initiatedBy: {
           select: { id: true, ign: true },
@@ -95,111 +90,84 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// POST - Create a new challenge (Direct or Public Open Challenge)
 export async function POST(request: NextRequest) {
   try {
     const user = await requireActiveUser();
+
+    const captainTeam = await getCaptainTeam(user.id);
+    if (!captainTeam && !user.role) {
+      return apiError("Only active team captains can issue match challenges", 403);
+    }
+
     const body = await request.json();
-    const { challengedTeamId, message, weekStart } = body;
+    const { challengedTeamId, message, weekStart: rawWeekStart } = body as {
+      challengedTeamId?: string | null;
+      message?: string | null;
+      weekStart?: string | null;
+    };
 
-    if (!challengedTeamId || typeof challengedTeamId !== "string") {
-      return apiError("challengedTeamId is required");
+    const challengerTeamId = captainTeam?.id;
+    if (!challengerTeamId) {
+      return apiError("Could not identify challenger team", 400);
     }
 
-    const challengerTeam = await getCaptainTeam(user.id);
-    if (!challengerTeam) {
-      return apiError("Only team captains can create challenges", 403);
+    if (challengedTeamId && challengedTeamId === challengerTeamId) {
+      return apiError("You cannot challenge your own team", 400);
     }
 
-    if (challengerTeam.id === challengedTeamId) {
-      return apiError("You cannot challenge your own team");
-    }
-
-    const challengedTeam = await prisma.team.findFirst({
-      where: {
-        id: challengedTeamId,
-        deletedAt: null,
-        status: "ACTIVE",
-      },
-      select: {
-        id: true,
-        name: true,
-        captainId: true,
-      },
-    });
-
-    if (!challengedTeam) {
-      return apiError("Challenged team not found", 404);
-    }
-
-    if (!challengedTeam.captainId) {
-      return apiError("Challenged team has no captain assigned");
-    }
-
-    const normalizedWeekStart = getWeekStart(weekStart);
-    const weekEnd = new Date(normalizedWeekStart);
-    weekEnd.setDate(normalizedWeekStart.getDate() + 7);
-
-    const duplicate = await prisma.matchChallenge.findFirst({
-      where: {
-        weekStart: {
-          gte: normalizedWeekStart,
-          lt: weekEnd,
+    let targetTeam = null;
+    if (challengedTeamId) {
+      targetTeam = await prisma.team.findFirst({
+        where: {
+          id: challengedTeamId,
+          deletedAt: null,
+          status: "ACTIVE",
         },
-        status: {
-          in: [
-            MatchChallengeStatus.PENDING,
-            MatchChallengeStatus.ACCEPTED,
-            MatchChallengeStatus.SCHEDULED,
-          ],
-        },
-        OR: [
-          {
-            challengerTeamId: challengerTeam.id,
-            challengedTeamId: challengedTeam.id,
-          },
-          {
-            challengerTeamId: challengedTeam.id,
-            challengedTeamId: challengerTeam.id,
-          },
-        ],
-      },
-      select: { id: true },
-    });
+        select: { id: true, name: true, captainId: true },
+      });
 
-    if (duplicate) {
-      return apiError("A challenge between these teams already exists for this week");
+      if (!targetTeam) {
+        return apiError("Challenged team not found or inactive", 404);
+      }
+    }
+
+    const weekStart = getWeekStart(rawWeekStart || undefined);
+
+    const challengeData: any = {
+      challengerTeamId,
+      initiatedById: user.id,
+      weekStart,
+      message: message?.trim() || null,
+      status: MatchChallengeStatus.PENDING,
+    };
+    if (targetTeam?.id) {
+      challengeData.challengedTeamId = targetTeam.id;
     }
 
     const challenge = await prisma.matchChallenge.create({
-      data: {
-        challengerTeamId: challengerTeam.id,
-        challengedTeamId: challengedTeam.id,
-        initiatedById: user.id,
-        weekStart: normalizedWeekStart,
-        message: typeof message === "string" && message.trim().length > 0 ? message.trim() : null,
-        status: MatchChallengeStatus.PENDING,
-      },
+      data: challengeData,
+
       include: {
-        challengerTeam: {
-          select: { id: true, name: true, tag: true },
-        },
-        challengedTeam: {
-          select: { id: true, name: true, tag: true },
-        },
+        challengerTeam: { select: { id: true, name: true, tag: true } },
+        challengedTeam: { select: { id: true, name: true, tag: true } },
       },
     });
 
-    await prisma.notification.create({
-      data: {
-        userId: challengedTeam.captainId,
-        type: "MATCH_SCHEDULED",
-        title: "New Team Challenge",
-        message: `${challengerTeam.name} challenged your team for this week's scrim. Respond to proceed.`,
-        linkUrl: "/my-team",
-      },
-    });
+    // Notify targeted captain if direct challenge
+    if (targetTeam?.captainId) {
+      await prisma.notification.create({
+        data: {
+          userId: targetTeam.captainId,
+          type: "MATCH_SCHEDULED",
+          title: "Direct Squad Challenge!",
+          message: `${captainTeam.name} has issued a direct match challenge to your squad.`,
+          linkUrl: "/challenge-arena",
+        },
+      });
+    }
 
-    return apiSuccess({ message: "Challenge sent", challenge }, 201);
+    return apiSuccess({ challenge }, 201);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to create challenge";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);

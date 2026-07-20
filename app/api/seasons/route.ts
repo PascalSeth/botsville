@@ -6,7 +6,7 @@ import {
   apiSuccess,
   createAuditLog,
 } from "@/lib/api-utils";
-import { SeasonStatus } from "@/app/generated/prisma/enums";
+import { SeasonStatus, AdminRoleType } from "@/app/generated/prisma/enums";
 import { cacheResult, invalidatePattern } from "@/lib/redis";
 
 import { prisma } from "@/lib/prisma";
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 // POST - Create new season
 export async function POST(request: NextRequest) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const body = await request.json();
     const { name, startDate, endDate, status } = body;
 

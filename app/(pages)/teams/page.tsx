@@ -3,7 +3,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Zap, Swords, Star, Target, Wind, Trophy, Search, X, MapPin, Users, ChevronRight, Crown, Loader2 } from 'lucide-react';
+import { Shield, Zap, Swords, Star, Target, Wind, Trophy, Search, X, MapPin, Users, ChevronRight, Crown, Loader2, AlertTriangle, CheckCircle2, MessageSquare, Send, ArrowRight, Clock } from 'lucide-react';
+import { useHero } from '@/app/contexts/HeroContext';
+
+
+
 
 // ── Role system ─────────────────────────────────────────────
 const ROLE_META: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
@@ -495,7 +499,7 @@ const SidebarEntry = ({ team, active, onClick, index, canChallenge, challengeLoa
 // ══════════════════════════════════════════════════════════
 // MOBILE TEAM ROW — accordion with photo cards
 // ══════════════════════════════════════════════════════════
-const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, onChallenge, userTeamId }: {
+const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, onChallenge, userTeamId, isPendingApplied }: {
   team: ApiTeam;
   active: boolean;
   onClick: () => void;
@@ -503,7 +507,9 @@ const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, 
   challengeLoading?: boolean;
   onChallenge?: () => void;
   userTeamId?: string | null;
+  isPendingApplied?: boolean;
 }) => {
+
   const winRate = team.wins + team.losses > 0 
     ? Math.round((team.wins / (team.wins + team.losses)) * 100) 
     : 0;
@@ -643,19 +649,34 @@ const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, 
                   <button
                     type="button"
                     onClick={() => {
-                      if (userTeamId) return;
                       window.dispatchEvent(new CustomEvent('team-apply', { detail: { teamId: team.id } }));
                     }}
-                    disabled={Boolean(userTeamId)}
                     className={
-                      `text-[10px] font-black uppercase tracking-widest px-3 py-2 border border-white/10 ` +
-                      (userTeamId ? 'opacity-40 cursor-not-allowed text-[#bbb]' : 'text-white hover:bg-white/5')
+                      `flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border transition-all shadow-md ` +
+                      (isPendingApplied
+                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/35'
+                        : userTeamId
+                          ? 'bg-white/5 border-white/10 text-zinc-500 hover:border-red-500/30 hover:text-red-400'
+                          : 'bg-gradient-to-r from-[#e8a000]/20 to-[#ffb800]/20 border-[#e8a000]/40 text-[#ffb800] hover:bg-[#e8a000]/30 hover:border-[#e8a000]')
                     }
                   >
-                    {userTeamId ? 'Already In A Team' : 'Apply To Join'}
+                    {isPendingApplied ? (
+                      <Clock size={12} className="animate-pulse text-amber-400 shrink-0" />
+                    ) : (
+                      <Swords size={12} />
+                    )}
+                    <span>
+                      {isPendingApplied
+                        ? 'Application Pending'
+                        : userTeamId
+                          ? 'Already In A Team'
+                          : 'Apply For Roster'}
+                    </span>
                   </button>
                 </div>
               )}
+
+
 
               {/* ── Starting Five — photo cards ── */}
               {starters.length > 0 && (
@@ -709,6 +730,68 @@ export default function TeamsPage() {
   const [showAvailableOnly, setShowAvailableOnly] = useState(false);
   const [weeklyScrimDateLabel, setWeeklyScrimDateLabel] = useState<string | null>(null);
 
+
+  // ── Hero Catalog from DB ──
+  const heroCtx = useHero();
+  const heroCatalog = heroCtx?.heroCatalog ?? [];
+  const [heroSearch, setHeroSearch] = useState('');
+
+  // ── Roster Application Modal State ──
+  const [selectedApplyTeam, setSelectedApplyTeam] = useState<ApiTeam | null>(null);
+  const [applyForm, setApplyForm] = useState({
+    role: 'EXP' as 'EXP' | 'JUNGLE' | 'MID' | 'GOLD' | 'ROAM',
+    signatureHero: '',
+    pitch: '',
+  });
+  const [applySubmitting, setApplySubmitting] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applySuccessMessage, setApplySuccessMessage] = useState<string | null>(null);
+
+  // ── Pending Applications State ──
+  const [myApplications, setMyApplications] = useState<Array<{
+    id: string;
+    teamId: string;
+    message: string | null;
+    sentAt: string;
+    team?: { id: string; name: string; tag: string };
+  }>>([]);
+
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+
+  const fetchMyApplications = useCallback(async () => {
+    try {
+      const res = await fetch('/api/my-applications', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setMyApplications(Array.isArray(data?.applications) ? data.applications : []);
+      }
+    } catch {
+      setMyApplications([]);
+    }
+  }, []);
+
+  const withdrawApplication = async (teamId: string) => {
+    try {
+      setWithdrawingId(teamId);
+      const res = await fetch(`/api/my-applications?teamId=${teamId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setApplySuccessMessage('Application withdrawn.');
+        setSelectedApplyTeam(null);
+        await fetchMyApplications();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setApplyError(data?.error || 'Failed to withdraw application');
+      }
+    } catch {
+      setApplyError('Failed to withdraw application');
+    } finally {
+      setWithdrawingId(null);
+    }
+  };
+
+
+
+
   const fetchWeeklyAvailability = useCallback(async () => {
     try {
       const response = await fetch('/api/matches/challenges/availability');
@@ -761,7 +844,9 @@ export default function TeamsPage() {
   useEffect(() => {
     fetchTeams();
     fetchCaptainTeam();
-  }, [fetchCaptainTeam]);
+    fetchMyApplications();
+  }, [fetchCaptainTeam, fetchMyApplications]);
+
 
   // Auto-dismiss applyFeedback after a short time to avoid sticky messages
   useEffect(() => {
@@ -802,27 +887,36 @@ export default function TeamsPage() {
     }
   };
 
-  const applyToTeam = useCallback(async (teamId: string) => {
+  const applyToTeam = useCallback(async (teamId: string, payload?: { role?: string; signatureHero?: string; pitch?: string }) => {
     if (userTeamId) {
-      setApplyFeedback('You already belong to a team and cannot apply.');
+      setApplyError('You are currently registered under another squad. Leave your current squad or ask your captain to disband before applying.');
       return;
     }
 
+    setApplySubmitting(true);
+    setApplyError(null);
     setApplyFeedback(null);
+
     try {
       const response = await fetch(`/api/teams/${teamId}/apply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(payload || {}),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setApplyFeedback(data?.error || 'Failed to apply to team');
+        setApplyError(data?.error || 'Unable to submit application to this team.');
         return;
       }
-      setApplyFeedback('Application submitted. The team captain will review your request.');
+      setApplySuccessMessage(`⚔️ Application submitted to squad captain!`);
+      setSelectedApplyTeam(null);
+      setApplyForm({ role: 'EXP', signatureHero: '', pitch: '' });
+      await fetchMyApplications();
+
     } catch {
-      setApplyFeedback('Failed to apply to team');
+      setApplyError('Network connection issue. Please check your connection and try again.');
+    } finally {
+      setApplySubmitting(false);
     }
   }, [userTeamId]);
 
@@ -830,16 +924,23 @@ export default function TeamsPage() {
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ teamId: string }>;
-      if (ce?.detail?.teamId) void applyToTeam(ce.detail.teamId);
+      if (ce?.detail?.teamId) {
+        const targetTeam = teams.find(t => t.id === ce.detail.teamId);
+        if (targetTeam) {
+          setSelectedApplyTeam(targetTeam);
+          setApplyError(null);
+        }
+      }
     };
     window.addEventListener('team-apply', handler as EventListener);
     return () => window.removeEventListener('team-apply', handler as EventListener);
-  }, [applyToTeam]);
+  }, [teams]);
+
 
   const fetchTeams = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/teams');
+      const response = await fetch('/api/teams', { cache: 'no-store' });
       const data = await response.json();
       
       if (response.ok && data.teams) {
@@ -893,7 +994,7 @@ export default function TeamsPage() {
         ::-webkit-scrollbar { width: 0; height: 0; }
       `}</style>
 
-      <main className="min-h-screen bg-[#08080e]">
+      <main className="min-h-screen bg-[#08080e] pt-24 lg:pt-28">
         <PageHeader teamsCount={teams.length} topTeam={teams[0]} />
 
         {challengeFeedback && (
@@ -1029,11 +1130,342 @@ export default function TeamsPage() {
                 canChallenge={Boolean(captainTeamId && captainTeamId !== team.id && availableTeamIds.includes(team.id))}
                 challengeLoading={challengeSubmittingId === team.id}
                 onChallenge={() => challengeTeam(team.id)}
-                userTeamId={userTeamId} />
+                userTeamId={userTeamId}
+                isPendingApplied={myApplications.some(a => a.teamId === team.id)} />
             ))}
+
           </div>
         </div>
+
+        {/* ── Success Toast Banner ── */}
+        <AnimatePresence>
+          {applySuccessMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: 50, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 50, scale: 0.95 }}
+              className="fixed bottom-6 right-6 z-[999] bg-[#0c1a14] border border-emerald-500/40 text-emerald-300 p-4 rounded-xl shadow-2xl flex items-center gap-3 max-w-md backdrop-blur-xl"
+            >
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-xs leading-tight">{applySuccessMessage}</p>
+                <p className="text-[10px] text-emerald-400/70 mt-0.5">The squad captain will review your application on their My Team portal.</p>
+              </div>
+              <button onClick={() => setApplySuccessMessage(null)} className="p-1 hover:bg-white/10 rounded-lg">
+                <X size={14} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Creative Roster Application Modal ── */}
+        <AnimatePresence>
+          {selectedApplyTeam && (() => {
+            const teamColor = selectedApplyTeam.color || '#e8a000';
+            const roles = ['EXP', 'JUNGLE', 'MID', 'GOLD', 'ROAM'] as const;
+            const myAppForTeam = myApplications.find((a) => a.teamId === selectedApplyTeam.id);
+
+            const filteredHeroes = heroCatalog.filter((h) =>
+              h.name.toLowerCase().includes(heroSearch.toLowerCase()) ||
+              h.key.toLowerCase().includes(heroSearch.toLowerCase())
+            );
+
+            return (
+              <div
+                className="fixed inset-0 z-[1000] overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-4 flex min-h-full items-center justify-center"
+                onClick={() => { setSelectedApplyTeam(null); setApplyError(null); setHeroSearch(''); }}
+              >
+
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.94, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.94, y: 15 }}
+                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="relative w-full max-w-lg max-h-[88vh] flex flex-col bg-[#0a0a12] border border-white/10 rounded-2xl shadow-[0_0_60px_rgba(0,0,0,0.95)] overflow-hidden my-auto text-white"
+                >
+                  {/* Modal Header (Fixed, non-shrinking) */}
+                  <div
+                    className="shrink-0 p-4 sm:p-5 border-b border-white/10 relative overflow-hidden"
+                    style={{ background: `linear-gradient(135deg, ${teamColor}25, transparent 80%)` }}
+                  >
+                    <div className="flex items-center justify-between relative z-10">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-11 h-11 rounded-xl border-2 flex items-center justify-center bg-black/60 font-black overflow-hidden relative shrink-0"
+                          style={{ borderColor: `${teamColor}60` }}
+                        >
+                          {selectedApplyTeam.logo ? (
+                            <Image src={selectedApplyTeam.logo} alt="" fill className="object-cover" />
+                          ) : (
+                            <span className="text-xs" style={{ color: teamColor }}>{selectedApplyTeam.tag}</span>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-zinc-400">
+                            {myAppForTeam ? 'Application Status' : 'Roster Application'}
+                          </p>
+                          <h3
+                            className="text-lg sm:text-xl font-black uppercase tracking-tight text-white leading-none mt-0.5"
+                            style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                          >
+                            {selectedApplyTeam.name}
+                          </h3>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => { setSelectedApplyTeam(null); setApplyError(null); setHeroSearch(''); }}
+                        className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-all"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Modal Body (Scrollable inside max-height) */}
+                  <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 custom-scrollbar">
+
+                    {/* Human Error HUD Card if error occurred */}
+                    {applyError && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 space-y-2"
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-black uppercase tracking-wider text-red-400">Application Notice</h4>
+                            <p className="text-xs leading-relaxed text-red-200/90">{applyError}</p>
+                          </div>
+                        </div>
+
+                        {applyError.includes('Leave your current squad') && (
+                          <div className="pt-2 border-t border-red-500/20 flex justify-end">
+                            <a
+                              href="/my-team"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-200 text-[10px] font-black uppercase tracking-wider transition-colors"
+                            >
+                              <span>Manage My Team</span>
+                              <ArrowRight size={12} />
+                            </a>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+
+                    {/* Pending Application State View */}
+                    {myAppForTeam ? (
+                      <div className="space-y-4 py-2">
+                        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-3">
+                          <div className="flex items-start gap-3">
+                            <Clock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 animate-pulse" />
+                            <div className="space-y-1">
+                              <h4 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                                <span>Application Under Review</span>
+                                <span className="px-2 py-0.5 rounded text-[8px] bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                  PENDING CAPTAIN RESPONSE
+                                </span>
+                              </h4>
+                              <p className="text-xs leading-relaxed text-amber-100/90">
+                                Your application has been delivered to the squad captain of <span className="font-bold text-white">{selectedApplyTeam.name}</span>. You will receive a notification as soon as they review your profile.
+                              </p>
+                            </div>
+                          </div>
+
+                          {myAppForTeam.message && (
+                            <div className="pt-2.5 border-t border-amber-500/20 space-y-1">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-amber-400/80">Submitted Note to Captain</p>
+                              <p className="text-xs italic text-amber-100/80 bg-black/30 p-2.5 rounded-lg border border-amber-500/20">
+                                "{myAppForTeam.message}"
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between text-xs">
+                          <span className="text-zinc-400 text-[10px] uppercase font-mono tracking-wider">
+                            Submitted: {new Date(myAppForTeam.sentAt).toLocaleDateString()}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={withdrawingId === selectedApplyTeam.id}
+                            onClick={() => withdrawApplication(selectedApplyTeam.id)}
+                            className="px-3.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {withdrawingId === selectedApplyTeam.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <X size={12} />
+                            )}
+                            <span>Withdraw Request</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* New Application Form */
+                      <>
+                        {/* 1. Preferred Role Picker */}
+                        <div>
+                          <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1.5">
+                            1. Preferred Main Role
+                          </label>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {roles.map((r) => {
+                              const meta = ROLE_META[r];
+                              const selected = applyForm.role === r;
+                              return (
+                                <button
+                                  key={r}
+                                  type="button"
+                                  onClick={() => setApplyForm((prev) => ({ ...prev, role: r }))}
+                                  className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
+                                    selected
+                                      ? 'bg-white/15 border-white text-white shadow-lg scale-105'
+                                      : 'bg-white/5 border-white/5 text-zinc-500 hover:border-white/20 hover:text-zinc-300'
+                                  }`}
+                                >
+                                  <div
+                                    className="w-5 h-5 rounded-lg flex items-center justify-center mb-0.5"
+                                    style={{ backgroundColor: `${meta.color}20`, color: meta.color }}
+                                  >
+                                    {meta.icon}
+                                  </div>
+                                  <span className="text-[8px] font-black uppercase tracking-wider">{meta.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* 2. Signature Hero Selector (From DB Catalog) */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                              2. Signature Hero (Select from DB)
+                            </label>
+                            {applyForm.signatureHero && (
+                              <span className="text-[10px] font-black text-[#ffb800]">Selected: {applyForm.signatureHero}</span>
+                            )}
+                          </div>
+
+                          {/* Hero Search input */}
+                          <div className="relative mb-2">
+                            <Search size={12} className="absolute left-3 top-3 text-zinc-500" />
+                            <input
+                              type="text"
+                              value={heroSearch}
+                              onChange={(e) => setHeroSearch(e.target.value)}
+                              placeholder="Search DB hero list (e.g. Chou, Ling, Fanny)..."
+                              className="w-full bg-[#12121a] border border-white/10 rounded-xl pl-8 pr-4 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#e8a000]/60 transition-all"
+                            />
+                          </div>
+
+                          {/* Hero Avatars Grid */}
+                          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-36 overflow-y-auto p-1 bg-black/40 border border-white/5 rounded-xl custom-scrollbar">
+                            {filteredHeroes.map((hero) => {
+                              const isSelected = applyForm.signatureHero.toLowerCase() === hero.name.toLowerCase();
+                              return (
+                                <button
+                                  key={hero.id || hero.key}
+                                  type="button"
+                                  onClick={() => setApplyForm((prev) => ({ ...prev, signatureHero: hero.name }))}
+                                  className={`relative flex flex-col items-center p-1.5 rounded-xl border transition-all ${
+                                    isSelected
+                                      ? 'bg-[#e8a000]/20 border-[#e8a000] shadow-md shadow-[#e8a000]/30 scale-105'
+                                      : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20'
+                                  }`}
+                                >
+                                  <div className="relative w-8 h-8 rounded-lg overflow-hidden mb-1 border border-white/10">
+                                    <Image src={hero.imageUrl || '/heroes/stun.png'} alt={hero.name} fill className="object-cover" />
+                                  </div>
+                                  <span className="text-[8px] font-bold text-center truncate w-full text-zinc-300">
+                                    {hero.name}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                            {filteredHeroes.length === 0 && (
+                              <div className="col-span-full py-4 text-center text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
+                                No matching heroes found in DB
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 3. Pitch / Message to Captain */}
+                        <div>
+                          <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">
+                            3. Pitch Note to Captain
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={applyForm.pitch}
+                            onChange={(e) => setApplyForm((prev) => ({ ...prev, pitch: e.target.value }))}
+                            placeholder="Introduce your rank, win rate, or scrimmage availability..."
+                            className="w-full bg-[#12121a] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#e8a000]/60 transition-all resize-none"
+                          />
+                        </div>
+
+                        {/* Live Application Card Preview */}
+                        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Applicant HUD Card Preview</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className="px-2 py-0.5 rounded text-[9px] font-black uppercase"
+                              style={{
+                                backgroundColor: `${ROLE_META[applyForm.role]?.color || '#e8a000'}20`,
+                                color: ROLE_META[applyForm.role]?.color || '#e8a000',
+                              }}
+                            >
+                              {applyForm.role}
+                            </span>
+                            {applyForm.signatureHero && (
+                              <span className="text-[10px] text-zinc-300 font-bold">⚡ Signature: {applyForm.signatureHero}</span>
+                            )}
+                          </div>
+                          {applyForm.pitch && (
+                            <p className="text-[10px] text-zinc-400 italic">"{applyForm.pitch}"</p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Modal Footer (Fixed, non-shrinking) */}
+                  <div className="shrink-0 p-4 border-t border-white/10 bg-black/50 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedApplyTeam(null); setApplyError(null); setHeroSearch(''); }}
+                      className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-wider text-zinc-400 hover:text-white transition-all"
+                    >
+                      Cancel
+                    </button>
+                    {!myAppForTeam && (
+                      <button
+                        type="button"
+                        disabled={applySubmitting}
+                        onClick={() => applyToTeam(selectedApplyTeam.id, applyForm)}
+                        className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-[#e8a000] to-[#ffb800] hover:brightness-110 disabled:opacity-50 text-black text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-[#e8a000]/20"
+                      >
+                        {applySubmitting ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Send size={13} />
+                        )}
+                        <span>{applySubmitting ? 'Submitting...' : 'Submit Application'}</span>
+                      </button>
+                    )}
+                  </div>
+
+                </motion.div>
+              </div>
+            );
+          })()}
+        </AnimatePresence>
+
       </main>
     </>
   );
 }
+

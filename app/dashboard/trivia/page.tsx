@@ -1,5 +1,7 @@
 "use client";
 
+
+import { useRoleGuard } from "../lib/useRole";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -57,6 +59,7 @@ function toIso(value: string) {
 }
 
 export default function DashboardTriviaPage() {
+  const { isAllowed: __roleAllowed } = useRoleGuard(["CONTENT_ADMIN","EDITOR"]);
   const [trivia, setTrivia] = useState<TriviaFact[]>([]);
   const [pagination, setPagination] = useState({ total: 0, limit: 50, skip: 0 });
   const [loading, setLoading] = useState(true);

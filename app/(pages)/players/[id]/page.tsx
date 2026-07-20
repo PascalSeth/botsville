@@ -933,7 +933,7 @@ export default function PlayerProfilePage({ params }: { params: Promise<{ id: st
   });
 
   return (
-    <main className="min-h-screen bg-[#050508] text-white overflow-x-hidden relative selection:bg-cyan-500/30">
+    <main className="min-h-screen bg-[#050508] text-white overflow-x-hidden relative selection:bg-cyan-500/30 pt-24 lg:pt-28">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-20%] left-1/2 -translate-x-1/2 w-[1400px] h-[800px] rounded-full opacity-30" 
           style={{ background: `radial-gradient(ellipse, ${roleCfg.hexColor}20, transparent 70%)`, filter: 'blur(100px)' }} />

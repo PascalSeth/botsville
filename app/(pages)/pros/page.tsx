@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 import { 
   Volume2, Trophy, Crown, Sparkles, Clock, Loader2, CheckCircle2, 
-  ChevronRight, Swords, HelpCircle, User, Shield, AlertCircle
+  ChevronRight, Swords, HelpCircle, User, Shield, AlertCircle, Settings, AlertTriangle
 } from 'lucide-react';
 
 interface ProCandidate {
@@ -15,6 +15,7 @@ interface ProCandidate {
   role: 'COACH' | 'PLAYER';
   team: string;
   avatar: string; // gradient classes
+  photo?: string | null;
   title: string;
   bio: string;
   metaFocus: string;
@@ -22,6 +23,7 @@ interface ProCandidate {
   voteCount: number;
   votePercentage: number;
   hasUserVoted: boolean;
+  isCommunity?: boolean;
 }
 
 interface VotingStats {
@@ -35,7 +37,11 @@ export default function MeetTheProsPage() {
   const [stats, setStats] = useState<VotingStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [votingId, setVotingId] = useState<string | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<'ALL' | 'PROS' | 'COMMUNITY'>('ALL');
   const [isPending, startTransition] = useTransition();
+
+  const isAdmin = session?.user?.role === 'SUPER_ADMIN' || session?.user?.role === 'TOURNAMENT_ADMIN';
 
   // Countdown timer mockup (e.g. 5 days, 14 hours left)
   const [timeLeft, setTimeLeft] = useState({ days: 5, hours: 14, minutes: 32, seconds: 45 });
@@ -183,8 +189,44 @@ export default function MeetTheProsPage() {
 
   }, [sessionStatus, stats]);
 
+  // Admin: Reset Votes
+  const handleResetVotes = async (candidateId?: string) => {
+    if (!isAdmin) return;
+    const isGlobal = !candidateId;
+    if (isGlobal && !window.confirm("Are you sure you want to reset ALL interview votes and start a new round? This cannot be undone.")) return;
+    if (!isGlobal && !window.confirm(`Reset votes for ${candidateId}?`)) return;
+
+    setResettingId(candidateId || 'ALL');
+    try {
+      const res = await fetch('/api/admin/pros/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateId, resetAll: isGlobal })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Server error resetting votes');
+      }
+
+      const updatedData = await res.json();
+      setStats({
+        candidates: updatedData.candidates,
+        totalVotes: updatedData.totalVotes,
+        userVotedId: updatedData.userVotedId
+      });
+      
+      toast.success(isGlobal ? 'All votes reset for new round!' : 'Candidate votes reset!');
+    } catch (err: any) {
+      console.error('Reset failed:', err);
+      toast.error(err.message || 'Reset failed.');
+    } finally {
+      setResettingId(null);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#040509] text-zinc-100 py-12 relative overflow-hidden">
+    <div className="min-h-screen bg-[#040509] text-zinc-100 pt-24 lg:pt-28 pb-12 relative overflow-hidden">
       {/* Background Cyberpunk Accents */}
       <div className="absolute inset-0 pointer-events-none select-none overflow-hidden z-0">
         <div className="absolute top-[10%] left-[-15%] w-[600px] h-[600px] rounded-full bg-purple-500/[0.02] blur-[160px]" />
@@ -287,159 +329,237 @@ export default function MeetTheProsPage() {
           </div>
         )}
 
-        {/* PRO CANDIDATES CARD GRID */}
         {!loading && stats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
-            {stats.candidates.map((candidate, idx) => {
-              const hasUserVotedThis = stats.userVotedId === candidate.id;
-              const isUserVotedOther = stats.userVotedId !== null && !hasUserVotedThis;
-              
-              return (
-                <div 
-                  key={candidate.id}
-                  className={`group relative flex flex-col bg-[#07080f]/90 border rounded-2xl overflow-hidden transition-all duration-300 ${
-                    hasUserVotedThis 
-                      ? 'border-cyan-500/50 shadow-[0_0_30px_rgba(6,182,212,0.06)] bg-[#070914]' 
-                      : 'border-white/[0.04] hover:border-purple-500/25 hover:bg-[#090812]'
+          <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            {/* Category Tabs */}
+            <div className="flex items-center gap-2 bg-[#080911] border border-white/5 p-1 rounded-lg">
+              {['ALL', 'PROS', 'COMMUNITY'].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat as any)}
+                  className={`px-4 py-1.5 rounded-md text-[10px] font-mono font-bold tracking-widest uppercase transition-all duration-300 ${
+                    activeCategory === cat 
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
+                      : 'text-zinc-500 hover:text-white hover:bg-white/5 border border-transparent'
                   }`}
                 >
-                  {/* Glowing dynamic background backlight based on candidate's avatar theme */}
-                  <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${candidate.avatar} opacity-[0.03] blur-3xl pointer-events-none transition-all duration-300 group-hover:opacity-[0.06]`} />
-                  
-                  {/* Decorative diagonal line for sci-fi look */}
-                  <div className="absolute top-0 right-0 w-12 h-[1px] bg-white/10 rotate-45 translate-x-4 translate-y-2 pointer-events-none" />
+                  {cat}
+                </button>
+              ))}
+            </div>
 
-                  {/* Header info bar */}
-                  <div className="px-5 pt-5 pb-3 flex items-start justify-between gap-3 border-b border-white/[0.03]">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 rounded font-mono text-[7px] font-bold tracking-widest uppercase border ${
-                          candidate.role === 'COACH' 
-                            ? 'bg-purple-950/20 border-purple-500/20 text-purple-400' 
-                            : 'bg-emerald-950/20 border-emerald-500/20 text-emerald-400'
-                        }`}>
-                          {candidate.role}
-                        </span>
-                        <span className="text-[10px] text-zinc-500 font-mono tracking-wide">
-                          {candidate.team}
-                        </span>
-                      </div>
-                      
-                      <h3 className="text-white font-black text-lg tracking-wide uppercase leading-tight group-hover:text-purple-400 transition-colors">
-                        {candidate.name}
-                      </h3>
-                      
-                      <p className="text-zinc-500 text-[10px] tracking-wide mt-0.5 truncate uppercase">
-                        {candidate.title}
-                      </p>
-                    </div>
+            {/* Admin Controls */}
+            {isAdmin && (
+              <button
+                onClick={() => handleResetVotes()}
+                disabled={resettingId === 'ALL'}
+                className="px-4 py-2 bg-red-950/40 border border-red-500/30 hover:bg-red-900/40 hover:border-red-500/60 text-red-400 rounded-lg text-[10px] font-mono font-bold tracking-widest uppercase transition-all flex items-center gap-2"
+              >
+                {resettingId === 'ALL' ? <Loader2 size={12} className="animate-spin" /> : <AlertTriangle size={12} />}
+                Reset All Round Votes
+              </button>
+            )}
+          </div>
+        )}
 
-                    {/* Rank indicator badge */}
-                    <div className="w-6 h-6 shrink-0 rounded bg-zinc-950 border border-white/5 flex items-center justify-center font-mono text-[10px] font-black text-zinc-500">
-                      #{idx + 1}
-                    </div>
-                  </div>
-
-                  {/* Body description & tags */}
-                  <div className="p-5 flex-1 flex flex-col gap-4">
-                    {/* Bio */}
-                    <p className="text-zinc-400 text-xs leading-relaxed">
-                      {candidate.bio}
-                    </p>
-
-                    {/* Key achievements list */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {candidate.achievements.map((ach, aIdx) => (
-                        <span 
-                          key={aIdx} 
-                          className="px-2 py-0.5 bg-zinc-950 border border-white/[0.04] text-zinc-500 rounded font-mono text-[8px] uppercase tracking-wide flex items-center gap-1"
-                        >
-                          <Sparkles size={8} className="text-[#e8a000] shrink-0" />
-                          {ach}
-                        </span>
-                      ))}
-                    </div>
-
-                    {/* Focus metric banner */}
-                    <div className="bg-zinc-950/80 border border-white/[0.03] p-2.5 rounded-lg font-mono mt-auto">
-                      <span className="block text-[7px] text-zinc-600 uppercase tracking-widest">Interview Focus Meta</span>
-                      <span className="block text-[9px] text-zinc-300 mt-0.5 truncate uppercase">
-                        {candidate.metaFocus}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Standings Percent Bar & Buttons */}
-                  <div className="p-5 pt-0 border-t border-white/[0.03] mt-auto">
-                    {/* Live Meter Progress */}
-                    <div className="mb-4 pt-4">
-                      <div className="flex justify-between items-center text-[10px] font-mono text-zinc-500 mb-1.5">
-                        <span className="uppercase tracking-widest flex items-center gap-1.5">
-                          <Swords size={10} className="text-purple-400" />
-                          Current Standings
-                        </span>
-                        <span className="font-bold text-white tabular-nums">
-                          {candidate.votePercentage}% <span className="text-zinc-600 font-normal">({candidate.voteCount.toLocaleString()} votes)</span>
-                        </span>
-                      </div>
-                      
-                      {/* Custom themed progress bar */}
-                      <div className="w-full h-2 bg-zinc-950 rounded overflow-hidden relative border border-white/5">
-                        <motion.div 
-                          className={`h-full bg-gradient-to-r rounded ${
-                            hasUserVotedThis
-                              ? 'from-cyan-500 to-blue-500 shadow-[0_0_10px_rgba(6,182,212,0.5)]'
-                              : 'from-purple-600 to-indigo-500'
-                          }`}
-                          initial={{ width: 0 }}
-                          animate={{ width: `${candidate.votePercentage}%` }}
-                          transition={{ duration: 0.6, ease: 'easeOut' }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Button trigger */}
-                    {sessionStatus === 'unauthenticated' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleVote(candidate.id)}
-                        className="w-full py-2.5 bg-zinc-900 border border-white/10 hover:border-purple-500/40 text-zinc-400 hover:text-white rounded-lg font-mono text-[9px] font-black tracking-widest uppercase hover:bg-purple-950/10 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5"
+        {/* PRO CANDIDATES CARD GRID */}
+        {!loading && stats && (
+          <div className="space-y-12">
+            {Object.entries(
+              stats.candidates
+                .filter(c => {
+                  if (activeCategory === 'COMMUNITY') return c.isCommunity;
+                  if (activeCategory === 'PROS') return !c.isCommunity;
+                  return true;
+                })
+                .reduce((acc, candidate) => {
+                  const team = candidate.team || 'Free Agents';
+                  if (!acc[team]) acc[team] = [];
+                  acc[team].push(candidate);
+                  return acc;
+                }, {} as Record<string, typeof stats.candidates>)
+            ).map(([teamName, teamCandidates]) => (
+              <div key={teamName}>
+                <h2 className="text-xl font-black uppercase tracking-widest text-white mb-6 border-b border-white/10 pb-3 flex items-center gap-3">
+                  <Shield size={20} className="text-purple-400" />
+                  {teamName}
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
+                  {teamCandidates.map((candidate, idx) => {
+                    const hasUserVotedThis = stats.userVotedId === candidate.id;
+                    const isUserVotedOther = stats.userVotedId !== null && !hasUserVotedThis;
+                    
+                    return (
+                      <div 
+                        key={candidate.id}
+                        className={`group relative flex flex-col bg-[#07080f]/90 border rounded-2xl overflow-hidden transition-all duration-300 ${
+                          hasUserVotedThis 
+                            ? 'border-cyan-500/50 shadow-[0_0_30px_rgba(6,182,212,0.06)] bg-[#070914]' 
+                            : 'border-white/[0.04] hover:border-purple-500/25 hover:bg-[#090812]'
+                        }`}
                       >
-                        Login to Vote
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleVote(candidate.id)}
-                        disabled={votingId !== null}
-                        className={`w-full py-2.5 rounded-lg font-mono text-[9px] font-black tracking-widest uppercase transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 ${
-                          hasUserVotedThis
-                            ? 'bg-cyan-950/20 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10 shadow-[0_0_15px_rgba(6,182,212,0.1)]'
-                            : 'bg-zinc-950/60 border border-white/5 text-zinc-400 hover:border-purple-500/40 hover:text-white hover:bg-purple-950/15'
-                        } disabled:opacity-40 disabled:cursor-not-allowed`}
-                      >
-                        {votingId === candidate.id ? (
-                          <>
-                            <Loader2 size={11} className="animate-spin text-purple-400" />
-                            Transmitting...
-                          </>
-                        ) : hasUserVotedThis ? (
-                          <>
-                            <CheckCircle2 size={11} className="text-cyan-400" />
-                            Voted
-                          </>
-                        ) : (
-                          <>
-                            <Volume2 size={11} />
-                            Cast Vote
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
+                        {/* Glowing dynamic background backlight based on candidate's avatar theme */}
+                        <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${candidate.avatar} opacity-[0.03] blur-3xl pointer-events-none transition-all duration-300 group-hover:opacity-[0.06]`} />
+                        
+                        {/* Decorative diagonal line for sci-fi look */}
+                        <div className="absolute top-0 right-0 w-12 h-[1px] bg-white/10 rotate-45 translate-x-4 translate-y-2 pointer-events-none" />
+
+                        {/* Header info bar */}
+                        <div className="p-5 pb-3 flex items-start gap-4 border-b border-white/[0.03]">
+                          {/* Player Image / Avatar */}
+                          {candidate.photo ? (
+                            <div className="w-14 h-14 rounded-lg bg-zinc-900 border border-white/10 overflow-hidden shrink-0 relative">
+                              <img src={candidate.photo} alt={candidate.name} className="w-full h-full object-cover" />
+                            </div>
+                          ) : (
+                            <div className={`w-14 h-14 rounded-lg bg-gradient-to-br ${candidate.avatar} border border-white/10 flex items-center justify-center shrink-0`}>
+                              <User size={24} className="text-white/50" />
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded font-mono text-[7px] font-bold tracking-widest uppercase border ${
+                                  candidate.role === 'COACH' 
+                                    ? 'bg-purple-950/20 border-purple-500/20 text-purple-400' 
+                                    : 'bg-emerald-950/20 border-emerald-500/20 text-emerald-400'
+                                }`}>
+                                  {candidate.role}
+                                </span>
+                              </div>
+                              {/* Rank indicator badge */}
+                              <div className="w-6 h-6 shrink-0 rounded bg-zinc-950 border border-white/5 flex items-center justify-center font-mono text-[10px] font-black text-zinc-500">
+                                #{idx + 1}
+                              </div>
+                            </div>
+                            
+                            <h3 className="text-white font-black text-lg tracking-wide uppercase leading-tight group-hover:text-purple-400 transition-colors">
+                              {candidate.name}
+                            </h3>
+                            
+                            <p className="text-zinc-500 text-[10px] tracking-wide mt-0.5 truncate uppercase">
+                              {candidate.title}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Body description & tags */}
+                        <div className="p-5 flex-1 flex flex-col gap-4">
+                          {/* Bio */}
+                          <p className="text-zinc-400 text-xs leading-relaxed">
+                            {candidate.bio}
+                          </p>
+
+                          {/* Key achievements list */}
+                          <div className="flex flex-wrap gap-1.5">
+                            {candidate.achievements.map((ach, aIdx) => (
+                              <span 
+                                key={aIdx} 
+                                className="px-2 py-0.5 bg-zinc-950 border border-white/[0.04] text-zinc-500 rounded font-mono text-[8px] uppercase tracking-wide flex items-center gap-1"
+                              >
+                                <Sparkles size={8} className="text-[#e8a000] shrink-0" />
+                                {ach}
+                              </span>
+                            ))}
+                          </div>
+
+                          {/* Focus metric banner */}
+                          <div className="bg-zinc-950/80 border border-white/[0.03] p-2.5 rounded-lg font-mono mt-auto">
+                            <span className="block text-[7px] text-zinc-600 uppercase tracking-widest">Interview Focus Meta</span>
+                            <span className="block text-[9px] text-zinc-300 mt-0.5 truncate uppercase">
+                              {candidate.metaFocus}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Standings Percent Bar & Buttons */}
+                        <div className="p-5 pt-0 border-t border-white/[0.03] mt-auto">
+                          {/* Live Meter Progress */}
+                          <div className="mb-4 pt-4">
+                            <div className="flex justify-between items-center text-[10px] font-mono text-zinc-500 mb-1.5">
+                              <span className="uppercase tracking-widest flex items-center gap-1.5">
+                                <Swords size={10} className="text-purple-400" />
+                                Current Standings
+                              </span>
+                              <span className="font-bold text-white tabular-nums">
+                                {candidate.votePercentage}% <span className="text-zinc-600 font-normal">({candidate.voteCount.toLocaleString()} votes)</span>
+                              </span>
+                            </div>
+                            
+                            {/* Custom themed progress bar */}
+                            <div className="w-full h-2 bg-zinc-950 rounded overflow-hidden relative border border-white/5">
+                              <motion.div 
+                                className={`h-full bg-gradient-to-r rounded ${
+                                  hasUserVotedThis
+                                    ? 'from-cyan-500 to-blue-500 shadow-[0_0_10px_rgba(6,182,212,0.5)]'
+                                    : 'from-purple-600 to-indigo-500'
+                                }`}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${candidate.votePercentage}%` }}
+                                transition={{ duration: 0.6, ease: 'easeOut' }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Button trigger */}
+                          {sessionStatus === 'unauthenticated' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleVote(candidate.id)}
+                              className="w-full py-2.5 bg-zinc-900 border border-white/10 hover:border-purple-500/40 text-zinc-400 hover:text-white rounded-lg font-mono text-[9px] font-black tracking-widest uppercase hover:bg-purple-950/10 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              Login to Vote
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleVote(candidate.id)}
+                              disabled={votingId !== null}
+                              className={`w-full py-2.5 rounded-lg font-mono text-[9px] font-black tracking-widest uppercase transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 ${
+                                hasUserVotedThis
+                                  ? 'bg-cyan-950/20 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10 shadow-[0_0_15px_rgba(6,182,212,0.1)]'
+                                  : 'bg-zinc-950/60 border border-white/5 text-zinc-400 hover:border-purple-500/40 hover:text-white hover:bg-purple-950/15'
+                              } disabled:opacity-40 disabled:cursor-not-allowed`}
+                            >
+                              {votingId === candidate.id ? (
+                                <>
+                                  <Loader2 size={11} className="animate-spin text-purple-400" />
+                                  Transmitting...
+                                </>
+                              ) : hasUserVotedThis ? (
+                                <>
+                                  <CheckCircle2 size={11} className="text-cyan-400" />
+                                  Voted
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 size={11} />
+                                  Cast Vote
+                                </>
+                              )}
+                            </button>
+                          )}
+
+                          {/* Admin Individual Reset */}
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleResetVotes(candidate.id)}
+                              disabled={resettingId === candidate.id}
+                              className="w-full mt-2 py-2 border border-red-500/20 text-red-500/60 hover:text-red-400 hover:bg-red-950/20 hover:border-red-500/50 rounded-lg font-mono text-[8px] font-black tracking-widest uppercase transition-all duration-200 flex items-center justify-center gap-1.5"
+                            >
+                              {resettingId === candidate.id ? <Loader2 size={10} className="animate-spin" /> : <Settings size={10} />}
+                              Interview Done (Reset)
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
 

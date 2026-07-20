@@ -10,7 +10,7 @@ import { subscribeToCommunityPosts, unsubscribeFromChannel } from '@/lib/socket-
 import {
   Flame, ThumbsUp, ThumbsDown, Laugh, Eye, Zap, Heart,
   MessageSquare, ChevronRight, ChevronDown, Send, X, Check,
-  Gamepad2, Clapperboard, Swords, MessageCircle,
+  Gamepad2, Clapperboard, Swords, MessageCircle, Share2, Copy,
   Trophy, Plus, TrendingUp, Clock, Sparkles,
   Film, Camera, Brain, Type, Pencil, Trash, MoreHorizontal,
 } from 'lucide-react';
@@ -87,7 +87,20 @@ function isImageUrl(url: string) { return /\.(png|jpe?g|webp|gif|avif)$/i.test(u
 /* ================================================================
    Gamified Animated Background
    ================================================================ */
-const AnimatedBackground = () => (
+const AnimatedBackground = () => {
+  const [particles, setParticles] = useState<{ x: number; y: number; duration: number }[]>([]);
+
+  useEffect(() => {
+    setParticles(
+      Array.from({ length: 20 }, () => ({
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        duration: Math.random() * 10 + 10,
+      }))
+    );
+  }, []);
+
+  return (
   <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden bg-[#030308]">
     {/* Moving magical orbs */}
     <motion.div
@@ -115,23 +128,21 @@ const AnimatedBackground = () => (
       }}
     />
 
-    {/* Floating Particles */}
+    {/* Floating Particles — client-only to avoid hydration mismatch */}
     <div className="absolute inset-0 h-full w-full">
-      {Array.from({ length: 20 }).map((_, i) => (
+      {particles.map((p, i) => (
         <motion.div
           key={i}
           className="absolute w-1 h-1 bg-white rounded-full opacity-20 shadow-[0_0_8px_rgba(255,255,255,0.8)]"
-          initial={{
-            x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000),
-            y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000)
-          }}
+          initial={{ x: p.x, y: p.y }}
           animate={{ y: [null, -1000] }}
-          transition={{ duration: Math.random() * 10 + 10, repeat: Infinity, ease: 'linear' }}
+          transition={{ duration: p.duration, repeat: Infinity, ease: 'linear' }}
         />
       ))}
     </div>
   </div>
 );
+};
 
 /* ================================================================
    Components
@@ -161,6 +172,8 @@ const PostCard = ({ post, onReact, reactionLoadingId, currentUserId, editingPost
   const [submitting, setSubmitting] = useState(false);
   const [showAllReactions, setShowAllReactions] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showWaShare, setShowWaShare] = useState(false);
+  const [waCopied, setWaCopied] = useState(false);
   const badge = TYPE_BADGE[post.type];
 
   const loadComments = useCallback(async () => {
@@ -349,10 +362,20 @@ const PostCard = ({ post, onReact, reactionLoadingId, currentUserId, editingPost
         </div>
 
         {/* Comment Toggle */}
-        <button onClick={toggleComments} className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 transition-all ml-auto group/btn">
+        <button onClick={toggleComments} className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 transition-all group/btn">
           <MessageSquare size={14} className="text-zinc-400 group-hover/btn:text-cyan-400 transition-colors" />
           <span className="text-xs font-bold text-zinc-300">{post._count.comments}</span>
           <ChevronDown size={14} className={`text-zinc-500 transition-transform duration-300 ${showComments ? 'rotate-180' : ''}`} />
+        </button>
+
+        {/* WhatsApp Share Button */}
+        <button
+          onClick={() => setShowWaShare(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#25D366]/10 hover:bg-[#25D366]/20 border border-[#25D366]/20 hover:border-[#25D366]/40 transition-all group/wa"
+          title="Share to WhatsApp"
+        >
+          <MessageCircle size={14} className="text-[#25D366]" fill="currentColor" />
+          <span className="text-[10px] font-black uppercase text-[#25D366]">Share</span>
         </button>
       </div>
 
@@ -399,12 +422,127 @@ const PostCard = ({ post, onReact, reactionLoadingId, currentUserId, editingPost
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── WhatsApp Share Modal ─────────────────────────── */}
+      {showWaShare && (() => {
+        const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://botsville.com';
+        const postUrl = `${baseUrl}/community`;
+        const previewText = post.title || post.content.slice(0, 120);
+        const typeLabel = TYPE_BADGE[post.type].label;
+        const fullMsg = `🔥 *[${typeLabel}] ${previewText}${post.content.length > 120 ? '...' : ''}*\n\nPosted by ${post.author.ign || 'a Community Member'} on BotsVille Ghana MLBB Community 🇬🇭\n\n👇 Join the conversation:\n${postUrl}`;
+
+        const handleWaCopy = async () => {
+          try {
+            await navigator.clipboard.writeText(fullMsg);
+            setWaCopied(true);
+            toast.success('Caption copied — paste it in WhatsApp!');
+            setTimeout(() => setWaCopied(false), 2500);
+          } catch { toast.error('Failed to copy'); }
+        };
+
+        const handleWaOpen = () => {
+          window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(fullMsg)}`, '_blank', 'noopener,noreferrer');
+        };
+
+        const handleNativeShare = async () => {
+          if (post.mediaUrl && /\.(png|jpe?g|webp|gif)$/i.test(post.mediaUrl)) {
+            try {
+              const res = await fetch(post.mediaUrl);
+              const blob = await res.blob();
+              const file = new File([blob], `botsville-post.jpg`, { type: blob.type || 'image/jpeg' });
+              if (navigator.canShare?.({ files: [file] })) {
+                await navigator.share({ files: [file], title: previewText, text: fullMsg });
+                return;
+              }
+            } catch { /* fall through */ }
+          }
+          handleWaOpen();
+        };
+
+        return (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={() => setShowWaShare(false)}>
+            <div className="relative w-full max-w-md bg-[#0e1017] border border-white/10 rounded-2xl shadow-2xl overflow-hidden text-white flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-gradient-to-r from-[#128C7E]/20 to-transparent shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full bg-[#25D366] flex items-center justify-center shadow-md shadow-[#25D366]/30">
+                    <MessageCircle size={17} fill="black" className="text-black" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider">Share to WhatsApp</h3>
+                    <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Community post share</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowWaShare(false)} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 overflow-y-auto flex-1 space-y-4">
+
+                {/* WhatsApp bubble preview */}
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Preview</p>
+                  <div className="p-4 rounded-xl bg-[#0b141a] border border-white/10" style={{ backgroundImage: 'radial-gradient(#ffffff08 1px, transparent 1px)', backgroundSize: '14px 14px' }}>
+                    <div className="max-w-[90%] ml-auto bg-[#005c4b] rounded-2xl rounded-tr-sm p-3 shadow-lg space-y-2">
+                      {post.mediaUrl && /\.(png|jpe?g|webp|gif)$/i.test(post.mediaUrl) && (
+                        <div className="rounded-xl overflow-hidden">
+                          <img src={post.mediaUrl} alt="media" className="w-full h-28 object-cover" />
+                        </div>
+                      )}
+                      <p className="text-xs text-white/90 whitespace-pre-wrap leading-relaxed">{fullMsg.slice(0, 200)}{fullMsg.length > 200 ? '...' : ''}</p>
+                      <div className="flex items-center justify-end gap-1 text-[9px] text-emerald-300/60 font-mono">
+                        <span>Just now</span><span>✓✓</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Post type badge */}
+                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${badge.bg} ${badge.border} ${badge.text} text-[10px] font-black uppercase`}>
+                  {badge.icon} {badge.label} · by {post.author.ign || 'Unknown'}
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-4 border-t border-white/10 bg-black/40 space-y-2 shrink-0">
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleNativeShare}
+                    className="flex-1 flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-[#25D366] hover:opacity-90 text-black text-xs font-black uppercase tracking-wider transition-all shadow-md"
+                  >
+                    <MessageCircle size={15} fill="black" />
+                    <span>Share Image + Caption</span>
+                  </button>
+                  <button
+                    onClick={handleWaOpen}
+                    className="flex-1 flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-black text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-[#25D366]/20"
+                  >
+                    <Share2 size={15} />
+                    <span>Open WhatsApp</span>
+                  </button>
+                </div>
+                <button
+                  onClick={handleWaCopy}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-300 font-bold transition-all text-xs"
+                >
+                  {waCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  <span>{waCopied ? 'Copied!' : 'Copy Caption & Link'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </motion.article>
   );
 };
 
 const CommentItem = ({ comment, depth = 0 }: { comment: Comment; depth?: number }) => (
   <div className={`flex gap-3 ${depth > 0 ? 'ml-8 mt-3 relative before:absolute before:-left-5 before:top-4 before:w-4 before:h-px before:bg-white/10' : ''}`}>
+
     <Avatar user={comment.user} size={depth === 0 ? 32 : 24} />
     <div className="flex-1">
       <div className="flex items-baseline gap-2 bg-white/5 rounded-xl rounded-tl-sm px-3 py-2 border border-white/5">
@@ -794,7 +932,7 @@ export default function CommunityPage() {
   };
 
   return (
-    <main className="relative min-h-screen bg-[#030308] text-white selection:bg-[#e8a000]/30 selection:text-white">
+    <main className="relative min-h-screen bg-[#030308] text-white selection:bg-[#e8a000]/30 selection:text-white pt-24 lg:pt-28">
       <AnimatedBackground />
 
       <div className="relative z-10 max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">

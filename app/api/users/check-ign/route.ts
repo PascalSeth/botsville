@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 // GET /api/users/check-ign?ign=SomeIGN&teamCode=ABC123
 // Public — returns a match only when the IGN exists as a placeholder on the
 // specific team identified by teamCode.  Both params are required.
+export const revalidate = 60; // Cache for 60 seconds
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const ign = searchParams.get("ign")?.trim();
@@ -14,37 +16,37 @@ export async function GET(request: NextRequest) {
     return apiSuccess({ status: "available" });
   }
 
-  // 1. Check if an actual User account exists with this IGN
-  const user = await prisma.user.findFirst({
-    where: { ign: { equals: ign, mode: "insensitive" } },
-    select: { id: true },
-  });
+  // Check both User existence and Player rosters in parallel
+  const [user, player] = await Promise.all([
+    prisma.user.findFirst({
+      where: { ign: { equals: ign, mode: "insensitive" } },
+      select: { id: true },
+    }),
+    prisma.player.findFirst({
+      where: {
+        ign: { equals: ign, mode: "insensitive" },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        userId: true,
+        role: true,
+        team: {
+          select: {
+            id: true,
+            name: true,
+            tag: true,
+            color: true,
+            teamCode: true,
+          },
+        },
+      },
+    })
+  ]);
 
   if (user) {
     return apiSuccess({ status: "taken" });
   }
-
-  // 2. Check the Player rosters (historical and current)
-  const player = await prisma.player.findFirst({
-    where: {
-      ign: { equals: ign, mode: "insensitive" },
-      deletedAt: null,
-    },
-    select: {
-      id: true,
-      userId: true,
-      role: true,
-      team: {
-        select: {
-          id: true,
-          name: true,
-          tag: true,
-          color: true,
-          teamCode: true,
-        },
-      },
-    },
-  });
 
   if (!player) {
     return apiSuccess({ status: "available" });

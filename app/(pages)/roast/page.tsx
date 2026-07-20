@@ -38,7 +38,7 @@ export default function RoastPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#08080d] text-white p-4 sm:p-8">
+    <main className="min-h-screen bg-[#08080d] text-white pt-24 lg:pt-28 p-4 sm:p-8">
       <div className="max-w-3xl mx-auto">
         <h1 className="text-3xl font-black tracking-widest uppercase">Roast Section</h1>
         <p className="text-[#777] mt-2">Post your stats. Let Ghana judge. Keep it playful — reports are monitored.</p>

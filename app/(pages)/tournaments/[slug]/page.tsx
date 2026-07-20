@@ -780,7 +780,7 @@ export default function TournamentDetailPage() {
   const regStatus = getRegistrationStatus(tournament);
 
   return (
-    <div className="min-h-screen bg-[#05050a] selection:bg-[#e8a000]/30 pb-20">
+    <div className="min-h-screen bg-[#05050a] selection:bg-[#e8a000]/30 pt-24 lg:pt-28 pb-20">
       <AnimatePresence>
         {showRegisterModal && <RegisterModal t={tournament} onClose={() => setShowRegisterModal(false)} />}
       </AnimatePresence>

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireAdmin, apiError, apiSuccess } from "@/lib/api-utils";
-import { MatchStatus } from "@/app/generated/prisma/enums";
+import { AdminRoleType } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { recalculateTeamSeasonStandings } from "@/lib/standings-utils";
 
@@ -18,7 +18,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin();
+    await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const { id: seasonId } = await params;
 
     // Fetch all teams registered for this season

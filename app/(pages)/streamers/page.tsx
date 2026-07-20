@@ -407,7 +407,7 @@ export default function StreamersPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#08080d] text-white p-4 sm:p-8">
+    <main className="min-h-screen bg-[#08080d] text-white pt-24 lg:pt-28 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         <div>
           <h1 className="text-3xl font-black tracking-widest uppercase">Ghana Streamers</h1>

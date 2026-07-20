@@ -52,7 +52,7 @@ export default function HeroMainPage({ params }: { params: Promise<{ slug: strin
   }
 
   return (
-    <main className="min-h-screen bg-[#08080d] text-white p-4 sm:p-8">
+    <main className="min-h-screen bg-[#08080d] text-white pt-24 lg:pt-28 p-4 sm:p-8">
       <div className="max-w-5xl mx-auto">
         <h1 className="text-3xl font-black tracking-widest uppercase">{slug || 'Hero'} Main Page</h1>
         <p className="text-[#777] mt-2">Community builds, top Ghana players, local stats, and comments.</p>

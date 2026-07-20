@@ -1,13 +1,21 @@
 'use client';
 
-/* eslint-disable @next/next/no-img-element */
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2, Pencil, Check, Camera, Crown, ArrowUpDown, Send, ArrowUpCircle, ArrowDownCircle, ArrowRightLeft } from 'lucide-react';
+import {
+  Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2,
+  Crown, ArrowUpDown, Send, Trophy, Swords, UserCheck, Settings,
+  Sparkles, Camera, MapPin, Tag, Check, Copy
+} from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { uploadImage, STORAGE_BUCKETS } from '@/lib/supabase';
+import Image from 'next/image';
+import { toast } from 'sonner';
+
+import TeamRosterView from './components/TeamRosterView';
+import TeamRecruitmentView from './components/TeamRecruitmentView';
+import TeamChallengeArenaView from './components/TeamChallengeArenaView';
+import TeamSettingsView from './components/TeamSettingsView';
 
 interface Player {
   id: string;
@@ -35,28 +43,6 @@ interface Team {
   captainId: string;
   isCaptain?: boolean;
   players: Player[];
-}
-
-interface UserProfile {
-  id: string;
-  ign: string;
-  mainRole: string;
-  favoriteHero: string | null;
-  favoriteSkin: string | null;
-  rankBadge: string | null;
-  region: string | null;
-  headline: string | null;
-  player?: {
-    role: string;
-    winRate: number;
-  } | null;
-}
-
-interface HeroCatalogOption {
-  id: string;
-  key: string;
-  name: string;
-  imageUrl: string;
 }
 
 interface MatchChallenge {
@@ -91,2396 +77,493 @@ interface TeamInvite {
   team?: { id?: string; name?: string } | null;
 }
 
-interface WeeklyScrimPing {
-  weekStart: string;
-  scrimDate: string;
-  message?: string | null;
-  updatedAt: string;
-}
-
-interface WeeklyScrimAvailability {
-  id: string;
-  teamId: string;
-  weekStart: string;
-  isAvailable: boolean;
-  note?: string | null;
-  updatedAt: string;
-}
-
-const MAIN_ROLES = ['EXP', 'JUNGLE', 'MID', 'GOLD', 'ROAM'] as const;
-const PROFILE_REGIONS = ['Accra', 'Kumasi', 'Takoradi', 'Tema', 'Cape Coast', 'Tamale'] as const;
-const RANK_BADGES = [
-  'WARRIOR',
-  'ELITE',
-  'MASTER',
-  'GRANDMASTER',
-  'EPIC',
-  'LEGEND',
-  'MYTHIC',
-  'MYTHICAL_HONOR',
-  'MYTHICAL_GLORY',
-  'MYTHICAL_IMMORTAL',
-] as const;
-
 export default function MyTeamPage() {
   const { data: session, status } = useSession();
   const [team, setTeam] = useState<Team | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [profileForm, setProfileForm] = useState({
-    mainRole: 'EXP',
-    favoriteHero: '',
-    favoriteSkin: '',
-    rankBadge: '',
-    region: '',
-    headline: '',
-  });
-  const [savingProfile, setSavingProfile] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
-  const [heroOptions, setHeroOptions] = useState<HeroCatalogOption[]>([]);
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showManageModal, setShowManageModal] = useState(false);
-  const [manageActiveTab, setManageActiveTab] = useState<'roster' | 'add'>('roster');
+  const [activeTab, setActiveTab] = useState<'roster' | 'recruitment' | 'challenges' | 'settings'>('roster');
+
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [generatingCode, setGeneratingCode] = useState(false);
-  const [removingPlayerId, setRemovingPlayerId] = useState<string | null>(null);
-  const [savingTeamSettings, setSavingTeamSettings] = useState(false);
-  const [teamSettingsError, setTeamSettingsError] = useState<string | null>(null);
-  const [teamSettingsSuccess, setTeamSettingsSuccess] = useState<string | null>(null);
   const [challenges, setChallenges] = useState<MatchChallenge[]>([]);
   const [loadingChallenges, setLoadingChallenges] = useState(false);
-  const [challengeActionLoading, setChallengeActionLoading] = useState<string | null>(null);
-  const [challengeMessage, setChallengeMessage] = useState('');
-  const [challengeTeamId, setChallengeTeamId] = useState('');
-  const [challengeWeekStart, setChallengeWeekStart] = useState('');
   const [teamOptions, setTeamOptions] = useState<TeamOption[]>([]);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
-  const [inviteStatuses, setInviteStatuses] = useState<Record<string, 'pending' | 'loading-accept' | 'loading-decline' | 'accepted' | 'declined'>>({});
   const [loadingInvites, setLoadingInvites] = useState(false);
-  const [inviteActionError, setInviteActionError] = useState<string | null>(null);
-  const [challengeError, setChallengeError] = useState<string | null>(null);
-  const [challengeSuccess, setChallengeSuccess] = useState<string | null>(null);
-  const [weeklyPing, setWeeklyPing] = useState<WeeklyScrimPing | null>(null);
-  const [weeklyAvailability, setWeeklyAvailability] = useState<WeeklyScrimAvailability | null>(null);
-  const [availabilityNote, setAvailabilityNote] = useState('');
-  const [availabilityLoading, setAvailabilityLoading] = useState(false);
-  const [availabilitySaving, setAvailabilitySaving] = useState(false);
-  const [addPlayerIGN, setAddPlayerIGN] = useState('');
-  const [addPlayerRole, setAddPlayerRole] = useState('EXP');
-  const [addPlayerIsSubstitute, setAddPlayerIsSubstitute] = useState(false);
-  const [addingPlayer, setAddingPlayer] = useState(false);
-  const [addPlayerError, setAddPlayerError] = useState<string | null>(null);
-  const [addPlayerSuccess, setAddPlayerSuccess] = useState<string | null>(null);
-  const [lookupPlayer, setLookupPlayer] = useState<{ loading: boolean; found: boolean; ign?: string; photo?: string | null; team?: { id: string; name: string } | null } | null>(null);
 
-  // Debounced effect to lookup player status when captain types IGN
-  useEffect(() => {
-    const trimmed = addPlayerIGN.trim();
-    if (trimmed.length < 2) {
-      setLookupPlayer(null);
-      return;
-    }
-
-    setLookupPlayer({ loading: true, found: false });
-
-    const timeout = setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/players/lookup?ign=${encodeURIComponent(trimmed)}`);
-        const data = await response.json();
-        if (response.ok && data?.found) {
-          setLookupPlayer({
-            loading: false,
-            found: true,
-            ign: data.ign,
-            photo: data.photo,
-            team: data.team,
-          });
+  // ── Fetch User's Team ──────────────────────────────────────
+  const fetchMyTeam = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/my-team');
+      if (res.ok) {
+        const d = await res.json();
+        const teamObj = d && (d.id ? d : d.team ? d.team : null);
+        if (teamObj && teamObj.id) {
+          const isCapt = teamObj.captainId === session?.user?.id || Boolean(teamObj.isCaptain);
+          setTeam({ ...teamObj, isCaptain: isCapt });
         } else {
-          setLookupPlayer({ loading: false, found: false });
+          setTeam(null);
         }
-      } catch (e) {
-        setLookupPlayer(null);
+      } else {
+        setTeam(null);
       }
-    }, 400); // 400ms debounce
-
-    return () => clearTimeout(timeout);
-  }, [addPlayerIGN]);
-
-  // ── Player edit state ─────────────────────────────────────
-  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<{ ign: string; role: string; photo: string | null; isSubstitute: boolean }>({ ign: '', role: 'EXP', photo: null, isSubstitute: false });
-  const [savingEditPlayer, setSavingEditPlayer] = useState(false);
-  const [editPlayerError, setEditPlayerError] = useState<string | null>(null);
-  const [editPhotoUploading, setEditPhotoUploading] = useState(false);
-
-  // ── Team name/tag edit state ──────────────────────────────
-  const [showEditTeamModal, setShowEditTeamModal] = useState(false);
-  const [editTeamName, setEditTeamName] = useState('');
-  const [editTeamTag, setEditTeamTag] = useState('');
-  const [savingTeamEdit, setSavingTeamEdit] = useState(false);
-  const [editTeamError, setEditTeamError] = useState<string | null>(null);
-
-  // ── Roster management state ───────────────────────────────
-  const [togglingSubPlayerId, setTogglingSubPlayerId] = useState<string | null>(null);
-  const [transferringCaptain, setTransferringCaptain] = useState(false);
-  const [transferPlayerId, setTransferPlayerId] = useState<string | null>(null);
-  const [transferTargetTeamId, setTransferTargetTeamId] = useState<string | null>(null);
-  const [transferLoading, setTransferLoading] = useState(false);
-  const [transferError, setTransferError] = useState<string | null>(null);
-  const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
-  const [reopenManageAfterTransfer, setReopenManageAfterTransfer] = useState(false);
-  const [manageError, setManageError] = useState<string | null>(null);
-  const [manageSuccess, setManageSuccess] = useState<string | null>(null);
-
-  // ── Leave squad state ─────────────────────────────────────
-  const [showLeaveModal, setShowLeaveModal] = useState(false);
-  const [leaveStep, setLeaveStep] = useState<'transfer' | 'confirm'>('confirm');
-  const [leaveNewCaptainId, setLeaveNewCaptainId] = useState('');
-  const [leavingSquad, setLeavingSquad] = useState(false);
-  const [leaveError, setLeaveError] = useState<string | null>(null);
-
-  // ── Branding edit state ───────────────────────────────────
-  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
-  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
-  const [brandingError, setBrandingError] = useState<string | null>(null);
-  const [brandingSuccess, setBrandingSuccess] = useState<string | null>(null);
-
-  const renderPlayerEditRow = (player: Player) => (
-    <div className="p-3 space-y-3">
-      {/* Photo */}
-      <div className="flex items-center gap-3">
-        <label className="relative cursor-pointer group shrink-0">
-          <div className="w-12 h-12 border border-white/10 overflow-hidden bg-[#0a0a10]">
-            {editPhotoUploading
-              ? <div className="w-full h-full flex items-center justify-center"><Loader2 size={14} className="animate-spin text-[#e8a000]" /></div>
-              : editForm.photo
-                ? <img src={editForm.photo} alt="" className="w-full h-full object-cover" />
-                : <div className="w-full h-full flex items-center justify-center"><User size={14} className="text-[#333]" /></div>
-            }
-          </div>
-          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-            <Camera size={12} className="text-[#e8a000]" />
-          </div>
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleEditPhotoChange(f);
-            }}
-          />
-        </label>
-        <p className="text-[10px] text-[#555] tracking-wide">Click avatar to change photo</p>
-      </div>
-
-      {/* IGN */}
-      <input
-        type="text"
-        placeholder="In-game name"
-        value={editForm.ign}
-        onChange={(e) => setEditForm(prev => ({ ...prev, ign: e.target.value }))}
-        className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50 placeholder:text-[#444]"
-      />
-
-      {/* Role */}
-      <select
-        value={editForm.role}
-        onChange={(e) => setEditForm(prev => ({ ...prev, role: e.target.value }))}
-        className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2 outline-none focus:border-[#e8a000]/50"
-      >
-        <option value="EXP">EXP Lane</option>
-        <option value="JUNGLE">Jungle</option>
-        <option value="MID">Mid Lane</option>
-        <option value="GOLD">Gold Lane</option>
-        <option value="ROAM">Roam</option>
-      </select>
-
-      {/* Starter/Sub Toggle */}
-      <div className="flex items-center justify-between p-2 bg-[#0a0a10] border border-white/10">
-        <span className="text-xs text-[#888]">Position</span>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => setEditForm(prev => ({ ...prev, isSubstitute: false }))}
-            className={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
-              !editForm.isSubstitute
-                ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
-                : 'border border-white/10 text-[#555] hover:text-white'
-            }`}
-          >
-            Starter
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditForm(prev => ({ ...prev, isSubstitute: true }))}
-            className={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
-              editForm.isSubstitute
-                ? 'bg-[#e8a000]/20 border border-[#e8a000]/40 text-[#e8a000]'
-                : 'border border-white/10 text-[#555] hover:text-white'
-            }`}
-          >
-            Sub
-          </button>
-        </div>
-      </div>
-
-      {editPlayerError && <p className="text-red-400 text-xs">{editPlayerError}</p>}
-
-      {/* Actions */}
-      <div className="flex gap-2">
-        <button
-          onClick={savePlayerEdit}
-          disabled={savingEditPlayer || !editForm.ign.trim() || editPhotoUploading}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-xs font-black tracking-widest uppercase hover:bg-[#e8a000]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {savingEditPlayer ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-          Save
-        </button>
-        <button
-          onClick={cancelEditPlayer}
-          disabled={savingEditPlayer}
-          className="px-4 py-2 border border-white/10 text-[#666] text-xs font-black tracking-widest uppercase hover:text-white transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
+    } catch {
+      toast.error('Failed to load team details');
+      setTeam(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (status === 'authenticated') {
       fetchMyTeam();
-      fetchProfile();
-      fetchHeroCatalog();
-    }
-  }, [status]);
-
-  
-
-  useEffect(() => {
-    setProfileForm((prev) => {
-      if (!prev.favoriteHero) return prev;
-      const exists = heroOptions.some((hero) => hero.key === prev.favoriteHero);
-      return exists ? prev : { ...prev, favoriteHero: '' };
-    });
-  }, [heroOptions]);
-
-  const fetchMyTeam = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/my-team');
-      const data = await response.json();
-      
-      if (response.ok && data) {
-        setTeam(data);
-      } else {
-        setTeam(null);
-      }
-    } catch (err) {
-      console.error('Error fetching team:', err);
-      setError('Failed to load team');
-    } finally {
+    } else if (status === 'unauthenticated') {
       setLoading(false);
     }
-  };
+  }, [status, fetchMyTeam]);
 
-  const fetchProfile = async () => {
-    try {
-      const response = await fetch('/api/users/profile');
-      const data = await response.json();
-
-      if (!response.ok) {
-        setProfileError(data?.error || 'Failed to load profile');
-        return;
-      }
-
-      setProfile(data);
-      setProfileForm({
-        mainRole: data.mainRole ?? 'EXP',
-        favoriteHero: data.favoriteHero ?? '',
-        favoriteSkin: data.favoriteSkin ?? '',
-        rankBadge: data.rankBadge ?? '',
-        region: data.region ?? '',
-        headline: data.headline ?? '',
-      });
-      setProfileError(null);
-    } catch (err) {
-      console.error('Error fetching profile:', err);
-      setProfileError('Failed to load profile');
-    }
-  };
-
-  const fetchHeroCatalog = async () => {
-    try {
-      const response = await fetch('/api/heroes/catalog');
-      const data = await response.json();
-      if (!response.ok) return;
-      setHeroOptions(Array.isArray(data?.heroes) ? data.heroes : []);
-    } catch (err) {
-      console.error('Error fetching heroes catalog:', err);
-    }
-  };
-
+  // ── Fetch Pending Applications/Invites ────────────────────
   const fetchInvites = useCallback(async () => {
-    if (!team) return;
+    if (!team?.id) return;
     try {
       setLoadingInvites(true);
-      // Fetch invites sent to the team (applications + invites)
-      const [teamRes, receivedRes] = await Promise.all([
-        fetch(`/api/teams/${team.id}/invites?status=PENDING`),
-        fetch(`/api/invites/received?status=PENDING`),
-      ]);
-
-      const teamData = teamRes.ok ? await teamRes.json() : null;
-      const receivedData = receivedRes.ok ? await receivedRes.json() : null;
-
-      const teamInvites: TeamInvite[] = teamData ? (Array.isArray(teamData) ? teamData : teamData) : [];
-      const receivedInvites: TeamInvite[] = receivedData ? (Array.isArray(receivedData) ? receivedData : receivedData) : [];
-
-      // Merge invites uniquely by id
-      const map = new Map<string, TeamInvite>();
-      for (const inv of [...teamInvites, ...receivedInvites]) {
-        if (inv && inv.id) map.set(inv.id, inv);
+      const res = await fetch(`/api/teams/${team.id}/invites`, { cache: 'no-store' });
+      const d = await res.json();
+      if (res.ok) {
+        setInvites(Array.isArray(d) ? d : Array.isArray(d?.invites) ? d.invites : []);
       }
-      const merged = Array.from(map.values());
-      setInvites(merged);
-      // initialize statuses for the current invites
-      const statuses: Record<string, 'pending' | 'loading-accept' | 'loading-decline' | 'accepted' | 'declined'> = {};
-      for (const inv of merged) statuses[inv.id] = 'pending';
-      setInviteStatuses(statuses as Record<string, 'pending' | 'loading-accept' | 'loading-decline' | 'accepted' | 'declined'>);
-    } catch (err) {
-      console.error('Error fetching invites:', err);
+    } catch {
+      // ignore
     } finally {
       setLoadingInvites(false);
+    }
+  }, [team?.id]);
+
+
+  // ── Fetch Challenges ──────────────────────────────────────
+  const fetchChallenges = useCallback(async () => {
+    if (!team) return;
+    try {
+      setLoadingChallenges(true);
+      const res = await fetch('/api/matches/challenges');
+      const d = await res.json();
+      if (res.ok) {
+        setChallenges(Array.isArray(d?.challenges) ? d.challenges : []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingChallenges(false);
+    }
+  }, [team]);
+
+  // ── Fetch Team Options for Challenge Select ───────────────
+  const fetchTeamOptions = useCallback(async () => {
+    if (!team) return;
+    try {
+      const res = await fetch('/api/teams?limit=100');
+      const d = await res.json();
+      if (res.ok) {
+        const filtered = (Array.isArray(d?.teams) ? d.teams : []).filter((t: TeamOption) => t.id !== team.id);
+        setTeamOptions(filtered);
+      }
+    } catch {
+      // ignore
     }
   }, [team]);
 
   useEffect(() => {
-    const isCaptainUser = Boolean(team?.captainId && session?.user?.id && team.captainId === session.user.id);
-    if (isCaptainUser) fetchInvites();
-  }, [team?.captainId, session?.user?.id, fetchInvites]);
-
-  const respondToInvite = async (inviteId: string, action: 'accept' | 'decline', role?: string) => {
-    try {
-      // set loading state per action
-      setInviteStatuses((prev) => ({ ...prev, [inviteId]: action === 'accept' ? 'loading-accept' : 'loading-decline' }));
-
-      const body: { action: 'accept' | 'decline'; role?: string } = { action };
-      if (role) body.role = role;
-      const res = await fetch(`/api/invites/${inviteId}/respond`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      const data = await res.json();
-      if (!res.ok) {
-        const errMsg = data?.error || 'Failed to respond to invite';
-        console.error('Invite respond error:', errMsg);
-        setInviteActionError(errMsg);
-        // revert status
-        setInviteStatuses((prev) => ({ ...prev, [inviteId]: 'pending' }));
-        return;
-      }
-
-      // success: set final state and remove from list after a short delay
-      const finalState = action === 'accept' ? 'accepted' : 'declined';
-      setInviteStatuses((prev) => ({ ...prev, [inviteId]: finalState }));
-      setInviteActionError(null);
-      fetchMyTeam();
-      // remove invite from UI after a brief confirmation so user sees the state
-      setTimeout(() => {
-        setInvites((prev) => prev.filter((i) => i.id !== inviteId));
-        setInviteStatuses((prev) => {
-          const copy = { ...prev };
-          delete copy[inviteId];
-          return copy;
-        });
-      }, 900);
-      // refresh invites in background
+    if (team) {
       fetchInvites();
-    } catch (err) {
-      console.error('Error responding to invite:', err);
-      setInviteActionError('Failed to respond to invite');
-      setInviteStatuses((prev) => ({ ...prev, [inviteId]: 'pending' }));
+      fetchChallenges();
+      fetchTeamOptions();
     }
-  };
+  }, [team, fetchInvites, fetchChallenges, fetchTeamOptions]);
 
-  const saveProfile = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSavingProfile(true);
-    setProfileError(null);
-    setProfileSuccess(null);
-
-    try {
-      const payload = {
-        mainRole: profileForm.mainRole,
-        favoriteHero: profileForm.favoriteHero || null,
-        favoriteSkin: profileForm.favoriteSkin || null,
-        rankBadge: profileForm.rankBadge || null,
-        region: profileForm.region || null,
-        headline: profileForm.headline || null,
-      };
-
-      const response = await fetch('/api/users/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        setProfileError(data?.error || 'Failed to save profile');
-        return;
-      }
-
-      setProfile((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          mainRole: data.mainRole,
-          favoriteHero: data.favoriteHero,
-          favoriteSkin: data.favoriteSkin,
-          rankBadge: data.rankBadge,
-          region: data.region,
-          headline: data.headline,
-        };
-      });
-      setProfileSuccess('Profile updated');
-    } catch (err) {
-      console.error('Error saving profile:', err);
-      setProfileError('Failed to save profile');
-    } finally {
-      setSavingProfile(false);
-    }
-  };
-
+  // ── Invite Code Generator ─────────────────────────────────
   const generateInviteCode = async () => {
     if (!team) return;
     setGeneratingCode(true);
     try {
-      const response = await fetch(`/api/teams/${team.id}/invite-links`, {
+      const res = await fetch(`/api/teams/${team.id}/invite-links`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maxUses: 10, expiresAt: null }),
+        body: JSON.stringify({ maxUses: 10 }),
       });
-      const data = await response.json();
-      if (response.ok && data.link) {
-        setInviteCode(data.link.code);
+      const d = await res.json();
+      if (res.ok && d.link?.code) {
+        setInviteCode(d.link.code);
+        toast.success('Generated Team Invite Code!');
       }
-    } catch (err) {
-      console.error('Error generating invite:', err);
+    } catch {
+      toast.error('Failed to generate invite code');
     } finally {
       setGeneratingCode(false);
     }
   };
 
-  const removePlayer = async (playerId: string) => {
+  // ── Remove Player from Roster ─────────────────────────────
+  const handleRemovePlayer = async (playerId: string) => {
     if (!team || !confirm('Are you sure you want to remove this player?')) return;
-    setRemovingPlayerId(playerId);
-    setManageError(null);
-    setManageSuccess(null);
     try {
-      const response = await fetch(`/api/teams/${team.id}/players/${playerId}`, {
+      const res = await fetch(`/api/teams/${team.id}/players/${playerId}`, {
         method: 'DELETE',
       });
-      const data = await response.json();
-      if (response.ok) {
-        setManageSuccess('Player removed successfully');
+      if (res.ok) {
+        toast.success('Player removed');
         fetchMyTeam();
       } else {
-        setManageError(data?.error || 'Failed to remove player');
+        toast.error('Failed to remove player');
       }
-    } catch (err) {
-      console.error('Error removing player:', err);
-      setManageError('A network error occurred. Please try again.');
-    } finally {
-      setRemovingPlayerId(null);
-    }
-  };
-
-  const addPlayer = async () => {
-    if (!team || !addPlayerIGN.trim()) return;
-    setAddingPlayer(true);
-    setAddPlayerError(null);
-    setAddPlayerSuccess(null);
-    try {
-      const res = await fetch(`/api/teams/${team.id}/players`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ign: addPlayerIGN.trim(), role: addPlayerRole, isSubstitute: addPlayerIsSubstitute }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setAddPlayerError(data?.error ?? 'Failed to add player'); return; }
-      setAddPlayerSuccess(`${addPlayerIGN.trim()} added as ${addPlayerIsSubstitute ? 'substitute' : 'starter'}!`);
-      setAddPlayerIGN('');
-      setLookupPlayer(null);
-      setAddPlayerRole('EXP');
-      // Auto-set the next add type based on updated roster
-      const currentStarters = team.players.filter(p => !p.isSubstitute).length;
-      const newStarterCount = addPlayerIsSubstitute ? currentStarters : currentStarters + 1;
-      setAddPlayerIsSubstitute(newStarterCount >= 5);
-      fetchMyTeam();
     } catch {
-      setAddPlayerError('Failed to add player');
-    } finally {
-      setAddingPlayer(false);
+      toast.error('Error removing player');
     }
   };
 
-  const startEditPlayer = (player: Player) => {
-    setEditingPlayerId(player.id);
-    setEditForm({ ign: player.ign, role: player.role, photo: player.photo, isSubstitute: player.isSubstitute });
-    setEditPlayerError(null);
-  };
-
-  const cancelEditPlayer = () => {
-    setEditingPlayerId(null);
-    setEditPlayerError(null);
-  };
-
-  const togglePlayerSubstitute = async (player: Player) => {
+  // ── Edit Player (Role / Substitute / Photo) ───────────────────────
+  const handleEditPlayer = async (playerId: string, updates: { role?: string; isSubstitute?: boolean; photo?: string | null }) => {
     if (!team) return;
-    setTogglingSubPlayerId(player.id);
-    setManageError(null);
-    setManageSuccess(null);
     try {
-      const res = await fetch(`/api/teams/${team.id}/players/${player.id}`, {
+      const res = await fetch(`/api/teams/${team.id}/players/${playerId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isSubstitute: !player.isSubstitute }),
+        body: JSON.stringify(updates),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setManageError(data?.error ?? 'Failed to update player');
-        return;
+      if (res.ok) {
+        toast.success('Player updated');
+        fetchMyTeam();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Failed to update player');
       }
-      setManageSuccess(player.isSubstitute ? `${player.ign} promoted to starter` : `${player.ign} moved to substitute`);
-      fetchMyTeam();
     } catch {
-      setManageError('Failed to update player');
-    } finally {
-      setTogglingSubPlayerId(null);
+      toast.error('Error updating player');
     }
   };
 
-  const transferCaptaincy = async (newCaptainUserId: string, playerIgn: string) => {
-    if (!team || !confirm(`Transfer captain role to ${playerIgn}? You will no longer be the captain.`)) return;
-    setTransferringCaptain(true);
-    setManageError(null);
-    setManageSuccess(null);
+  // ── Invite Player by IGN ──────────────────────────────────
+  const handleInvitePlayer = async (ign: string, role: string) => {
+    if (!team) return;
+    try {
+      const res = await fetch(`/api/teams/${team.id}/invites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ign, role }),
+      });
+      if (res.ok) {
+        toast.success(`Invite sent to ${ign}!`);
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Failed to send invite');
+      }
+    } catch {
+      toast.error('Error sending invite');
+    }
+  };
+
+  // ── Toggle Recruiting ─────────────────────────────────────
+  const handleToggleRecruiting = async (val: boolean) => {
+    if (!team) return;
     try {
       const res = await fetch(`/api/teams/${team.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ captainId: newCaptainUserId }),
+        body: JSON.stringify({ isRecruiting: val }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setManageError(data?.error ?? 'Failed to transfer captaincy');
-        return;
+      if (res.ok) {
+        setTeam((prev) => (prev ? { ...prev, isRecruiting: val } : prev));
+        toast.success(val ? 'Recruitment opened!' : 'Recruitment paused');
       }
-      setManageSuccess(`${playerIgn} is now the captain`);
-      fetchMyTeam();
     } catch {
-      setManageError('Failed to transfer captaincy');
-    } finally {
-      setTransferringCaptain(false);
+      toast.error('Failed to update recruitment state');
     }
   };
 
-  const openLeaveModal = () => {
-    const isCaptain = team?.isCaptain;
-    const eligibleForCaptain = team?.players.filter(
-      (p) => p.user?.id && p.user.id !== session?.user?.id
-    ) ?? [];
-    setLeaveStep(isCaptain && eligibleForCaptain.length > 0 ? 'transfer' : 'confirm');
-    setLeaveNewCaptainId('');
-    setLeaveError(null);
-    setShowLeaveModal(true);
-  };
-
-  const handleTransferThenLeave = async () => {
-    if (!team || !leaveNewCaptainId) return;
-    setLeavingSquad(true);
-    setLeaveError(null);
+  // ── Respond to Applicant Invite ───────────────────────────
+  const handleAcceptInvite = async (inviteId: string) => {
     try {
-      // Step 1: transfer captaincy
-      const res = await fetch(`/api/teams/${team.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ captainId: leaveNewCaptainId }),
-      });
-      const json = await res.json() as { error?: string };
-      if (!res.ok) throw new Error(json.error ?? 'Failed to transfer captaincy');
-      // Step 2: proceed to confirm step
-      setLeaveStep('confirm');
-    } catch (e) {
-      setLeaveError(e instanceof Error ? e.message : 'Transfer failed');
-    } finally {
-      setLeavingSquad(false);
-    }
-  };
-
-  const handleLeaveSquad = async () => {
-    if (!team || !session?.user?.id) return;
-    const myPlayer = team.players.find((p) => p.user?.id === session.user?.id);
-    if (!myPlayer) return;
-    setLeavingSquad(true);
-    setLeaveError(null);
-    try {
-      const res = await fetch(`/api/teams/${team.id}/players/${myPlayer.id}`, {
-        method: 'DELETE',
-      });
-      const json = await res.json() as { error?: string };
-      if (!res.ok) throw new Error(json.error ?? 'Failed to leave team');
-      // Redirect away — user is no longer on a team
-      window.location.href = '/profile';
-    } catch (e) {
-      setLeaveError(e instanceof Error ? e.message : 'Failed to leave');
-      setLeavingSquad(false);
-    }
-  };
-
-  const openTransferModal = (playerId: string) => {
-    if (showManageModal) {
-      setReopenManageAfterTransfer(true);
-      setShowManageModal(false);
-    }
-    setTransferPlayerId(playerId);
-    setTransferError(null);
-    setTransferSuccess(null);
-    if (teamOptions.length > 0) setTransferTargetTeamId(teamOptions[0].id);
-  };
-
-  const closeTransferModal = () => {
-    setTransferPlayerId(null);
-    setTransferError(null);
-    setTransferSuccess(null);
-    
-    if (reopenManageAfterTransfer) {
-      setShowManageModal(true);
-      setReopenManageAfterTransfer(false);
-    }
-  };
-
-  const confirmTransfer = async () => {
-    if (!team || !transferPlayerId || !transferTargetTeamId) return;
-    if (!confirm('Are you sure you want to transfer this player to the selected team?')) return;
-    setTransferLoading(true);
-    setTransferError(null);
-    setTransferSuccess(null);
-    try {
-      const res = await fetch(`/api/teams/${team.id}/players/${transferPlayerId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transferToTeamId: transferTargetTeamId }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setTransferError(data?.error ?? 'Failed to transfer player');
-        return;
-      }
-      setTransferSuccess('Player transferred successfully');
-      fetchMyTeam();
-    } catch (err) {
-      console.error('Transfer error:', err);
-      setTransferError('Failed to transfer player');
-    } finally {
-      setTransferLoading(false);
-      setTimeout(() => closeTransferModal(), 1200);
-    }
-  };
-
-  const handleEditPhotoChange = (file: File) => {
-    setEditPhotoUploading(true);
-    setEditPlayerError(null);
-    const reader = new FileReader();
-    reader.onerror = () => {
-      setEditPlayerError('Failed to read file. Please try again.');
-      setEditPhotoUploading(false);
-    };
-    reader.onload = async (e) => {
-      try {
-        const base64 = e.target?.result as string;
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: base64, type: 'player', bucket: 'teams' }),
-        });
-        const data = await res.json();
-        if (res.ok && data.url) {
-          setEditForm(prev => ({ ...prev, photo: data.url }));
-        } else {
-          setEditPlayerError(data?.error ?? 'Photo upload failed');
-        }
-      } catch {
-        setEditPlayerError('Photo upload failed. Please try again.');
-      } finally {
-        setEditPhotoUploading(false);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const savePlayerEdit = async () => {
-    if (!team || !editingPlayerId) return;
-    setSavingEditPlayer(true);
-    setEditPlayerError(null);
-    try {
-      const res = await fetch(`/api/teams/${team.id}/players/${editingPlayerId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ign: editForm.ign.trim(), role: editForm.role, photo: editForm.photo, isSubstitute: editForm.isSubstitute }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setEditPlayerError(data?.error ?? 'Failed to save'); return; }
-      setEditingPlayerId(null);
-      fetchMyTeam();
-    } catch {
-      setEditPlayerError('Failed to save');
-    } finally {
-      setSavingEditPlayer(false);
-    }
-  };
-
-  const updateRecruitingStatus = async (isRecruiting: boolean) => {
-    if (!team || !team.isCaptain) return;
-
-    setSavingTeamSettings(true);
-    setTeamSettingsError(null);
-    setTeamSettingsSuccess(null);
-
-    try {
-      const response = await fetch(`/api/teams/${team.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isRecruiting }),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        setTeamSettingsError(data?.error || 'Failed to update team settings');
-        return;
-      }
-
-      setTeam((prev) => (prev ? { ...prev, isRecruiting: data.team?.isRecruiting ?? isRecruiting } : prev));
-      setTeamSettingsSuccess(isRecruiting ? 'Team is now accepting members' : 'Team recruitment closed');
-    } catch (err) {
-      console.error('Error updating recruiting settings:', err);
-      setTeamSettingsError('Failed to update team settings');
-    } finally {
-      setSavingTeamSettings(false);
-    }
-  };
-
-  const openEditTeamModal = () => {
-    if (!team) return;
-    setEditTeamName(team.name);
-    setEditTeamTag(team.tag);
-    setEditTeamError(null);
-    setShowEditTeamModal(true);
-  };
-
-  const saveTeamNameTag = async () => {
-    if (!team || !team.isCaptain) return;
-
-    const trimmedName = editTeamName.trim();
-    const trimmedTag = editTeamTag.trim().toUpperCase();
-
-    if (!trimmedName || trimmedName.length < 3 || trimmedName.length > 30) {
-      setEditTeamError('Team name must be 3-30 characters');
-      return;
-    }
-    if (!trimmedTag || trimmedTag.length < 3 || trimmedTag.length > 5) {
-      setEditTeamError('Team tag must be 3-5 characters');
-      return;
-    }
-    if (!/^[A-Z0-9]+$/.test(trimmedTag)) {
-      setEditTeamError('Team tag must be alphanumeric only');
-      return;
-    }
-
-    setSavingTeamEdit(true);
-    setEditTeamError(null);
-
-    try {
-      const response = await fetch(`/api/teams/${team.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trimmedName, tag: trimmedTag }),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        setEditTeamError(data?.error || 'Failed to update team');
-        return;
-      }
-
-      setTeam((prev) => prev ? { ...prev, name: data.team?.name ?? trimmedName, tag: data.team?.tag ?? trimmedTag } : prev);
-      setShowEditTeamModal(false);
-    } catch (err) {
-      console.error('Error updating team name/tag:', err);
-      setEditTeamError('Failed to update team');
-    } finally {
-      setSavingTeamEdit(false);
-    }
-  };
-
-  const fetchChallenges = useCallback(async () => {
-    try {
-      setLoadingChallenges(true);
-      const response = await fetch('/api/matches/challenges');
-      const data = await response.json();
-      if (!response.ok) {
-        setChallengeError(data?.error || 'Failed to load challenges');
-        return;
-      }
-      setChallenges(Array.isArray(data?.challenges) ? data.challenges : []);
-    } catch (err) {
-      console.error('Error fetching challenges:', err);
-      setChallengeError('Failed to load challenges');
-    } finally {
-      setLoadingChallenges(false);
-    }
-  }, []);
-
-  const fetchWeeklyAvailability = useCallback(async () => {
-    if (!team?.isCaptain) return;
-    try {
-      setAvailabilityLoading(true);
-      const response = await fetch('/api/matches/challenges/availability');
-      const data = await response.json();
-      if (!response.ok) {
-        setChallengeError(data?.error || 'Failed to load weekly availability');
-        return;
-      }
-
-      setWeeklyPing(data?.ping ?? null);
-      setWeeklyAvailability(data?.availability ?? null);
-      setAvailabilityNote(data?.availability?.note ?? '');
-    } catch (err) {
-      console.error('Error fetching weekly availability:', err);
-      setChallengeError('Failed to load weekly availability');
-    } finally {
-      setAvailabilityLoading(false);
-    }
-  }, [team?.isCaptain]);
-
-  const fetchTeamOptions = useCallback(async () => {
-    if (!team) return;
-    try {
-      const response = await fetch('/api/teams?limit=200');
-      const data = await response.json();
-      if (!response.ok) return;
-      const items: TeamOption[] = (Array.isArray(data?.teams) ? data.teams : [])
-        .filter((entry: TeamOption) => entry.id !== team.id)
-        .map((entry: TeamOption) => ({ id: entry.id, name: entry.name, tag: entry.tag }));
-      setTeamOptions(items);
-      if (!challengeTeamId && items.length > 0) {
-        setChallengeTeamId(items[0].id);
-      }
-      if (!transferTargetTeamId && items.length > 0) {
-        setTransferTargetTeamId(items[0].id);
-      }
-    } catch (err) {
-      console.error('Error fetching team options:', err);
-    }
-  }, [team, challengeTeamId, transferTargetTeamId]);
-
-  const handleBrandingUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'banner') => {
-    const file = event.target.files?.[0];
-    if (!file || !team) return;
-
-    // Validation
-    if (file.size > 5 * 1024 * 1024) {
-      setBrandingError('File size must be less than 5MB');
-      return;
-    }
-
-    setBrandingError(null);
-    setBrandingSuccess(null);
-    if (type === 'logo') setIsUploadingLogo(true);
-    else setIsUploadingBanner(true);
-
-    try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64 = e.target?.result as string;
-        
-        // 1. Upload to Supabase
-        const uploadRes = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: base64, type, bucket: 'teams' }),
-        });
-        
-        const uploadData = await uploadRes.json();
-        if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed');
-
-        // 2. Update Team record
-        const updateRes = await fetch(`/api/teams/${team.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ [type]: uploadData.url }),
-        });
-
-        const updateData = await updateRes.json();
-        if (!updateRes.ok) throw new Error(updateData.error || 'Update failed');
-
-        // 3. Update local state
-        setTeam(prev => prev ? { ...prev, [type]: uploadData.url } : prev);
-        setBrandingSuccess(`${type.charAt(0).toUpperCase() + type.slice(1)} updated successfully!`);
-        
-        // Clear success message after 3 seconds
-        setTimeout(() => setBrandingSuccess(null), 3000);
-      };
-      reader.onerror = () => {
-        throw new Error('Failed to read file');
-      };
-      reader.readAsDataURL(file);
-    } catch (err) {
-      console.error(`Error uploading ${type}:`, err);
-      setBrandingError(err instanceof Error ? err.message : `Failed to upload ${type}`);
-    } finally {
-      if (type === 'logo') setIsUploadingLogo(false);
-      else setIsUploadingBanner(false);
-    }
-  };
-
-  const submitChallenge = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!challengeTeamId) {
-      setChallengeError('Select a team to challenge');
-      return;
-    }
-
-    setChallengeActionLoading('create');
-    setChallengeError(null);
-    setChallengeSuccess(null);
-
-    try {
-      const response = await fetch('/api/matches/challenges', {
+      const res = await fetch(`/api/invites/${inviteId}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          challengedTeamId: challengeTeamId,
-          message: challengeMessage || null,
-          weekStart: challengeWeekStart || null,
-        }),
+        body: JSON.stringify({ action: 'accept' }),
       });
-      const data = await response.json();
-      if (!response.ok) {
-        setChallengeError(data?.error || 'Failed to send challenge');
-        return;
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success('Applicant accepted to roster!');
+        fetchInvites();
+        fetchMyTeam();
+      } else {
+        toast.error(data?.error || 'Failed to accept applicant');
       }
-      setChallengeSuccess('Challenge sent successfully');
-      setChallengeMessage('');
-      await fetchChallenges();
-    } catch (err) {
-      console.error('Error creating challenge:', err);
-      setChallengeError('Failed to send challenge');
-    } finally {
-      setChallengeActionLoading(null);
+    } catch {
+      toast.error('Failed to accept applicant');
     }
   };
 
-  const respondToChallenge = async (challengeId: string, action: 'accept' | 'reject' | 'cancel') => {
-    setChallengeActionLoading(challengeId);
-    setChallengeError(null);
-    setChallengeSuccess(null);
-
+  const handleDeclineInvite = async (inviteId: string) => {
     try {
-      const response = await fetch(`/api/matches/challenges/${challengeId}`, {
-        method: 'PUT',
+      const res = await fetch(`/api/invites/${inviteId}/respond`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action: 'decline' }),
       });
-      const data = await response.json();
-      if (!response.ok) {
-        setChallengeError(data?.error || 'Failed to update challenge');
-        return;
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.info('Application declined');
+        fetchInvites();
+      } else {
+        toast.error(data?.error || 'Failed to decline application');
       }
-      setChallengeSuccess(data?.message || 'Challenge updated');
-      await fetchChallenges();
-    } catch (err) {
-      console.error('Error updating challenge:', err);
-      setChallengeError('Failed to update challenge');
-    } finally {
-      setChallengeActionLoading(null);
+    } catch {
+      toast.error('Failed to decline application');
     }
   };
 
-  const updateWeeklyAvailability = async (isAvailable: boolean) => {
-    setAvailabilitySaving(true);
-    setChallengeError(null);
-    setChallengeSuccess(null);
 
-    try {
-      const response = await fetch('/api/matches/challenges/availability', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          isAvailable,
-          note: availabilityNote || null,
-          weekStart: weeklyPing?.weekStart ?? null,
-        }),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        setChallengeError(data?.error || 'Failed to update weekly availability');
-        return;
-      }
-
-      setChallengeSuccess(data?.message || 'Weekly availability updated');
-      await fetchWeeklyAvailability();
-    } catch (err) {
-      console.error('Error updating weekly availability:', err);
-      setChallengeError('Failed to update weekly availability');
-    } finally {
-      setAvailabilitySaving(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!team?.isCaptain) return;
+  // ── Send Challenge ────────────────────────────────────────
+  const handleSendChallenge = async (challengedTeamId: string) => {
+    const res = await fetch('/api/matches/challenges', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challengedTeamId }),
+    });
+    if (!res.ok) throw new Error('Challenge failed');
     fetchChallenges();
-    fetchTeamOptions();
-    fetchWeeklyAvailability();
-  }, [team?.id, team?.isCaptain, fetchChallenges, fetchTeamOptions, fetchWeeklyAvailability]);
-
-  const roleColors: Record<string, string> = {
-    EXP: '#e8a000',
-    JUNGLE: '#22c55e',
-    MAGE: '#a855f7',
-    MARKSMAN: '#3b82f6',
-    ROAM: '#f43f5e',
   };
 
-  const availabilityStatus = !weeklyPing
-    ? 'NO_PING'
-    : weeklyAvailability
-      ? (weeklyAvailability.isAvailable ? 'AVAILABLE' : 'UNAVAILABLE')
-      : 'NOT_SET';
-
-  const availabilityStatusStyle: Record<string, string> = {
-    AVAILABLE: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400',
-    UNAVAILABLE: 'bg-red-500/15 border-red-500/40 text-red-400',
-    NOT_SET: 'bg-white/10 border-white/20 text-[#bbb]',
-    NO_PING: 'bg-white/10 border-white/20 text-[#777]',
+  // ── Respond to Challenge ──────────────────────────────────
+  const handleRespondChallenge = async (challengeId: string, action: 'accept' | 'reject') => {
+    const res = await fetch(`/api/matches/challenges/${challengeId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    if (!res.ok) throw new Error('Failed to respond to challenge');
+    fetchChallenges();
   };
 
-  const availabilityStatusLabel: Record<string, string> = {
-    AVAILABLE: 'Available',
-    UNAVAILABLE: 'Unavailable',
-    NOT_SET: 'Not set yet',
-    NO_PING: 'Waiting for admin ping',
+  // ── Update Squad Settings ─────────────────────────────────
+  const handleUpdateTeamSettings = async (updates: Partial<Team>) => {
+    if (!team) return;
+    const res = await fetch(`/api/teams/${team.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) throw new Error('Failed to update squad');
+    setTeam((prev) => (prev ? { ...prev, ...updates } : prev));
   };
-
-  if (status === 'unauthenticated') {
-    return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle size={48} className="text-[#e8a000] mx-auto mb-4" />
-          <h2 className="text-xl font-bold mb-2">Authentication Required</h2>
-          <p className="text-[#666] mb-4">Please log in to view your team</p>
-          <Link href="/login" className="bg-[#e8a000] text-black px-6 py-2 font-bold uppercase tracking-wider">
-            Login
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 border-2 border-[#e8a000] border-t-transparent rounded-full" />
+      <div className="min-h-screen bg-[#07070c] flex flex-col items-center justify-center pt-28 md:pt-36 text-center">
+        <Loader2 size={36} className="animate-spin text-amber-400 mb-3" />
+        <p className="text-xs font-mono font-black uppercase tracking-widest text-zinc-500">Loading Squad Hub...</p>
       </div>
     );
   }
 
+  // If user is not on a team, show Register / Join Squad Hero Banner
   if (!team) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white p-8">
-        <div className="max-w-2xl mx-auto text-center">
-          <div className="w-20 h-20 bg-[#e8a000]/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Users size={32} className="text-[#e8a000]" />
+      <div className="min-h-screen bg-[#07070c] text-white pt-28 md:pt-36 pb-20 px-4">
+        <div className="max-w-4xl mx-auto text-center space-y-8 p-10 rounded-3xl bg-gradient-to-b from-[#12121c] to-[#07070c] border border-white/10 shadow-2xl relative overflow-hidden">
+          <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto">
+            <Shield size={40} />
           </div>
-          <h1 className="text-2xl font-black tracking-wider uppercase mb-2">No Team Yet</h1>
-          <p className="text-[#666] mb-6">You are not part of a team. Create one or wait for an invite!</p>
-          <Link
-            href="/register-team"
-            className="inline-flex items-center gap-2 bg-[#e8a000] hover:bg-[#ffb800] text-black px-6 py-3 font-bold uppercase tracking-wider transition-colors"
-          >
-            <Plus size={16} /> Register a Team
-          </Link>
+
+          <div className="space-y-3">
+            <span className="px-3.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest">
+              No Active Squad Found
+            </span>
+            <h1 className="text-4xl sm:text-5xl font-black uppercase tracking-tight text-white">
+              Join or Register Your Squad
+            </h1>
+            <p className="text-zinc-400 text-sm max-w-lg mx-auto leading-relaxed">
+              Compete in official tournaments, challenge rival teams in scrims, and climb the Ghana MLBB Squad Leaderboard!
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+            <Link
+              href="/register-team"
+              className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-amber-500/20"
+            >
+              Register New Squad
+            </Link>
+            <Link
+              href="/teams"
+              className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs font-black uppercase tracking-wider transition-all"
+            >
+              Browse Squad Finder
+            </Link>
+          </div>
         </div>
       </div>
     );
   }
 
+  const isCaptain = Boolean(team.isCaptain);
+
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white" style={{ fontFamily: "'Rajdhani', 'Barlow Condensed', sans-serif" }}>
-      {/* Google Fonts */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Barlow+Condensed:wght@400;600;700;800;900&display=swap');
-        * { font-family: 'Barlow Condensed', 'Rajdhani', sans-serif; }
-      `}</style>
+    <div className="min-h-screen bg-[#07070c] text-white pt-24 lg:pt-32 pb-20">
+      {/* ── Squad Header Banner ───────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
+        <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#0c0c14] shadow-2xl">
+          {/* Banner Image / Gradient */}
+          <div className="h-44 sm:h-52 w-full relative bg-gradient-to-r from-amber-950/40 via-purple-950/30 to-[#0c0c14]">
+            {team.banner && (
+              <Image src={team.banner} alt={team.name} fill className="object-cover opacity-30" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c14] via-[#0c0c14]/60 to-transparent" />
+          </div>
 
-      {/* Banner */}
-      <div className="relative h-48 bg-[#080810] overflow-hidden">
-        {team.banner ? (
-          <img src={team.banner} alt="" className="w-full h-full object-cover opacity-50" />
-        ) : (
-          <div className="w-full h-full bg-linear-to-br from-[#e8a000]/10 to-[#4a90d9]/10" />
-        )}
-        <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0f] via-transparent to-transparent" />
-        
-        {/* Banner Edit Overlay */}
-        {team.isCaptain && (
-          <div className="absolute top-4 right-4 z-10">
-            <label className="cursor-pointer group">
-              <input
-                type="file"
-                className="hidden"
-                accept="image/*"
-                onChange={(e) => handleBrandingUpload(e, 'banner')}
-                disabled={isUploadingBanner}
-              />
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-black/40 hover:bg-black/60 backdrop-blur-md border border-white/10 rounded-sm transition-all">
-                {isUploadingBanner ? (
-                  <Loader2 size={14} className="animate-spin text-[#e8a000]" />
+          {/* Banner Content Body */}
+          <div className="p-6 sm:p-8 -mt-16 sm:-mt-20 relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
+            <div className="flex items-end gap-5">
+              {/* Logo Avatar */}
+              <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden bg-zinc-900 border-2 border-white/20 shadow-2xl shrink-0">
+                {team.logo ? (
+                  <Image src={team.logo} alt={team.name} fill className="object-cover" />
                 ) : (
-                  <Camera size={14} className="text-white/70 group-hover:text-white" />
+                  <div className="w-full h-full flex items-center justify-center bg-[#101018] text-amber-400 font-black text-2xl">
+                    {team.tag}
+                  </div>
                 )}
-                <span className="text-[10px] font-bold tracking-widest uppercase text-white/70 group-hover:text-white">
-                  {isUploadingBanner ? 'Uploading...' : 'Change Banner'}
-                </span>
-              </div>
-            </label>
-          </div>
-        )}
-        
-        {/* Logo overlapping banner */}
-        <div className="absolute bottom-0 left-8 translate-y-1/2">
-          <div className="relative w-24 h-24 border-4 border-[#0a0a0f] bg-[#0d0d14] overflow-hidden group">
-            {team.logo ? (
-              <img src={team.logo} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Shield size={32} className="text-[#333]" />
-              </div>
-            )}
-
-            {/* Logo Edit Overlay */}
-            {team.isCaptain && (
-              <label className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                <input
-                  type="file"
-                  className="hidden"
-                  accept="image/*"
-                  onChange={(e) => handleBrandingUpload(e, 'logo')}
-                  disabled={isUploadingLogo}
-                />
-                {isUploadingLogo ? (
-                  <Loader2 size={20} className="animate-spin text-[#e8a000]" />
-                ) : (
-                  <>
-                    <Camera size={20} className="text-white mb-1" />
-                    <span className="text-[8px] font-black tracking-widest uppercase text-white">Edit</span>
-                  </>
-                )}
-              </label>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Team Header */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-16 pb-6">
-        {error && (
-          <div className="mb-4 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-            {error}
-          </div>
-        )}
-        {(brandingError || brandingSuccess) && (
-          <div className={`mb-4 border px-3 py-2 text-sm flex items-center gap-2 ${
-            brandingError ? 'border-red-500/20 bg-red-500/10 text-red-300' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-          }`}>
-            {brandingError ? <AlertCircle size={14} /> : <Check size={14} />}
-            {brandingError || brandingSuccess}
-          </div>
-        )}
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-black tracking-widest uppercase">{team.name}</h1>
-              {team.isCaptain && (
-                <button
-                  onClick={openEditTeamModal}
-                  className="text-[#666] hover:text-[#e8a000] transition-colors p-1"
-                  title="Edit team name & tag"
-                >
-                  <Pencil size={16} />
-                </button>
-              )}
-            </div>
-
-            {/* Transfer Player Modal */}
-            <AnimatePresence>
-              {transferPlayerId && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
-                  onClick={() => closeTransferModal()}
-                >
-                  <motion.div
-                    initial={{ scale: 0.95, opacity: 0, y: 20 }}
-                    animate={{ scale: 1, opacity: 1, y: 0 }}
-                    exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="bg-[#0c0c12] border border-white/10 p-6 max-w-sm w-full relative overflow-hidden group"
-                  >
-                    {/* Decorative accent */}
-                    <div className="absolute top-0 left-0 w-full h-1 bg-linear-to-r from-blue-500/50 via-blue-400 to-blue-500/50" />
-                    
-                    <div className="flex items-center justify-between mb-5">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-blue-500/10 border border-blue-500/20 rounded-sm">
-                          <Send size={16} className="text-blue-400" />
-                        </div>
-                        <h3 className="text-lg font-black tracking-wider uppercase text-white/90">Transfer Player</h3>
-                      </div>
-                      <button onClick={() => closeTransferModal()} className="text-[#444] hover:text-white transition-colors">
-                        <X size={20} />
-                      </button>
-                    </div>
-
-                    <p className="text-[11px] text-[#666] mb-4 leading-relaxed uppercase tracking-wider">
-                      Moving a player will immediately remove them from your roster and add them to the target team.
-                    </p>
-
-                    {transferError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold">{transferError}</div>}
-                    {transferSuccess && <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold">{transferSuccess}</div>}
-
-                    <div className="mb-6">
-                      <label className="text-[10px] text-[#888] font-black uppercase tracking-[0.2em] mb-2 block">Target Destination</label>
-                      <div className="relative">
-                        <select
-                          value={transferTargetTeamId ?? ''}
-                          onChange={(e) => setTransferTargetTeamId(e.target.value)}
-                          className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-4 py-3 outline-none focus:border-blue-500/50 appearance-none transition-all"
-                        >
-                          <option value="" disabled>Select a team...</option>
-                          {teamOptions.map((opt) => (
-                            <option key={opt.id} value={opt.id}>{opt.name} [{opt.tag}]</option>
-                          ))}
-                        </select>
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[#444]">
-                          <ArrowUpDown size={12} />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => confirmTransfer()}
-                        disabled={transferLoading || !transferTargetTeamId}
-                        className="flex-1 py-3 bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[10px] font-black tracking-[0.2em] uppercase hover:bg-blue-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-                      >
-                        {transferLoading ? (
-                          <>
-                            <Loader2 size={14} className="animate-spin" />
-                            Transferring...
-                          </>
-                        ) : (
-                          <>
-                            <ArrowRightLeft size={14} />
-                            Confirm Move
-                          </>
-                        )}
-                      </button>
-                      <button 
-                        onClick={() => closeTransferModal()} 
-                        className="px-5 py-3 border border-white/5 text-[#555] text-[10px] font-black tracking-[0.2em] uppercase hover:text-white hover:bg-white/5 transition-all"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-            <div className="flex items-center gap-3 mt-1">
-              <span className="text-[#e8a000]/70 text-sm tracking-widest">[{team.tag}]</span>
-              {team.teamCode && (
-                <>
-                  <span className="text-[#555]">·</span>
-                  <span className="text-[#e8a000] text-sm tracking-[0.2em] uppercase">Code {team.teamCode}</span>
-                </>
-              )}
-              <span className="text-[#555]">·</span>
-              <span className="text-[#666] text-sm">{team.region}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`px-3 py-1 text-[10px] font-bold tracking-widest uppercase ${
-              team.status === 'ACTIVE' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-            }`}>
-              {team.status}
-            </span>
-            <span className={`px-3 py-1 text-[10px] font-bold tracking-widest uppercase ${
-              team.isRecruiting ? 'bg-[#e8a000]/20 text-[#e8a000]' : 'bg-white/10 text-[#888]'
-            }`}>
-              {team.isRecruiting ? 'Looking for Members' : 'Recruitment Closed'}
-            </span>
-            {team.players.some((p) => p.user?.id === session?.user?.id) && (
-              <button
-                onClick={openLeaveModal}
-                className="px-3 py-1 text-[10px] font-bold tracking-widest uppercase bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors"
-              >
-                Leave Squad
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {team.isCaptain && (
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-6 space-y-4">
-          {/* Applications / Incoming requests (minimal) */}
-          <div className="bg-[#0c0c12] border border-white/[0.07] p-4 sm:p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">Applications</h3>
-              <span className="text-xs text-[#666]">{loadingInvites ? 'Loading…' : `${invites.length} pending`}</span>
-            </div>
-
-            {inviteActionError && (
-              <div className="mt-3 p-2 bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{inviteActionError}</div>
-            )}
-
-            {loadingInvites ? (
-              <p className="text-[#666] text-sm">Loading applications…</p>
-            ) : invites.length === 0 ? (
-              <p className="text-[#666] text-sm">No pending applications.</p>
-            ) : (
-              <div className="space-y-2">
-                {invites.map((inv) => {
-                  const applicantRole = inv.fromUser?.player?.role ?? inv.fromUser?.mainRole ?? inv.role ?? 'EXP';
-                  const status = inviteStatuses[inv.id] ?? 'pending';
-                  const isLoadingAccept = status === 'loading-accept';
-                  const isLoadingDecline = status === 'loading-decline';
-                  const isAccepted = status === 'accepted';
-                  const isDeclined = status === 'declined';
-
-                  return (
-                    <div key={inv.id} className="border border-white/10 bg-[#0d0d14] p-3 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={inv.fromUser?.photo || '/favicon.ico'}
-                          alt={inv.fromUser?.ign ?? 'Applicant'}
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/favicon.ico'; }}
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
-                        <div>
-                          <div className="text-sm font-semibold">{inv.fromUser?.ign ?? inv.toIGN ?? 'Unknown'}</div>
-                          <div className="text-xs text-[#777]">Applied: {inv.createdAt ? new Date(inv.createdAt).toLocaleString() : '—'}</div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <div className="text-sm text-[#ccc] px-2 py-1 bg-[#0b0b10] border border-white/5">{applicantRole}</div>
-
-                        {isAccepted ? (
-                          <span className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center gap-2">
-                            <Check size={14} /> Accepted
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => respondToInvite(inv.id, 'accept', applicantRole)}
-                            disabled={isLoadingAccept || isLoadingDecline || isDeclined}
-                            className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 disabled:opacity-50"
-                          >
-                            {isLoadingAccept ? (
-                              <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Accepting...</span>
-                            ) : (
-                              'Accept'
-                            )}
-                          </button>
-                        )}
-
-                        {isAccepted ? null : isDeclined ? (
-                          <span className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-red-500/10 border border-red-500/30 text-red-400 flex items-center gap-2">
-                            <X size={14} /> Rejected
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => respondToInvite(inv.id, 'decline')}
-                            disabled={isLoadingAccept || isLoadingDecline || isAccepted}
-                            className="px-3 py-1 text-xs font-black tracking-widest uppercase bg-red-500/10 border border-red-500/30 text-red-400 disabled:opacity-50"
-                          >
-                            {isLoadingDecline ? (
-                              <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Rejecting...</span>
-                            ) : (
-                              'Decline'
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-[#0c0c12] border border-white/[0.07] p-4 sm:p-5 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">Recruitment Settings</h2>
-                  <p className="text-[#666] text-xs mt-2">Share this team code during signup: <span className="text-[#e8a000] tracking-[0.2em]">{team.teamCode || 'Not available'}</span></p>
-                </div>
-
-                <button
-                  onClick={() => updateRecruitingStatus(!(team.isRecruiting ?? true))}
-                  disabled={savingTeamSettings}
-                  className="text-[10px] font-bold tracking-widest uppercase px-4 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] hover:bg-[#e8a000]/20 transition-colors disabled:opacity-50"
-                >
-                  {savingTeamSettings ? 'Saving...' : (team.isRecruiting ? 'Stop Accepting Members' : 'Accept Members')}
-                </button>
               </div>
 
-              {(teamSettingsError || teamSettingsSuccess) && (
-                <p className={`text-sm ${teamSettingsError ? 'text-red-400' : 'text-green-400'}`}>
-                  {teamSettingsError || teamSettingsSuccess}
-                </p>
-              )}
-            </div>
-
-
-          <div className="bg-[#0c0c12] border border-white/[0.07] p-4 sm:p-5 space-y-3">
-            <div>
-              <h3 className="text-sm font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">Create Friendly Challenge</h3>
-              <p className="text-[#666] text-xs mt-2">Challenge another team for a friendly match. Once accepted, an admin will schedule the final slot.</p>
-            </div>
-
-            <form onSubmit={submitChallenge} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <select
-                value={challengeTeamId}
-                onChange={(event) => setChallengeTeamId(event.target.value)}
-                className="bg-[#0d0d14] border border-white/10 px-3 py-2 text-white text-sm"
-                required
-              >
-                <option value="">Select team</option>
-                {teamOptions.map((option) => (
-                  <option key={option.id} value={option.id}>{option.name} [{option.tag}]</option>
-                ))}
-              </select>
-              <input
-                type="date"
-                value={challengeWeekStart}
-                onChange={(event) => setChallengeWeekStart(event.target.value)}
-                className="bg-[#0d0d14] border border-white/10 px-3 py-2 text-white text-sm"
-              />
-              <input
-                value={challengeMessage}
-                onChange={(event) => setChallengeMessage(event.target.value)}
-                maxLength={140}
-                placeholder="Message (optional)"
-                className="bg-[#0d0d14] border border-white/10 px-3 py-2 text-white text-sm sm:col-span-2"
-              />
-              <button
-                type="submit"
-                disabled={challengeActionLoading === 'create'}
-                className="text-[10px] font-bold tracking-widest uppercase px-4 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] hover:bg-[#e8a000]/20 transition-colors disabled:opacity-50"
-              >
-                {challengeActionLoading === 'create' ? 'Sending...' : 'Send Challenge'}
-              </button>
-            </form>
-
-            {(challengeError || challengeSuccess) && (
-              <p className={`text-sm ${challengeError ? 'text-red-400' : 'text-green-400'}`}>
-                {challengeError || challengeSuccess}
-              </p>
-            )}
-          </div>
-        </div>
-
-          <div className="bg-[#0c0c12] border border-white/[0.07] p-4 sm:p-5 space-y-3">
-            <h3 className="text-sm font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">Challenge Queue</h3>
-
-            <div className="space-y-2">
-              {loadingChallenges ? (
-                <p className="text-[#666] text-sm">Loading challenges...</p>
-              ) : challenges.length === 0 ? (
-                <p className="text-[#666] text-sm">No open challenges yet.</p>
-              ) : (
-                challenges.map((challenge) => {
-                  const isIncoming = challenge.challengedTeamId === team.id;
-                  const isOutgoing = challenge.challengerTeamId === team.id;
-                  return (
-                    <div key={challenge.id} className="border border-white/10 bg-[#0d0d14] p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div>
-                        <p className="text-sm text-white font-semibold">
-                          {challenge.challengerTeam?.name ?? 'Team A'} vs {challenge.challengedTeam?.name ?? 'Team B'}
-                        </p>
-                        <p className="text-[11px] text-[#777]">
-                          Week of {new Date(challenge.weekStart).toLocaleDateString()} · {challenge.status}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {isIncoming && challenge.status === 'PENDING' && (
-                          <>
-                            <button
-                              type="button"
-                              disabled={challengeActionLoading === challenge.id}
-                              onClick={() => respondToChallenge(challenge.id, 'accept')}
-                              className="text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50"
-                            >
-                              Accept
-                            </button>
-                            <button
-                              type="button"
-                              disabled={challengeActionLoading === challenge.id}
-                              onClick={() => respondToChallenge(challenge.id, 'reject')}
-                              className="text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 disabled:opacity-50"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                        {isOutgoing && ['PENDING', 'ACCEPTED'].includes(challenge.status) && (
-                          <button
-                            type="button"
-                            disabled={challengeActionLoading === challenge.id}
-                            onClick={() => respondToChallenge(challenge.id, 'cancel')}
-                            className="text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 bg-white/5 border border-white/20 text-[#aaa] hover:bg-white/10 disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Profile Section */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-6">
-        <div className="bg-[#0c0c12] border border-white/[0.07] p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">
-              Player Profile
-            </h2>
-            <div className="text-right">
-              <p className="text-[10px] text-[#666] uppercase tracking-widest">Current Role</p>
-              <p className="text-sm font-bold text-[#e8a000]">{profile?.player?.role ?? profileForm.mainRole}</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div className="bg-[#0d0d14] border border-white/5 p-3">
-              <p className="text-[10px] text-[#666] tracking-widest uppercase">IGN</p>
-              <p className="text-sm font-bold text-white truncate">{profile?.ign || session?.user?.name || 'Player'}</p>
-            </div>
-            <div className="bg-[#0d0d14] border border-white/5 p-3">
-              <p className="text-[10px] text-[#666] tracking-widest uppercase">Win Rate</p>
-              <p className="text-sm font-bold text-white">{profile?.player?.winRate ? `${profile.player.winRate.toFixed(1)}%` : '0.0%'}</p>
-            </div>
-            <div className="bg-[#0d0d14] border border-white/5 p-3">
-              <p className="text-[10px] text-[#666] tracking-widest uppercase">Region</p>
-              <p className="text-sm font-bold text-white">{profileForm.region || 'Not set'}</p>
-            </div>
-            <div className="bg-[#0d0d14] border border-white/5 p-3">
-              <p className="text-[10px] text-[#666] tracking-widest uppercase">Rank Badge</p>
-              <p className="text-sm font-bold text-white">{profileForm.rankBadge || 'Not set'}</p>
-            </div>
-          </div>
-
-          <form onSubmit={saveProfile} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="text-[11px] text-[#888] uppercase tracking-wider">
-              Main Role
-              <select
-                value={profileForm.mainRole}
-                onChange={(event) => setProfileForm((prev) => ({ ...prev, mainRole: event.target.value }))}
-                className="mt-1 w-full bg-[#0d0d14] border border-white/10 px-3 py-2 text-white text-sm"
-              >
-                {MAIN_ROLES.map((role) => (
-                  <option key={role} value={role}>{role}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-[11px] text-[#888] uppercase tracking-wider">
-              Region
-              <select
-                value={profileForm.region}
-                onChange={(event) => setProfileForm((prev) => ({ ...prev, region: event.target.value }))}
-                className="mt-1 w-full bg-[#0d0d14] border border-white/10 px-3 py-2 text-white text-sm"
-              >
-                <option value="">Select region</option>
-                {PROFILE_REGIONS.map((region) => (
-                  <option key={region} value={region}>{region}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-[11px] text-[#888] uppercase tracking-wider">
-              Main Hero
-              <select
-                value={profileForm.favoriteHero}
-                onChange={(event) => setProfileForm((prev) => ({ ...prev, favoriteHero: event.target.value }))}
-                className="mt-1 w-full bg-[#0d0d14] border border-white/10 px-3 py-2 text-white text-sm"
-              >
-                <option value="">Select hero cutout</option>
-                {heroOptions.map((hero) => (
-                  <option key={hero.id} value={hero.key}>{hero.name}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-[11px] text-[#888] uppercase tracking-wider">
-              Favorite Skin
-              <input
-                value={profileForm.favoriteSkin}
-                onChange={(event) => setProfileForm((prev) => ({ ...prev, favoriteSkin: event.target.value }))}
-                maxLength={80}
-                placeholder="e.g. Dragon Boy"
-                className="mt-1 w-full bg-[#0d0d14] border border-white/10 px-3 py-2 text-white text-sm"
-              />
-            </label>
-
-            <label className="text-[11px] text-[#888] uppercase tracking-wider">
-              Rank Badge
-              <select
-                value={profileForm.rankBadge}
-                onChange={(event) => setProfileForm((prev) => ({ ...prev, rankBadge: event.target.value }))}
-                className="mt-1 w-full bg-[#0d0d14] border border-white/10 px-3 py-2 text-white text-sm"
-              >
-                <option value="">Select rank</option>
-                {RANK_BADGES.map((badge) => (
-                  <option key={badge} value={badge}>{badge}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-[11px] text-[#888] uppercase tracking-wider">
-              Headline
-              <input
-                value={profileForm.headline}
-                onChange={(event) => setProfileForm((prev) => ({ ...prev, headline: event.target.value }))}
-                maxLength={120}
-                placeholder="Short intro or grind goal"
-                className="mt-1 w-full bg-[#0d0d14] border border-white/10 px-3 py-2 text-white text-sm"
-              />
-            </label>
-
-            <div className="sm:col-span-2 flex flex-wrap items-center gap-3 pt-1">
-              <button
-                type="submit"
-                disabled={savingProfile}
-                className="text-[10px] font-bold tracking-widest uppercase px-4 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] hover:bg-[#e8a000]/20 transition-colors disabled:opacity-50"
-              >
-                {savingProfile ? 'Saving...' : 'Save Profile'}
-              </button>
-              {profileError && <p className="text-sm text-red-400">{profileError}</p>}
-              {profileSuccess && <p className="text-sm text-green-400">{profileSuccess}</p>}
-            </div>
-          </form>
-        </div>
-      </div>
-
-      {/* Players Section */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10">
-          <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-black tracking-[0.15em] uppercase border-l-2 border-[#e8a000] pl-3">
-            Roster
-          </h2>
-          {team.isCaptain && (
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => {
-                  const starterCount = team.players.filter(p => !p.isSubstitute).length;
-                  setAddPlayerIsSubstitute(starterCount >= 5);
-                  setShowManageModal(true);
-                }}
-                className="text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 border border-white/10 text-[#888] hover:text-white hover:border-[#e8a000]/40 transition-colors"
-              >
-                Manage
-              </button>
-              <button
-                onClick={() => { setShowInviteModal(true); generateInviteCode(); }}
-                className="text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] hover:bg-[#e8a000]/20 transition-colors"
-              >
-                + Invite
-              </button>
-              <button
-                onClick={async () => {
-                  const ok = confirm("Disband your team? This will remove the team from the league. Players will remain on their accounts.");
-                  if (!ok) return;
-                  try {
-                    const res = await fetch("/api/my-team/disband", { method: "DELETE" });
-                    const data = await res.json();
-                    if (!res.ok) {
-                      setManageError(data?.error || "Failed to disband team");
-                      return;
-                    }
-                    window.location.href = "/teams";
-                  } catch (e) {
-                    setManageError("Network error. Please try again.");
-                  }
-                }}
-                className="text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors"
-                title="Disband team"
-              >
-                Disband Team
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="grid gap-3">
-          {team.players.map((player) => {
-            const roleColor = roleColors[player.role] || '#666';
-            return (
-              <motion.div
-                key={player.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-4 p-4 bg-[#0c0c12] border border-white/[0.07]"
-              >
-                {/* Player Avatar */}
-                <div className="w-12 h-12 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
-                  {player.photo ? (
-                    <img src={player.photo} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <User size={16} className="text-[#333]" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Player Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-white font-bold tracking-wide uppercase truncate">{player.ign}</p>
-                  <p className="text-[10px] tracking-widest uppercase" style={{ color: roleColor }}>
-                    {player.role}
-                    {player.isSubstitute && ' (Sub)'}
-                  </p>
-                </div>
-
-                {/* Role indicator */}
-                <div
-                  className="w-1 h-8 rounded-full"
-                  style={{ background: roleColor }}
-                />
-              </motion.div>
-            );
-          })}
-        </div>
-
-        {team.players.length < 5 && (
-          <div className="mt-4 p-4 border border-dashed border-white/10 text-center">
-            <p className="text-[#555] text-sm">Need {5 - team.players.length} more player(s) to complete roster</p>
-          </div>
-        )}
-      </div>
-
-      {/* Leave Squad Modal */}
-      <AnimatePresence>
-        {showLeaveModal && team && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
-            onClick={() => !leavingSquad && setShowLeaveModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-[#0c0c12] border border-red-500/20 p-6 max-w-sm w-full relative overflow-hidden"
-            >
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500/50 via-red-400 to-red-500/50" />
-
-              <div className="flex items-center justify-between mb-5">
+              {/* Title & Tag */}
+              <div className="space-y-1 pb-1">
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-red-500/10 border border-red-500/20">
-                    <AlertCircle size={16} className="text-red-400" />
-                  </div>
-                  <h3 className="text-lg font-black tracking-wider uppercase text-white/90">
-                    {leaveStep === 'transfer' ? 'Transfer Captaincy' : 'Leave Squad'}
-                  </h3>
+                  <span className="px-2.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-mono font-black uppercase">
+                    [{team.tag}]
+                  </span>
+                  <span className="text-zinc-400 text-xs font-bold uppercase">{team.region || 'Accra'}</span>
                 </div>
-                <button onClick={() => setShowLeaveModal(false)} disabled={leavingSquad} className="text-[#444] hover:text-white transition-colors">
-                  <X size={20} />
-                </button>
+                <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
+                  {team.name}
+                </h1>
               </div>
+            </div>
 
-              {leaveStep === 'transfer' ? (
-                <div className="space-y-4">
-                  <p className="text-[11px] text-[#666] leading-relaxed uppercase tracking-wider">
-                    You are the captain. Select a new captain before leaving — your stats will be retained.
-                  </p>
-                  <div>
-                    <label className="text-[10px] text-[#888] font-black uppercase tracking-[0.2em] mb-2 block">New Captain</label>
-                    <select
-                      value={leaveNewCaptainId}
-                      onChange={(e) => setLeaveNewCaptainId(e.target.value)}
-                      className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-4 py-3 outline-none focus:border-red-500/30 appearance-none"
-                    >
-                      <option value="">Select a player…</option>
-                      {team.players
-                        .filter((p) => p.user?.id && p.user.id !== session?.user?.id)
-                        .map((p) => (
-                          <option key={p.user!.id} value={p.user!.id}>
-                            {p.ign} ({p.role})
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  {leaveError && <p className="text-red-400 text-xs font-bold">{leaveError}</p>}
-                  <div className="flex gap-3 pt-2">
-                    <button onClick={() => setShowLeaveModal(false)} disabled={leavingSquad} className="flex-1 py-3 bg-white/5 text-[#888] text-[10px] font-black tracking-widest uppercase hover:bg-white/10 transition-colors">
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleTransferThenLeave}
-                      disabled={leavingSquad || !leaveNewCaptainId}
-                      className="flex-1 py-3 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-[10px] font-black tracking-widest uppercase hover:bg-[#e8a000]/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {leavingSquad ? <Loader2 size={13} className="animate-spin" /> : <Crown size={13} />}
-                      Transfer & Continue
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <p className="text-[11px] text-[#666] leading-relaxed uppercase tracking-wider">
-                    You are about to leave <span className="text-white">{team.name}</span>. Your stats and match history are kept — you can join or create another team anytime.
-                  </p>
-                  {leaveError && <p className="text-red-400 text-xs font-bold">{leaveError}</p>}
-                  <div className="flex gap-3 pt-2">
-                    <button onClick={() => setShowLeaveModal(false)} disabled={leavingSquad} className="flex-1 py-3 bg-white/5 text-[#888] text-[10px] font-black tracking-widest uppercase hover:bg-white/10 transition-colors">
-                      Stay
-                    </button>
-                    <button
-                      onClick={handleLeaveSquad}
-                      disabled={leavingSquad}
-                      className="flex-1 py-3 bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] font-black tracking-widest uppercase hover:bg-red-500/20 transition-colors disabled:opacity-30 flex items-center justify-center gap-2"
-                    >
-                      {leavingSquad ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
-                      Leave Squad
-                    </button>
-                  </div>
-                </div>
+            {/* Quick Status Pill */}
+            <div className="flex items-center gap-3">
+              {isCaptain && (
+                <span className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                  <Crown size={14} /> Team Captain
+                </span>
               )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      {/* Edit Team Name/Tag Modal */}
-      <AnimatePresence>
-        {showEditTeamModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
-            onClick={() => setShowEditTeamModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-[#0c0c12] border border-white/10 p-6 max-w-md w-full"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-black tracking-wider uppercase">Edit Team</h3>
-                <button onClick={() => setShowEditTeamModal(false)} className="text-[#666] hover:text-white">
-                  <X size={20} />
+      {/* ── Glassmorphic Sticky Hub Navigation Bar ────────────── */}
+      <div className="sticky top-20 z-40 bg-[#07070c]/90 backdrop-blur-xl border-y border-white/10 mb-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3 overflow-x-auto py-3 scrollbar-hide">
+            {[
+              { key: 'roster', label: 'Squad Roster', icon: Shield },
+              { key: 'recruitment', label: 'Recruitment & Trials', icon: UserCheck, badge: invites.length },
+              { key: 'challenges', label: 'Challenge Arena', icon: Swords, badge: challenges.length },
+              { key: 'settings', label: 'Identity & Customization', icon: Settings },
+            ].map((tab) => {
+              const active = activeTab === tab.key;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key as any)}
+                  className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 relative shrink-0 ${
+                    active
+                      ? 'bg-amber-500 text-black shadow-xl'
+                      : 'bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10 border border-white/5'
+                  }`}
+                >
+                  <Icon size={16} className={active ? 'text-black' : 'text-zinc-400'} />
+                  <span>{tab.label}</span>
+                  {tab.badge !== undefined && tab.badge > 0 && (
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold ${
+                        active ? 'bg-black/20 text-black' : 'bg-amber-500/20 text-amber-400'
+                      }`}
+                    >
+                      {tab.badge}
+                    </span>
+                  )}
+                  {active && (
+                    <motion.div
+                      layoutId="activeMyTeamTab"
+                      className="absolute inset-0 rounded-2xl border-2 border-white/40 pointer-events-none"
+                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                    />
+                  )}
                 </button>
-              </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[#888] text-xs uppercase tracking-widest mb-2">Team Name</label>
-                  <input
-                    type="text"
-                    value={editTeamName}
-                    onChange={(e) => setEditTeamName(e.target.value)}
-                    maxLength={30}
-                    className="w-full bg-[#0b0b12] border border-white/10 px-3 py-2.5 text-white text-sm focus:border-[#e8a000]/50 focus:outline-none"
-                    placeholder="Team name (3-30 characters)"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[#888] text-xs uppercase tracking-widest mb-2">Team Tag</label>
-                  <input
-                    type="text"
-                    value={editTeamTag}
-                    onChange={(e) => setEditTeamTag(e.target.value.toUpperCase())}
-                    maxLength={5}
-                    className="w-full bg-[#0b0b12] border border-white/10 px-3 py-2.5 text-white text-sm uppercase tracking-widest focus:border-[#e8a000]/50 focus:outline-none"
-                    placeholder="TAG (3-5 characters)"
-                  />
-                  <p className="text-[#555] text-[10px] mt-1">Alphanumeric only, displayed as [{editTeamTag || 'TAG'}]</p>
-                </div>
-
-                {editTeamError && (
-                  <div className="border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-                    {editTeamError}
-                  </div>
-                )}
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => setShowEditTeamModal(false)}
-                    className="flex-1 px-4 py-2.5 border border-white/10 text-[#888] text-sm font-bold tracking-wide hover:bg-white/5 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={saveTeamNameTag}
-                    disabled={savingTeamEdit}
-                    className="flex-1 px-4 py-2.5 bg-[#e8a000] text-black text-sm font-bold tracking-wide hover:bg-[#ffb800] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {savingTeamEdit ? (
-                      <>
-                        <Loader2 size={14} className="animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Check size={14} />
-                        Save Changes
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Invite Modal */}
-      <AnimatePresence>
-        {showInviteModal && (
+      {/* ── Main Tab Content ──────────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <AnimatePresence mode="wait">
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
-            onClick={() => setShowInviteModal(false)}
+            key={activeTab}
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.25 }}
           >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-[#0c0c12] border border-white/10 p-6 max-w-md w-full"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-black tracking-wider uppercase">Invite Players</h3>
-                <button onClick={() => setShowInviteModal(false)} className="text-[#666] hover:text-white">
-                  <X size={20} />
-                </button>
-              </div>
-              
-              <p className="text-[#888] text-sm mb-4">Share this code with players you want to invite:</p>
-              
-              {generatingCode ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 size={24} className="animate-spin text-[#e8a000]" />
-                </div>
-              ) : inviteCode ? (
-                <div className="bg-[#0d0d14] border border-[#e8a000]/30 p-4 text-center">
-                  <p className="text-[#e8a000] text-2xl font-black tracking-[0.3em]">{inviteCode}</p>
-                </div>
-              ) : (
-                <p className="text-[#666] text-center">Failed to generate invite code</p>
-              )}
-              
-              <p className="text-[#555] text-xs mt-4 text-center">
-                Players can use this code at /join to join your team
-              </p>
-            </motion.div>
+            {activeTab === 'roster' && (
+              <TeamRosterView
+                team={team}
+                isCaptain={isCaptain}
+                onRemovePlayer={handleRemovePlayer}
+                onEditPlayer={handleEditPlayer}
+                onInvitePlayer={handleInvitePlayer}
+                onGenerateTeamCode={generateInviteCode}
+                teamCode={inviteCode}
+                generatingCode={generatingCode}
+              />
+            )}
+
+            {activeTab === 'recruitment' && (
+              <TeamRecruitmentView
+                isCaptain={isCaptain}
+                isRecruiting={Boolean(team.isRecruiting)}
+                onToggleRecruiting={handleToggleRecruiting}
+                invites={invites}
+                onAcceptInvite={handleAcceptInvite}
+                onDeclineInvite={handleDeclineInvite}
+                loadingInvites={loadingInvites}
+              />
+            )}
+
+            {activeTab === 'challenges' && (
+              <TeamChallengeArenaView
+                teamId={team.id}
+                isCaptain={isCaptain}
+                challenges={challenges}
+                teamOptions={teamOptions}
+                onSendChallenge={handleSendChallenge}
+                onRespondChallenge={handleRespondChallenge}
+                loadingChallenges={loadingChallenges}
+              />
+            )}
+
+            {activeTab === 'settings' && (
+              <TeamSettingsView
+                team={team}
+                isCaptain={isCaptain}
+                onUpdateTeamSettings={handleUpdateTeamSettings}
+              />
+            )}
           </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Manage Players Drawer */}
-      <AnimatePresence>
-        {showManageModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex justify-end bg-black/70 backdrop-blur-sm"
-            onClick={() => { setShowManageModal(false); setManageError(null); setManageSuccess(null); setEditingPlayerId(null); }}
-          >
-            <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              onClick={(e) => e.stopPropagation()}
-              className="relative bg-[#09090f] border-l border-white/[0.08] w-full max-w-sm flex flex-col h-full shadow-2xl"
-            >
-              {/* Sticky Header */}
-              <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.06]">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-base font-black tracking-widest uppercase text-white">Manage Roster</h3>
-                    <p className="text-[10px] text-[#555] mt-0.5">
-                      {team.players.filter(p => !p.isSubstitute).length}/5 starters · {team.players.filter(p => p.isSubstitute).length} subs
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => { setShowManageModal(false); setManageError(null); setManageSuccess(null); setEditingPlayerId(null); }}
-                    className="text-[#444] hover:text-white transition-colors p-1"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                {/* Tab Bar */}
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setManageActiveTab('roster')}
-                    className={`flex-1 py-2 text-[10px] font-black tracking-[0.15em] uppercase transition-colors ${
-                      manageActiveTab === 'roster'
-                        ? 'bg-white/5 border border-white/10 text-white'
-                        : 'text-[#555] hover:text-[#888]'
-                    }`}
-                  >
-                    Roster
-                  </button>
-                  <button
-                    onClick={() => { setManageActiveTab('add'); setAddPlayerError(null); setAddPlayerSuccess(null); }}
-                    className={`flex-1 py-2 text-[10px] font-black tracking-[0.15em] uppercase transition-colors ${
-                      manageActiveTab === 'add'
-                        ? 'bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000]'
-                        : 'text-[#555] hover:text-[#888]'
-                    }`}
-                  >
-                    + Add Player
-                  </button>
-                </div>
-              </div>
-
-              {/* Feedback Messages */}
-              {(manageError || manageSuccess) && (
-                <div className={`shrink-0 mx-5 mt-3 p-3 text-xs font-bold border ${
-                  manageError
-                    ? 'bg-red-500/10 border-red-500/30 text-red-400'
-                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                }`}>
-                  {manageError || manageSuccess}
-                </div>
-              )}
-
-              {/* Scrollable Body */}
-              <div className="flex-1 overflow-y-auto">
-
-                {/* ── ROSTER TAB ───────────────────────────────── */}
-                {manageActiveTab === 'roster' && (
-                  <div className="px-4 py-4 space-y-6">
-
-                    {/* Starters */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-1 h-3.5 bg-emerald-500 rounded-full" />
-                        <span className="text-[9px] font-black tracking-[0.25em] uppercase text-emerald-500/70">Starting Five</span>
-                      </div>
-                      <div className="space-y-1.5">
-                        {team.players.filter(p => !p.isSubstitute).length === 0 && (
-                          <p className="text-[10px] text-[#444] italic px-3 py-2 border border-dashed border-white/[0.05]">No starters yet</p>
-                        )}
-                        {team.players.filter(p => !p.isSubstitute).map((player) => {
-                          const isEditing = editingPlayerId === player.id;
-                          const isCaptain = player.user?.id === team.captainId;
-                          const canMakeCaptain = team.isCaptain && player.user?.id && !isCaptain;
-                          return (
-                            <div key={player.id} className="border border-white/[0.05] bg-[#0d0d14]/60 group hover:border-emerald-500/20 transition-colors">
-                              {!isEditing ? (
-                                <div className="p-3 space-y-2.5">
-                                  {/* Player info row */}
-                                  <div className="flex items-center gap-2.5">
-                                    <div className="w-9 h-9 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
-                                      {player.photo
-                                        ? <img src={player.photo} alt="" className="w-full h-full object-cover" />
-                                        : <div className="w-full h-full flex items-center justify-center"><User size={13} className="text-[#333]" /></div>}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1.5">
-                                        <p className="text-white font-bold text-sm leading-none truncate">{player.ign}</p>
-                                        {isCaptain && <span className="text-[8px] bg-[#e8a000] text-black font-black px-1 py-px tracking-wide shrink-0">CAPTAIN</span>}
-                                      </div>
-                                      <p className="text-[9px] text-emerald-500/60 font-bold uppercase tracking-widest mt-0.5">{player.role} · Starter</p>
-                                    </div>
-                                  </div>
-                                  {/* Action buttons row */}
-                                  <div className="flex flex-wrap gap-1 pt-0.5 border-t border-white/[0.04]">
-                                    {team.isCaptain && (
-                                      <button onClick={() => togglePlayerSubstitute(player)} disabled={togglingSubPlayerId === player.id}
-                                        className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-wide border border-white/[0.08] text-[#777] hover:text-white hover:border-white/20 transition-colors disabled:opacity-40">
-                                        {togglingSubPlayerId === player.id ? <Loader2 size={9} className="animate-spin" /> : <ArrowDownCircle size={9} />}
-                                        Move to Sub
-                                      </button>
-                                    )}
-                                    {canMakeCaptain && (
-                                      <button onClick={() => player.user?.id && transferCaptaincy(player.user.id, player.ign)} disabled={transferringCaptain}
-                                        className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-wide border border-[#e8a000]/20 text-[#e8a000]/70 hover:text-[#e8a000] hover:border-[#e8a000]/40 transition-colors disabled:opacity-40">
-                                        {transferringCaptain ? <Loader2 size={9} className="animate-spin" /> : <Crown size={9} />}
-                                        Make Captain
-                                      </button>
-                                    )}
-                                    {team.isCaptain && (
-                                      <button onClick={() => startEditPlayer(player)}
-                                        className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-wide border border-white/[0.08] text-[#777] hover:text-[#e8a000] hover:border-[#e8a000]/20 transition-colors">
-                                        <Pencil size={9} /> Edit Info
-                                      </button>
-                                    )}
-                                    {team.isCaptain && (
-                                      <button onClick={() => openTransferModal(player.id)}
-                                        className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-wide border border-blue-500/20 text-blue-400/60 hover:text-blue-400 hover:border-blue-400/40 transition-colors">
-                                        <ArrowRightLeft size={9} /> Transfer
-                                      </button>
-                                    )}
-                                    {player.user?.id !== session?.user?.id && (
-                                      <button onClick={() => removePlayer(player.id)} disabled={removingPlayerId === player.id}
-                                        className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-wide border border-red-500/[0.12] text-red-500/40 hover:text-red-400 hover:border-red-400/30 transition-colors disabled:opacity-40">
-                                        {removingPlayerId === player.id ? <Loader2 size={9} className="animate-spin" /> : <Trash2 size={9} />}
-                                        Remove
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                renderPlayerEditRow(player)
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Substitutes */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-1 h-3.5 bg-amber-500/60 rounded-full" />
-                        <span className="text-[9px] font-black tracking-[0.25em] uppercase text-amber-500/60">Substitutes</span>
-                      </div>
-                      <div className="space-y-1.5">
-                        {team.players.filter(p => p.isSubstitute).length === 0 ? (
-                          <p className="text-[10px] text-[#444] italic px-3 py-2 border border-dashed border-white/[0.05]">No substitutes registered</p>
-                        ) : (
-                          team.players.filter(p => p.isSubstitute).map((player) => {
-                            const isEditing = editingPlayerId === player.id;
-                            const isCaptain = player.user?.id === team.captainId;
-                            const canMakeCaptain = team.isCaptain && player.user?.id && !isCaptain;
-                            return (
-                              <div key={player.id} className="border border-white/[0.05] bg-[#0d0d14]/60 group hover:border-amber-500/20 transition-colors">
-                                {!isEditing ? (
-                                  <div className="p-3 space-y-2.5">
-                                    {/* Player info row */}
-                                    <div className="flex items-center gap-2.5">
-                                      <div className="w-9 h-9 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
-                                        {player.photo
-                                          ? <img src={player.photo} alt="" className="w-full h-full object-cover" />
-                                          : <div className="w-full h-full flex items-center justify-center"><User size={13} className="text-[#333]" /></div>}
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5">
-                                          <p className="text-white/80 font-bold text-sm leading-none truncate">{player.ign}</p>
-                                          {isCaptain && <span className="text-[8px] bg-[#e8a000] text-black font-black px-1 py-px tracking-wide shrink-0">CAPTAIN</span>}
-                                        </div>
-                                        <p className="text-[9px] text-amber-500/50 font-bold uppercase tracking-widest mt-0.5">{player.role} · Sub</p>
-                                      </div>
-                                    </div>
-                                    {/* Action buttons row */}
-                                    <div className="flex flex-wrap gap-1 pt-0.5 border-t border-white/[0.04]">
-                                      {team.isCaptain && (
-                                        <button onClick={() => togglePlayerSubstitute(player)} disabled={togglingSubPlayerId === player.id}
-                                          className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-wide border border-emerald-500/20 text-emerald-500/60 hover:text-emerald-400 hover:border-emerald-400/40 transition-colors disabled:opacity-40">
-                                          {togglingSubPlayerId === player.id ? <Loader2 size={9} className="animate-spin" /> : <ArrowUpCircle size={9} />}
-                                          Promote to Starter
-                                        </button>
-                                      )}
-                                      {canMakeCaptain && (
-                                        <button onClick={() => player.user?.id && transferCaptaincy(player.user.id, player.ign)} disabled={transferringCaptain}
-                                          className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-wide border border-[#e8a000]/20 text-[#e8a000]/70 hover:text-[#e8a000] hover:border-[#e8a000]/40 transition-colors disabled:opacity-40">
-                                          {transferringCaptain ? <Loader2 size={9} className="animate-spin" /> : <Crown size={9} />}
-                                          Make Captain
-                                        </button>
-                                      )}
-                                      {team.isCaptain && (
-                                        <button onClick={() => startEditPlayer(player)}
-                                          className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-wide border border-white/[0.08] text-[#777] hover:text-[#e8a000] hover:border-[#e8a000]/20 transition-colors">
-                                          <Pencil size={9} /> Edit Info
-                                        </button>
-                                      )}
-                                      {team.isCaptain && (
-                                        <button onClick={() => openTransferModal(player.id)}
-                                          className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-wide border border-blue-500/20 text-blue-400/60 hover:text-blue-400 hover:border-blue-400/40 transition-colors">
-                                          <ArrowRightLeft size={9} /> Transfer
-                                        </button>
-                                      )}
-                                      {player.user?.id !== session?.user?.id && (
-                                        <button onClick={() => removePlayer(player.id)} disabled={removingPlayerId === player.id}
-                                          className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-wide border border-red-500/[0.12] text-red-500/40 hover:text-red-400 hover:border-red-400/30 transition-colors disabled:opacity-40">
-                                          {removingPlayerId === player.id ? <Loader2 size={9} className="animate-spin" /> : <Trash2 size={9} />}
-                                          Remove
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  renderPlayerEditRow(player)
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ── ADD PLAYER TAB ───────────────────────────── */}
-                {manageActiveTab === 'add' && (
-                  <div className="px-4 py-4">
-                    {addPlayerError && <p className="text-red-400 text-xs mb-3 font-bold">{addPlayerError}</p>}
-                    {addPlayerSuccess && <p className="text-emerald-400 text-xs mb-3 font-bold">{addPlayerSuccess}</p>}
-                    {(() => {
-                      const starterCount = team.players.filter(p => !p.isSubstitute).length;
-                      const hasFullStarters = starterCount >= 5;
-                      const needsMoreStarters = starterCount < 5;
-                      return (
-                        <div className="space-y-3">
-                          <div>
-                            <label className="text-[9px] text-[#777] font-black uppercase tracking-[0.2em] mb-1.5 block">In-Game Name</label>
-                            <input
-                              type="text"
-                              placeholder="Player IGN"
-                              value={addPlayerIGN}
-                              onChange={(e) => setAddPlayerIGN(e.target.value)}
-                              className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2.5 outline-none focus:border-[#e8a000]/50 placeholder:text-[#444]"
-                            />
-                            {lookupPlayer && (
-                              <div className="mt-2 p-3 bg-[#0c0c12] border border-white/5 flex items-center gap-3">
-                                {lookupPlayer.loading ? (
-                                  <div className="flex items-center gap-2 py-1">
-                                    <Loader2 size={12} className="animate-spin text-[#e8a000]" />
-                                    <span className="text-[10px] text-[#555] tracking-wider uppercase font-black">Preloading player info...</span>
-                                  </div>
-                                ) : lookupPlayer.found ? (
-                                  <>
-                                    <div className="w-10 h-10 border border-white/10 overflow-hidden bg-[#0d0d14] shrink-0">
-                                      {lookupPlayer.photo ? (
-                                        <img src={lookupPlayer.photo} alt="" className="w-full h-full object-cover" />
-                                      ) : (
-                                        <div className="w-full h-full flex items-center justify-center">
-                                          <User size={14} className="text-[#333]" />
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-white text-xs font-bold truncate">{lookupPlayer.ign}</p>
-                                      <p className="text-[9px] tracking-wider uppercase mt-0.5 font-black">
-                                        {lookupPlayer.team ? (
-                                          <span className="text-red-400">Team: {lookupPlayer.team.name}</span>
-                                        ) : (
-                                          <span className="text-emerald-400">Available</span>
-                                        )}
-                                      </p>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <div className="flex items-center gap-2 py-1">
-                                    <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                    <span className="text-[10px] text-blue-400 tracking-wider uppercase font-black">New Player (will create placeholder)</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            <label className="text-[9px] text-[#777] font-black uppercase tracking-[0.2em] mb-1.5 block">Role</label>
-                            <select
-                              value={addPlayerRole}
-                              onChange={(e) => setAddPlayerRole(e.target.value)}
-                              className="w-full bg-[#0a0a10] border border-white/10 text-white text-sm px-3 py-2.5 outline-none focus:border-[#e8a000]/50"
-                            >
-                              <option value="EXP">EXP Lane</option>
-                              <option value="JUNGLE">Jungle</option>
-                              <option value="MID">Mid Lane</option>
-                              <option value="GOLD">Gold Lane</option>
-                              <option value="ROAM">Roam</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="text-[9px] text-[#777] font-black uppercase tracking-[0.2em] mb-1.5 block">Position</label>
-                            <div className="flex gap-2">
-                              <button type="button"
-                                onClick={() => !hasFullStarters && setAddPlayerIsSubstitute(false)}
-                                disabled={hasFullStarters}
-                                className={`flex-1 py-2.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
-                                  hasFullStarters
-                                    ? 'border border-white/5 text-[#333] cursor-not-allowed'
-                                    : !addPlayerIsSubstitute
-                                      ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
-                                      : 'border border-white/10 text-[#555] hover:text-white'
-                                }`}
-                              >
-                                Starter
-                              </button>
-                              <button type="button"
-                                onClick={() => !needsMoreStarters && setAddPlayerIsSubstitute(true)}
-                                disabled={needsMoreStarters}
-                                className={`flex-1 py-2.5 text-[10px] font-black tracking-widest uppercase transition-colors ${
-                                  needsMoreStarters
-                                    ? 'border border-white/5 text-[#333] cursor-not-allowed'
-                                    : addPlayerIsSubstitute
-                                      ? 'bg-[#e8a000]/20 border border-[#e8a000]/40 text-[#e8a000]'
-                                      : 'border border-white/10 text-[#555] hover:text-white'
-                                }`}
-                              >
-                                Sub
-                              </button>
-                            </div>
-                            {needsMoreStarters && <p className="text-[9px] text-[#555] mt-1.5">Fill {5 - starterCount} starter slot(s) before adding subs</p>}
-                            {hasFullStarters && <p className="text-[9px] text-[#555] mt-1.5">Starters full — adding as substitute</p>}
-                          </div>
-                          <button
-                            onClick={addPlayer}
-                            disabled={!addPlayerIGN.trim() || addingPlayer}
-                            className="w-full flex items-center justify-center gap-2 py-3 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-[10px] font-black tracking-widest uppercase hover:bg-[#e8a000]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {addingPlayer ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-                            {addPlayerIsSubstitute ? 'Add Substitute' : 'Add to Starting Five'}
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

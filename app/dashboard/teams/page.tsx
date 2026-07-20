@@ -1,5 +1,6 @@
 "use client";
 
+import { useRoleGuard, useRole } from "../lib/useRole";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { dashboardFetch } from "../lib/api";
@@ -19,11 +20,16 @@ type Team = {
 type Payload = { teams: Team[]; pagination: { total: number; limit: number; skip: number } };
 
 export default function DashboardTeamsPage() {
+  const { isAllowed: __roleAllowed } = useRoleGuard(["TOURNAMENT_ADMIN"]);
+  const { role } = useRole();
   const [teams, setTeams] = useState<Team[]>([]);
   const [pagination, setPagination] = useState({ total: 0, limit: 50, skip: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [mergeSource, setMergeSource] = useState("");
+  const [mergeTarget, setMergeTarget] = useState("");
+  const [isMerging, setIsMerging] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,6 +54,32 @@ export default function DashboardTeamsPage() {
     }, 0);
     return () => clearTimeout(t);
   }, [load]);
+
+  const handleMerge = async () => {
+    if (!mergeSource || !mergeTarget) return;
+    if (!confirm("Are you sure you want to merge these teams? The source team will be disbanded and players transferred as substitutes.")) return;
+    
+    setIsMerging(true);
+    try {
+      const res = await dashboardFetch<{ message?: string }>(`/api/admin/teams/merge`, {
+        method: "POST",
+        body: JSON.stringify({ sourceTeamId: mergeSource, targetTeamId: mergeTarget }),
+      });
+      if (res.error) {
+        setError(res.error);
+      } else {
+        setError(null);
+        setMergeSource("");
+        setMergeTarget("");
+        alert(res.data?.message || "Teams merged successfully!");
+        await load();
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to merge teams");
+    } finally {
+      setIsMerging(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -75,6 +107,45 @@ export default function DashboardTeamsPage() {
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
+        </div>
+      )}
+
+      {/* MERGE TEAMS ADMIN PANEL */}
+      {role === "SUPER_ADMIN" && (
+        <div className="p-4 bg-[#0a0a0f] border border-white/10 rounded-lg flex flex-col sm:flex-row gap-4 items-end">
+          <div className="flex-1">
+            <label className="block text-[10px] text-[#666] uppercase tracking-wider mb-1">Target Team (Keeps Identity)</label>
+            <select 
+              value={mergeTarget} 
+              onChange={e => setMergeTarget(e.target.value)}
+              className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none"
+            >
+              <option value="">-- Select Target Team --</option>
+              {teams.filter(t => t.id !== mergeSource && t.status === 'ACTIVE').map(t => (
+                <option key={t.id} value={t.id}>{t.name} ({t._count?.players ?? 0}/20)</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="block text-[10px] text-[#666] uppercase tracking-wider mb-1">Source Team (Disbands & Joins Target)</label>
+            <select 
+              value={mergeSource} 
+              onChange={e => setMergeSource(e.target.value)}
+              className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none"
+            >
+              <option value="">-- Select Source Team --</option>
+              {teams.filter(t => t.id !== mergeTarget && t.status === 'ACTIVE').map(t => (
+                <option key={t.id} value={t.id}>{t.name} ({t._count?.players ?? 0}/20)</option>
+              ))}
+            </select>
+          </div>
+          <button 
+            onClick={handleMerge}
+            disabled={!mergeTarget || !mergeSource || isMerging}
+            className="px-4 py-2 bg-purple-500/20 text-purple-400 border border-purple-500/30 font-bold uppercase tracking-widest text-[10px] rounded hover:bg-purple-500/30 disabled:opacity-50 transition-colors"
+          >
+            {isMerging ? "Merging..." : "Merge Teams"}
+          </button>
         </div>
       )}
 

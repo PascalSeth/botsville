@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     const adminRole = await prisma.adminRole.findUnique({
       where: { userId: session.user.id },
     });
-    if (!adminRole || (adminRole.role !== 'TOURNAMENT_ADMIN' && adminRole.role !== 'REFEREE' && adminRole.role !== 'SUPER_ADMIN')) {
+    if (!adminRole || (adminRole.role !== 'TOURNAMENT_ADMIN' && adminRole.role !== 'REFEREE' && adminRole.role !== 'COMMENTATOR' && adminRole.role !== 'SUPER_ADMIN')) {
       return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
     }
 

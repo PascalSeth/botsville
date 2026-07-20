@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireActiveUser, apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
+import { invalidatePattern, deleteFromCache } from "@/lib/redis";
 
 export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -13,6 +14,10 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
     if (!existing) return apiError("Hero not found", 404);
 
     await prisma.heroCatalog.delete({ where: { id } });
+
+    // Invalidate Redis hero cache
+    await invalidatePattern("hero-*");
+    await deleteFromCache("hero-catalog");
 
     return apiSuccess({ message: "Hero removed" });
   } catch (error: unknown) {

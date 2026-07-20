@@ -6,7 +6,7 @@ import {
   apiSuccess,
   createAuditLog,
 } from "@/lib/api-utils";
-import { SeasonStatus } from "@/app/generated/prisma/enums";
+import { SeasonStatus, AdminRoleType } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
 
@@ -49,7 +49,7 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const { id } = await context.params;
     const body = await request.json();
     const { name, startDate, endDate, status } = body;

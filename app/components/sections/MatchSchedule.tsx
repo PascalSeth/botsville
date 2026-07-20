@@ -2,8 +2,8 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Image from 'next/image';
-import { Eye, Bell, Radio, Clock, Trophy, Swords, Calendar, LayoutGrid, ChevronRight, Shield, Crown, Info } from 'lucide-react';
-import { motion, useInView, AnimatePresence } from 'framer-motion';
+import { Eye, Bell, Swords, LayoutGrid, Shield, Crown, Info, Archive, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import StartingFiveModal from './StartingFiveModal';
 
 /* ────────────────────────────────────────────────────────── */
@@ -12,9 +12,9 @@ import StartingFiveModal from './StartingFiveModal';
 // ... (Types remain identical to your provided file)
 type MatchTeam = { id?: string; name: string; tag: string; logo: string | null };
 type PlayerData = { id: string; ign: string; role: string; photo: string | null; isSubstitute: boolean; user?: { photo: string | null }; };
-type ScheduleMatch = { id: string; time: string; scheduledAt: string; elapsed: string | null; teamA: MatchTeam & { isEliminated?: boolean }; teamB: MatchTeam & { isEliminated?: boolean }; status: 'LIVE' | 'UPCOMING' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED'; scoreA: number; scoreB: number; stage: string; lobby?: 'LOBBY_A' | 'LOBBY_B'; playDay?: number; isChallenge?: boolean; };
+type ScheduleMatch = { id: string; time: string; scheduledAt: string; elapsed: string | null; teamA: MatchTeam & { isEliminated?: boolean }; teamB: MatchTeam & { isEliminated?: boolean }; status: 'LIVE' | 'UPCOMING' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED'; scoreA: number; scoreB: number; stage: string; lobby?: 'LOBBY_A' | 'LOBBY_B'; playDay?: number; isChallenge?: boolean; flyerUrl?: string | null; flyerType?: string | null; streamUrl?: string | null; };
 type TournamentListItem = { id: string; name: string; status: string; createdAt?: string; _count?: { matches?: number } };
-type ApiMatch = { id: string; scheduledTime: string; elapsed: string | null; status: 'LIVE' | 'UPCOMING' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED'; scoreA: number; scoreB: number; stage: string | null; lobby: 'LOBBY_A' | 'LOBBY_B' | null; playDay: number | null; teamA: { id: string; name: string; tag: string | null; logo: string | null; registrations?: { isEliminated: boolean }[] }; teamB: { id: string; name: string; tag: string | null; logo: string | null; registrations?: { isEliminated: boolean }[] }; challengeRequest?: { id: string } | null; };
+type ApiMatch = { id: string; scheduledTime: string; elapsed: string | null; status: 'LIVE' | 'UPCOMING' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED'; scoreA: number; scoreB: number; stage: string | null; lobby: 'LOBBY_A' | 'LOBBY_B' | null; playDay: number | null; teamA: { id: string; name: string; tag: string | null; logo: string | null; registrations?: { isEliminated: boolean }[] }; teamB: { id: string; name: string; tag: string | null; logo: string | null; registrations?: { isEliminated: boolean }[] }; challengeRequest?: { id: string } | null; flyerUrl?: string | null; flyerType?: string | null; };
 
 /* ────────────────────────────────────────────────────────── */
 /*  Helpers                                                   */
@@ -49,13 +49,19 @@ const useRealtimeMatches = () => {
         const res = await fetch('/api/tournaments?limit=20', { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
+        const statusOrder: Record<string, number> = { LIVE: 0, UPCOMING: 1, COMPLETED: 2 };
         const list = (Array.isArray(data?.tournaments) ? data.tournaments : [])
           .filter((t: TournamentListItem) => (t._count?.matches ?? 0) > 0)
-          .sort((a: TournamentListItem, b: TournamentListItem) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          .sort((a: TournamentListItem, b: TournamentListItem) => {
+            const statusDiff = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+            if (statusDiff !== 0) return statusDiff;
+            return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+          });
 
         setTournaments(list);
         if (list.length > 0 && !initialSelectionDone.current) {
-          const prioritize = list.find((t: TournamentListItem) => t.status === 'LIVE') || list.find((t: TournamentListItem) => t.status === 'UPCOMING') || list[0];
+          // list[0] is always the highest-priority (LIVE > UPCOMING > COMPLETED)
+          const prioritize = list[0];
           setActiveTournamentId(prioritize.id);
           initialSelectionDone.current = true;
         }
@@ -90,6 +96,9 @@ const useRealtimeMatches = () => {
         status: m.status, scoreA: m.scoreA || 0, scoreB: m.scoreB || 0,
         stage: m.stage || 'Match', lobby: m.lobby || undefined, playDay: m.playDay || undefined,
         isChallenge: Boolean(m.challengeRequest),
+        flyerUrl: m.flyerUrl,
+        flyerType: m.flyerType,
+        streamUrl: (m as { streamUrl?: string | null }).streamUrl,
       }));
       setMatches(mapped);
     } catch (err) { console.error(err); }
@@ -97,7 +106,11 @@ const useRealtimeMatches = () => {
 
   useEffect(() => {
     loadMatches();
-    const iv = setInterval(loadMatches, 30000);
+    const iv = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void loadMatches();
+      }
+    }, 60000);
     return () => clearInterval(iv);
   }, [loadMatches]);
 
@@ -109,7 +122,7 @@ const useRealtimeMatches = () => {
 /* ────────────────────────────────────────────────────────── */
 
 const StatusBadge = ({ status, isLive }: { status: string, isLive: boolean }) => {
-  const colors: any = {
+  const colors: Record<string, string> = {
     LIVE: 'text-red-500 bg-red-500/10 border-red-500/20',
     UPCOMING: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
     COMPLETED: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
@@ -123,6 +136,184 @@ const StatusBadge = ({ status, isLive }: { status: string, isLive: boolean }) =>
     </div>
   );
 };
+
+const MatchFlyerCard = ({ match, onClick }: { match: ScheduleMatch, onClick: () => void }) => {
+  const isCompleted = match.status === 'COMPLETED';
+  const isLive = match.status === 'LIVE';
+  const isUpcoming = match.status === 'UPCOMING';
+  const isVideo = match.flyerType === 'VIDEO';
+  const aWins = isCompleted && match.scoreA > match.scoreB;
+  const bWins = isCompleted && match.scoreB > match.scoreA;
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.5, ease: 'easeOut' }}
+      onClick={onClick}
+      className="group relative w-full rounded-3xl overflow-hidden cursor-pointer"
+      style={{ aspectRatio: '16/7' }}
+    >
+      {/* ── FLYER BACKGROUND ── */}
+      <div className="absolute inset-0 z-0">
+        {isVideo ? (
+          <video
+            src={match.flyerUrl!}
+            autoPlay loop muted playsInline
+            className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-[1.03]"
+          />
+        ) : (
+          <Image
+            src={match.flyerUrl!}
+            alt="Match Flyer"
+            fill
+            className="object-cover transition-transform duration-1000 group-hover:scale-[1.03]"
+            priority
+          />
+        )}
+
+        {/* Gradient layers */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/10" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/20 to-transparent" />
+        {isLive && (
+          <div className="absolute inset-0 bg-red-900/10 mix-blend-color-dodge animate-pulse" />
+        )}
+      </div>
+
+      {/* ── TOP HUD ── */}
+      <div className="absolute top-0 left-0 right-0 z-20 p-5 sm:p-7 flex items-start justify-between">
+        {/* Stage pill */}
+        <div className="flex items-center gap-2">
+          <span className="px-3 py-1.5 bg-black/70 backdrop-blur-xl border border-white/10 rounded-full text-[9px] font-black uppercase tracking-[0.2em] text-white/70">
+            {match.stage || 'Match'}
+          </span>
+          {match.playDay && (
+            <span className="px-3 py-1.5 bg-black/70 backdrop-blur-xl border border-white/10 rounded-full text-[9px] font-black uppercase tracking-[0.2em] text-white/50">
+              Day {match.playDay}
+            </span>
+          )}
+        </div>
+
+        {/* Live / Status badge */}
+        {isLive ? (
+          <span className="flex items-center gap-2 px-4 py-1.5 bg-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)] rounded-full text-[9px] font-black uppercase tracking-widest text-white">
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+            LIVE NOW
+          </span>
+        ) : isCompleted ? (
+          <span className="px-4 py-1.5 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full text-[9px] font-black uppercase tracking-widest text-white/60">
+            FINAL
+          </span>
+        ) : (
+          <span className="px-4 py-1.5 bg-[#e8a000]/15 backdrop-blur-xl border border-[#e8a000]/30 rounded-full text-[9px] font-black uppercase tracking-widest text-[#e8a000]">
+            {formatMatchDate(match.scheduledAt)} · {match.time}
+          </span>
+        )}
+      </div>
+
+      {/* ── BOTTOM TEAM STRIP ── */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 p-5 sm:p-7">
+        <div className="flex items-end justify-between">
+
+          {/* Team A */}
+          <div className="flex items-center gap-3 sm:gap-4 flex-1">
+            <div className={`relative w-12 h-12 sm:w-16 sm:h-16 rounded-2xl border-2 p-1 backdrop-blur-md flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
+              aWins ? 'border-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.5)] bg-yellow-400/10' :
+              isLive ? 'border-red-500/50 bg-black/60' :
+              'border-white/15 bg-black/60'
+            }`}>
+              {match.teamA.logo ? (
+                <div className="relative w-full h-full">
+                  <Image src={match.teamA.logo} alt="" fill className="object-contain" />
+                </div>
+              ) : (
+                <Shield className="w-7 h-7 text-white/30" />
+              )}
+              {aWins && (
+                <div className="absolute -top-2 -right-2">
+                  <Crown size={14} className="text-yellow-400" />
+                </div>
+              )}
+            </div>
+            <div>
+              <p className={`font-black uppercase tracking-tight text-sm sm:text-lg leading-none ${isCompleted && !aWins ? 'text-white/30' : 'text-white'}`}>
+                {match.teamA.name}
+              </p>
+              <p className="text-[10px] font-bold text-white/30 mt-1">{match.teamA.tag}</p>
+            </div>
+          </div>
+
+          {/* Score / VS Center */}
+          <div className="flex flex-col items-center gap-2 px-4 sm:px-8 flex-shrink-0">
+            {isCompleted || isLive ? (
+              <div className="flex items-center gap-3 sm:gap-5">
+                <span className={`text-3xl sm:text-5xl font-black tabular-nums leading-none ${aWins ? 'text-yellow-300' : isLive ? 'text-white' : 'text-white/50'}`}>
+                  {match.scoreA}
+                </span>
+                <span className="text-white/20 text-2xl font-light">:</span>
+                <span className={`text-3xl sm:text-5xl font-black tabular-nums leading-none ${bWins ? 'text-yellow-300' : isLive ? 'text-white' : 'text-white/50'}`}>
+                  {match.scoreB}
+                </span>
+              </div>
+            ) : (
+              <div className="relative flex items-center justify-center w-16 h-10 sm:w-20 sm:h-12">
+                <div className="absolute inset-0 bg-white/5 backdrop-blur-md rounded-xl border border-white/10" />
+                <span className="relative text-sm sm:text-base font-black italic text-white/50 tracking-widest">VS</span>
+              </div>
+            )}
+            {isUpcoming && (
+              <p className="text-[9px] font-mono text-[#e8a000]/70">{match.time}</p>
+            )}
+          </div>
+
+          {/* Team B */}
+          <div className="flex items-center gap-3 sm:gap-4 flex-1 flex-row-reverse">
+            <div className={`relative w-12 h-12 sm:w-16 sm:h-16 rounded-2xl border-2 p-1 backdrop-blur-md flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
+              bWins ? 'border-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.5)] bg-yellow-400/10' :
+              isLive ? 'border-red-500/50 bg-black/60' :
+              'border-white/15 bg-black/60'
+            }`}>
+              {match.teamB.logo ? (
+                <div className="relative w-full h-full">
+                  <Image src={match.teamB.logo} alt="" fill className="object-contain" />
+                </div>
+              ) : (
+                <Shield className="w-7 h-7 text-white/30" />
+              )}
+              {bWins && (
+                <div className="absolute -top-2 -left-2">
+                  <Crown size={14} className="text-yellow-400" />
+                </div>
+              )}
+            </div>
+            <div className="text-right">
+              <p className={`font-black uppercase tracking-tight text-sm sm:text-lg leading-none ${isCompleted && !bWins ? 'text-white/30' : 'text-white'}`}>
+                {match.teamB.name}
+              </p>
+              <p className="text-[10px] font-bold text-white/30 mt-1">{match.teamB.tag}</p>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Hover CTA bar */}
+        <div className="mt-4 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/20" />
+          <span className="text-[9px] font-black uppercase tracking-widest text-white/40 flex items-center gap-1.5">
+            <Eye size={10} />
+            View Match · Starting Five · Stats
+          </span>
+          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-white/20" />
+        </div>
+      </div>
+
+      {/* Glowing edges on hover */}
+      <div className="absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/0 group-hover:ring-[#e8a000]/30 transition-all duration-500 pointer-events-none" />
+    </motion.div>
+  );
+};
+
 
 const MatchCard = ({ match, onClick }: { match: ScheduleMatch, onClick: () => void }) => {
   const isCompleted = match.status === 'COMPLETED';
@@ -301,6 +492,7 @@ export const MatchSchedule = () => {
     else if (!days.includes(activeDay)) smartDay = days[0];
 
     setActiveDay(smartDay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchesInStage, days]); // Trigger on matches load
 
   const filteredMatches = matchesInStage.filter(m => {
@@ -310,6 +502,10 @@ export const MatchSchedule = () => {
     const isTab = activeTab === 'ALL' || m.status === activeTab;
     return isDay && isTab;
   });
+
+  // Hero flyer layout computation (used in render)
+  const heroMatch = filteredMatches.find(m => m.flyerUrl);
+  const restMatches = filteredMatches.filter(m => m !== heroMatch);
 
   const handleMatchClick = async (match: ScheduleMatch) => {
     setSelectedMatch(match);
@@ -344,20 +540,90 @@ export const MatchSchedule = () => {
             </h2>
           </div>
 
-          <div className="flex flex-col items-start lg:items-end gap-4">
-            {tournaments.length > 0 && (
-              <div className="flex p-1 bg-white/5 rounded-full border border-white/10">
-                {tournaments.slice(0, 3).map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setActiveTournamentId(t.id)}
-                    className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${activeTournamentId === t.id ? 'bg-[#e8a000] text-black' : 'text-white/40 hover:text-white'}`}
-                  >
-                    {t.name}
-                  </button>
-                ))}
-              </div>
-            )}
+          <div className="flex flex-col items-start lg:items-end gap-3">
+            {(() => {
+              const activeTournaments = tournaments.filter(t => t.status === 'LIVE' || t.status === 'UPCOMING');
+              const completedTournaments = tournaments.filter(t => t.status === 'COMPLETED');
+              const selectedIsCompleted = completedTournaments.some(t => t.id === activeTournamentId);
+
+              return (
+                <>
+                  {/* Active tournament toggles */}
+                  {activeTournaments.length > 0 && (
+                    <div className="flex p-1 bg-white/5 rounded-full border border-white/10">
+                      {activeTournaments.map(t => (
+                        <button
+                          key={t.id}
+                          onClick={() => setActiveTournamentId(t.id)}
+                          className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
+                            activeTournamentId === t.id
+                              ? t.status === 'LIVE'
+                                ? 'bg-red-500 text-white shadow-[0_0_16px_rgba(239,68,68,0.4)]'
+                                : 'bg-[#e8a000] text-black'
+                              : 'text-white/40 hover:text-white'
+                          }`}
+                        >
+                          {t.status === 'LIVE' && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                          {t.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Past tournaments — archive shelf */}
+                  {completedTournaments.length > 0 && (
+                    <details className="group relative" open={selectedIsCompleted}>
+                      <summary className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer select-none list-none transition-all ${
+                        selectedIsCompleted
+                          ? 'bg-white/10 border-white/20 text-white'
+                          : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:border-white/20'
+                      }`}>
+                        <Archive size={11} className={selectedIsCompleted ? 'text-[#e8a000]' : ''} />
+                        <span className="text-[9px] font-black uppercase tracking-widest">
+                          {selectedIsCompleted
+                            ? completedTournaments.find(t => t.id === activeTournamentId)?.name
+                            : 'Past Tournaments'}
+                        </span>
+                        <ChevronDown size={10} className="ml-1 transition-transform duration-300 group-open:rotate-180" />
+                      </summary>
+
+                      {/* Dropdown */}
+                      <div className="absolute right-0 top-full mt-2 z-50 min-w-[200px] bg-[#0d0d12]/95 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+                        <div className="px-3 pt-3 pb-2 border-b border-white/5">
+                          <p className="text-[8px] font-black uppercase tracking-[0.3em] text-white/30 flex items-center gap-1.5">
+                            <Archive size={9} /> Archived Tournaments
+                          </p>
+                        </div>
+                        <div className="py-1 max-h-52 overflow-y-auto no-scrollbar">
+                          {completedTournaments.map((t, i) => (
+                            <button
+                              key={t.id}
+                              onClick={() => setActiveTournamentId(t.id)}
+                              className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 transition-all hover:bg-white/5 ${
+                                activeTournamentId === t.id ? 'text-white' : 'text-white/40'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-[8px] text-white/20 font-mono w-4 text-right flex-shrink-0">#{completedTournaments.length - i}</span>
+                                <span className="text-[11px] font-bold uppercase tracking-wide">{t.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <span className="px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-wider bg-white/5 border border-white/10 text-white/30">
+                                  ENDED
+                                </span>
+                                {activeTournamentId === t.id && (
+                                  <div className="w-1.5 h-1.5 rounded-full bg-[#e8a000]" />
+                                )}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </details>
+                  )}
+                </>
+              );
+            })()}
             <p className="text-white/20 text-[10px] font-bold uppercase tracking-[0.2em] flex items-center gap-2">
               <Info size={12} className="text-[#e8a000]" />
               Syncing with global game servers
@@ -432,105 +698,126 @@ export const MatchSchedule = () => {
                 ))}
               </div>
             ) : activeStage === 'Grand Finals' && filteredMatches.length > 0 ? (
-              <motion.div key="grand-finals" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="relative">
-                {/* Cinematic background */}
-                <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
-                  <div className="absolute inset-0 bg-linear-to-br from-yellow-500/10 via-transparent to-amber-500/5" />
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-yellow-500/10 blur-[100px] rounded-full" />
-                </div>
-                <div className="relative border border-yellow-500/20 rounded-3xl overflow-hidden">
-                  {/* Header */}
-                  <div className="text-center pt-10 pb-6 px-8 border-b border-yellow-500/10">
-                    <div className="flex items-center justify-center gap-3 mb-2">
-                      <div className="w-8 h-[1px] bg-yellow-500/50" />
-                      <Crown size={20} className="text-yellow-400" />
-                      <div className="w-8 h-[1px] bg-yellow-500/50" />
-                    </div>
-                    <p className="text-yellow-400/70 text-[10px] font-black uppercase tracking-[0.5em] mb-1">Championship Match</p>
-                    <h3 className="text-4xl lg:text-6xl font-black uppercase tracking-tighter text-white">Grand Finals</h3>
-                  </div>
-
-                  {filteredMatches.map((m) => {
-                    const isCompleted = m.status === 'COMPLETED';
-                    const isLive = m.status === 'LIVE';
-                    const aWins = isCompleted && m.scoreA > m.scoreB;
-                    const bWins = isCompleted && m.scoreB > m.scoreA;
-                    return (
-                      <div key={m.id} onClick={() => handleMatchClick(m)} className="cursor-pointer px-8 py-10">
-                        {isLive && (
-                          <div className="flex items-center justify-center gap-2 mb-8">
-                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                            <span className="text-red-400 text-[11px] font-black uppercase tracking-widest">Live Now</span>
-                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                          </div>
-                        )}
-                        <div className="flex items-center justify-center gap-4 lg:gap-12">
-                          {/* Team A */}
-                          <div className={`flex-1 flex flex-col items-center gap-4 transition-opacity ${isCompleted && !aWins ? 'opacity-40' : ''}`}>
-                            <div className={`w-20 h-20 lg:w-28 lg:h-28 rounded-2xl border-2 p-1 transition-all ${
-                              aWins ? 'border-yellow-400 shadow-[0_0_40px_rgba(234,179,8,0.4)]' : 'border-white/10'
-                            }`}>
-                              <div className="w-full h-full rounded-xl bg-white/5 flex items-center justify-center overflow-hidden relative">
-                                {m.teamA.logo ? <Image src={m.teamA.logo} alt="" fill className="object-cover" /> : <Shield size={40} className="text-white/20" />}
-                              </div>
-                            </div>
-                            {aWins && <Crown size={18} className="text-yellow-400" />}
-                            <div className="text-center">
-                              <p className="text-lg lg:text-2xl font-black uppercase tracking-tight text-white">{m.teamA.name}</p>
-                              <p className="text-[11px] font-bold text-yellow-500/60">{m.teamA.tag}</p>
-                            </div>
-                          </div>
-
-                          {/* Score */}
-                          <div className="flex flex-col items-center gap-3 min-w-[80px]">
-                            {isCompleted || isLive ? (
-                              <div className="flex items-center gap-3 lg:gap-6">
-                                <span className={`text-4xl lg:text-6xl font-black tabular-nums ${aWins ? 'text-yellow-300' : 'text-white'}`}>{m.scoreA}</span>
-                                <span className="text-white/20 text-2xl">:</span>
-                                <span className={`text-4xl lg:text-6xl font-black tabular-nums ${bWins ? 'text-yellow-300' : 'text-white'}`}>{m.scoreB}</span>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col items-center gap-1">
-                                <Swords size={28} className="text-yellow-500/50" />
-                                <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">vs</span>
-                              </div>
-                            )}
-                            <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
-                              isLive ? 'bg-red-500/10 border-red-500/30 text-red-400' :
-                              isCompleted ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
-                              'bg-white/5 border-white/10 text-white/40'
-                            }`}>
-                              {isLive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse mr-1" />}
-                              {m.status}
-                            </div>
-                            <p className="text-[9px] text-white/20 font-bold uppercase tracking-widest">{m.time} · {formatMatchDate(m.scheduledAt)}</p>
-                          </div>
-
-                          {/* Team B */}
-                          <div className={`flex-1 flex flex-col items-center gap-4 transition-opacity ${isCompleted && !bWins ? 'opacity-40' : ''}`}>
-                            <div className={`w-20 h-20 lg:w-28 lg:h-28 rounded-2xl border-2 p-1 transition-all ${
-                              bWins ? 'border-yellow-400 shadow-[0_0_40px_rgba(234,179,8,0.4)]' : 'border-white/10'
-                            }`}>
-                              <div className="w-full h-full rounded-xl bg-white/5 flex items-center justify-center overflow-hidden relative">
-                                {m.teamB.logo ? <Image src={m.teamB.logo} alt="" fill className="object-cover" /> : <Shield size={40} className="text-white/20" />}
-                              </div>
-                            </div>
-                            {bWins && <Crown size={18} className="text-yellow-400" />}
-                            <div className="text-center">
-                              <p className="text-lg lg:text-2xl font-black uppercase tracking-tight text-white">{m.teamB.name}</p>
-                              <p className="text-[11px] font-bold text-yellow-500/60">{m.teamB.tag}</p>
-                            </div>
-                          </div>
-                        </div>
+              <motion.div key="grand-finals" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                {filteredMatches.map((m) =>
+                  m.flyerUrl ? (
+                    /* If a Grand Finals match has a flyer, use the premium billboard */
+                    <MatchFlyerCard key={m.id} match={m} onClick={() => handleMatchClick(m)} />
+                  ) : (
+                    /* Classic cinematic Grand Finals scorecard */
+                    <div key={m.id} className="relative">
+                      <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+                        <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/10 via-transparent to-amber-500/5" />
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-yellow-500/10 blur-[100px] rounded-full" />
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="relative border border-yellow-500/20 rounded-3xl overflow-hidden">
+                        {/* Header */}
+                        <div className="text-center pt-10 pb-6 px-8 border-b border-yellow-500/10">
+                          <div className="flex items-center justify-center gap-3 mb-2">
+                            <div className="w-8 h-[1px] bg-yellow-500/50" />
+                            <Crown size={20} className="text-yellow-400" />
+                            <div className="w-8 h-[1px] bg-yellow-500/50" />
+                          </div>
+                          <p className="text-yellow-400/70 text-[10px] font-black uppercase tracking-[0.5em] mb-1">Championship Match</p>
+                          <h3 className="text-4xl lg:text-6xl font-black uppercase tracking-tighter text-white">Grand Finals</h3>
+                        </div>
+                        {(() => {
+                          const isCompleted = m.status === 'COMPLETED';
+                          const isLive = m.status === 'LIVE';
+                          const aWins = isCompleted && m.scoreA > m.scoreB;
+                          const bWins = isCompleted && m.scoreB > m.scoreA;
+                          return (
+                            <div onClick={() => handleMatchClick(m)} className="cursor-pointer px-8 py-10">
+                              {isLive && (
+                                <div className="flex items-center justify-center gap-2 mb-8">
+                                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                  <span className="text-red-400 text-[11px] font-black uppercase tracking-widest">Live Now</span>
+                                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                </div>
+                              )}
+                              <div className="flex items-center justify-center gap-4 lg:gap-12">
+                                {/* Team A */}
+                                <div className={`flex-1 flex flex-col items-center gap-4 transition-opacity ${isCompleted && !aWins ? 'opacity-40' : ''}`}>
+                                  <div className={`w-20 h-20 lg:w-28 lg:h-28 rounded-2xl border-2 p-1 transition-all ${aWins ? 'border-yellow-400 shadow-[0_0_40px_rgba(234,179,8,0.4)]' : 'border-white/10'}`}>
+                                    <div className="w-full h-full rounded-xl bg-white/5 flex items-center justify-center overflow-hidden relative">
+                                      {m.teamA.logo ? <Image src={m.teamA.logo} alt="" fill className="object-cover" /> : <Shield size={40} className="text-white/20" />}
+                                    </div>
+                                  </div>
+                                  {aWins && <Crown size={18} className="text-yellow-400" />}
+                                  <div className="text-center">
+                                    <p className="text-lg lg:text-2xl font-black uppercase tracking-tight text-white">{m.teamA.name}</p>
+                                    <p className="text-[11px] font-bold text-yellow-500/60">{m.teamA.tag}</p>
+                                  </div>
+                                </div>
+                                {/* Score */}
+                                <div className="flex flex-col items-center gap-3 min-w-[80px]">
+                                  {isCompleted || isLive ? (
+                                    <div className="flex items-center gap-3 lg:gap-6">
+                                      <span className={`text-4xl lg:text-6xl font-black tabular-nums ${aWins ? 'text-yellow-300' : 'text-white'}`}>{m.scoreA}</span>
+                                      <span className="text-white/20 text-2xl">:</span>
+                                      <span className={`text-4xl lg:text-6xl font-black tabular-nums ${bWins ? 'text-yellow-300' : 'text-white'}`}>{m.scoreB}</span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <Swords size={28} className="text-yellow-500/50" />
+                                      <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">vs</span>
+                                    </div>
+                                  )}
+                                  <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${isLive ? 'bg-red-500/10 border-red-500/30 text-red-400' : isCompleted ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : 'bg-white/5 border-white/10 text-white/40'}`}>
+                                    {isLive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse mr-1" />}
+                                    {m.status}
+                                  </div>
+                                  <p className="text-[9px] text-white/20 font-bold uppercase tracking-widest">{m.time} · {formatMatchDate(m.scheduledAt)}</p>
+                                </div>
+                                {/* Team B */}
+                                <div className={`flex-1 flex flex-col items-center gap-4 transition-opacity ${isCompleted && !bWins ? 'opacity-40' : ''}`}>
+                                  <div className={`w-20 h-20 lg:w-28 lg:h-28 rounded-2xl border-2 p-1 transition-all ${bWins ? 'border-yellow-400 shadow-[0_0_40px_rgba(234,179,8,0.4)]' : 'border-white/10'}`}>
+                                    <div className="w-full h-full rounded-xl bg-white/5 flex items-center justify-center overflow-hidden relative">
+                                      {m.teamB.logo ? <Image src={m.teamB.logo} alt="" fill className="object-cover" /> : <Shield size={40} className="text-white/20" />}
+                                    </div>
+                                  </div>
+                                  {bWins && <Crown size={18} className="text-yellow-400" />}
+                                  <div className="text-center">
+                                    <p className="text-lg lg:text-2xl font-black uppercase tracking-tight text-white">{m.teamB.name}</p>
+                                    <p className="text-[11px] font-bold text-yellow-500/60">{m.teamB.tag}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )
+                )}
               </motion.div>
             ) : filteredMatches.length > 0 ? (
-              filteredMatches.map((m) => (
-                <MatchCard key={m.id} match={m} onClick={() => handleMatchClick(m)} />
-              ))
+              <motion.div key="match-layout" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                {/* Hero Billboard — first match with a flyer */}
+                {heroMatch && (
+                  <MatchFlyerCard match={heroMatch} onClick={() => handleMatchClick(heroMatch)} />
+                )}
+
+                {/* Remaining matches */}
+                {restMatches.length > 0 && (
+                  <div className="space-y-3">
+                    {heroMatch && (
+                      <div className="flex items-center gap-3 py-2">
+                        <div className="h-px flex-1 bg-white/5" />
+                        <span className="text-[9px] font-black uppercase tracking-[0.3em] text-white/20">More Matches</span>
+                        <div className="h-px flex-1 bg-white/5" />
+                      </div>
+                    )}
+                    {restMatches.map((m) =>
+                      m.flyerUrl ? (
+                        <MatchFlyerCard key={m.id} match={m} onClick={() => handleMatchClick(m)} />
+                      ) : (
+                        <MatchCard key={m.id} match={m} onClick={() => handleMatchClick(m)} />
+                      )
+                    )}
+                  </div>
+                )}
+              </motion.div>
             ) : (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-20 flex flex-col items-center justify-center text-center opacity-40">
                 <LayoutGrid size={48} className="mb-4 text-[#e8a000]" />

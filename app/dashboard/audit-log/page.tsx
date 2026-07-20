@@ -1,5 +1,7 @@
 "use client";
 
+
+import { useRoleGuard } from "../lib/useRole";
 import { useState, useEffect, useCallback } from "react";
 import { dashboardFetch } from "../lib/api";
 import { FileText } from "lucide-react";
@@ -21,6 +23,7 @@ type Payload = {
 };
 
 export default function DashboardAuditLogPage() {
+  const { isAllowed: __roleAllowed } = useRoleGuard([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [loading, setLoading] = useState(true);

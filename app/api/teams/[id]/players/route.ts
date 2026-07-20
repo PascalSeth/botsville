@@ -111,9 +111,9 @@ export async function POST(
       return apiError("Only the team captain can add players", 403);
     }
 
-    // Check team size (max 9 players — 5 starters + up to 4 substitutes)
-    if (team.players.length >= 9) {
-      return apiError("Team is full (maximum 9 players)");
+    // Check team size (max 20 players — 5 starters + up to 15 substitutes)
+    if (team.players.length >= 20) {
+      return apiError("Team is full (maximum 20 players)");
     }
 
     // Check if the user already has a player record by userId or case-insensitive IGN (active or soft-deleted)

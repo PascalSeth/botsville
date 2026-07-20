@@ -1,1348 +1,687 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { dashboardFetch } from "../lib/api";
 import {
-  Loader2,
-  Megaphone,
-  CheckCircle,
-  Clock,
-  CalendarCheck,
   Swords,
-  Users,
-  XCircle,
+  Video,
+  Clock,
+  CheckCircle,
   AlertCircle,
   RefreshCw,
-  Trophy,
-  Plus,
+  Globe,
+  Tv,
+  Calendar,
+  Loader2,
+  ExternalLink,
+  Sparkles,
+  UserCheck,
+  Trash2,
+  XCircle,
+  AlertTriangle,
+  Flame,
+  Radio,
 } from "lucide-react";
 
-// ── Types ───────────────────────────────────────────────────
 type MatchChallenge = {
   id: string;
   status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED" | "SCHEDULED";
   weekStart: string;
   message?: string | null;
   createdAt: string;
-  challengerTeam?: { id: string; name: string; tag: string } | null;
-  challengedTeam?: { id: string; name: string; tag: string } | null;
+  challengerTeam?: { id: string; name: string; tag: string; logo?: string | null } | null;
+  challengedTeam?: { id: string; name: string; tag: string; logo?: string | null } | null;
   initiatedBy?: { id: string; ign: string } | null;
-  scheduledMatch?: { id: string; scheduledTime: string; status: string } | null;
+  respondedBy?: { id: string; ign: string } | null;
 };
 
-type AvailabilityEntry = {
-  id: string;
-  teamId: string;
-  isAvailable: boolean;
-  note?: string | null;
-  updatedAt: string;
-  team?: { id: string; name: string; tag: string } | null;
+type StreamerFormState = {
+  scheduledTime: string;
+  streamerName: string;
+  streamUrl: string;
 };
-
-type AvailabilityPayload = {
-  weekStart: string;
-  ping?: {
-    weekStart: string;
-    scrimDate: string;
-    message?: string | null;
-    updatedAt: string;
-  } | null;
-  availabilities: AvailabilityEntry[];
-  availableTeams: AvailabilityEntry[];
-};
-
-type ScrimTournament = {
-  id: string;
-  name: string;
-  status: string;
-  format: string;
-  banner?: string | null;
-  _count?: { matches: number };
-};
-
-type SeasonInfo = {
-  id: string;
-  name: string;
-  status: string;
-  scrimTournamentId?: string | null;
-  scrimTournament?: ScrimTournament | null;
-};
-
-type ScrimTournamentPayload = {
-  season: SeasonInfo;
-  scrimTournament?: ScrimTournament | null;
-  availableTournaments: ScrimTournament[];
-};
-
-// ── Status badge ────────────────────────────────────────────
-const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  PENDING:   { bg: "bg-yellow-500/20",  text: "text-yellow-400",  label: "Pending" },
-  ACCEPTED:  { bg: "bg-blue-500/20",    text: "text-blue-400",    label: "Accepted" },
-  SCHEDULED: { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Scheduled" },
-  REJECTED:  { bg: "bg-red-500/20",     text: "text-red-400",     label: "Rejected" },
-  CANCELLED: { bg: "bg-[#444]/30",      text: "text-[#777]",      label: "Cancelled" },
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const s = STATUS_STYLES[status] ?? STATUS_STYLES.PENDING;
-  return (
-    <span className={`px-2 py-0.5 text-[10px] font-black uppercase tracking-wider rounded ${s.bg} ${s.text}`}>
-      {s.label}
-    </span>
-  );
-}
-
-// ── Section card ────────────────────────────────────────────
-function Section({
-  title,
-  count,
-  icon,
-  children,
-}: {
-  title: string;
-  count?: number;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-white/10 bg-[#0a0a0f]/80 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-[#e8a000]">
-          {icon}
-          {title}
-        </div>
-        {count !== undefined && (
-          <span className="text-[10px] font-black text-[#555] tabular-nums">{count}</span>
-        )}
-      </div>
-      <div className="p-4">{children}</div>
-    </div>
-  );
-}
 
 export default function DashboardScrimsPage() {
-  // ── Scrim Tournament state
-  const [seasonInfo, setSeasonInfo] = useState<SeasonInfo | null>(null);
-  const [scrimTournament, setScrimTournament] = useState<ScrimTournament | null>(null);
-  const [availableTournaments, setAvailableTournaments] = useState<ScrimTournament[]>([]);
-  const [loadingSeason, setLoadingSeason] = useState(true);
-  const [newTournamentName, setNewTournamentName] = useState("");
-  // stores base64 data-URL of the picked file; uploaded to Supabase on submit
-  const [newTournamentImage, setNewTournamentImage] = useState<string | null>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const [creatingTournament, setCreatingTournament] = useState(false);
-  const [settingTournament, setSettingTournament] = useState(false);
-  const [selectedExistingTournament, setSelectedExistingTournament] = useState("");
-
-  // ── Ping state
-  const [pingDate, setPingDate] = useState("");
-  const [pingWeekStart, setPingWeekStart] = useState("");
-  const [pingMessage, setPingMessage] = useState("");
-  const [pinging, setPinging] = useState(false);
-  const [pingSuccess, setPingSuccess] = useState<string | null>(null);
-
-  // ── Availability state
-  const [availabilities, setAvailabilities] = useState<AvailabilityEntry[]>([]);
-  const [availableTeams, setAvailableTeams] = useState<AvailabilityEntry[]>([]);
-  const [currentPing, setCurrentPing] = useState<AvailabilityPayload["ping"] | null>(null);
-  const [loadingAvail, setLoadingAvail] = useState(false);
-
-  // ── Challenge state
   const [challenges, setChallenges] = useState<MatchChallenge[]>([]);
-  const [loadingChallenges, setLoadingChallenges] = useState(false);
-  const [scheduleDrafts, setScheduleDrafts] = useState<
-    Record<string, { scheduledTime: string; bestOf: number }>
-  >({});
-  const [schedulingId, setSchedulingId] = useState<string | null>(null);
-
-  // ── Direct pair state
-  const [pairA, setPairA] = useState("");
-  const [pairB, setPairB] = useState("");
-  const [pairTime, setPairTime] = useState("");
-  const [pairBo, setPairBo] = useState(3);
-  const [pairing, setPairing] = useState(false);
-
-  // ── Auto-generator state
-  const [firstMatchDateTime, setFirstMatchDateTime] = useState(""); // datetime-local for first slot
-  const [matchesPerDay, setMatchesPerDay] = useState(2);
-  const [daysCount, setDaysCount] = useState(3);
-  const [spacingMinutes, setSpacingMinutes] = useState(60);
-  const [autoBestOf, setAutoBestOf] = useState(3);
-  const [autoDrafts, setAutoDrafts] = useState<
-    Array<{
-      id: string;
-      teamAId: string;
-      teamAName?: string;
-      teamBId: string;
-      teamBName?: string;
-      scheduledTime: string; // ISO
-      bestOf: number;
-    }>
-  >([]);
-  const [generating, setGenerating] = useState(false);
-  const [schedulingAuto, setSchedulingAuto] = useState(false);
-  const [avoidRematches, setAvoidRematches] = useState(true);
-
-  // ── General
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"accepted" | "scheduled" | "open" | "all">("accepted");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // ── Loaders ─────────────────────────────────────────────
-  const loadSeasonInfo = useCallback(async () => {
-    setLoadingSeason(true);
-    const { data, error: err } = await dashboardFetch<ScrimTournamentPayload>(
-      "/api/seasons/scrim-tournament"
-    );
-    setLoadingSeason(false);
-    if (err || !data) {
-      setSeasonInfo(null);
-      return;
-    }
-    setSeasonInfo(data.season ?? null);
-    setScrimTournament(data.scrimTournament ?? null);
-    setAvailableTournaments(data.availableTournaments ?? []);
-    if (data.season?.name && !newTournamentName) {
-      setNewTournamentName(`${data.season.name} Scrims`);
-    }
-  }, [newTournamentName]);
+  const [forms, setForms] = useState<Record<string, StreamerFormState>>({});
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
 
-  const loadAvailability = useCallback(async (weekStart?: string) => {
-    setLoadingAvail(true);
-    const q = weekStart ? `?weekStart=${encodeURIComponent(weekStart)}` : "";
-    const { data, error: err } = await dashboardFetch<AvailabilityPayload>(
-      `/api/matches/challenges/availability${q}`
-    );
-    setLoadingAvail(false);
-    if (err || !data) return;
-
-    setAvailabilities(data.availabilities ?? []);
-    setAvailableTeams(data.availableTeams ?? []);
-    setCurrentPing(data.ping ?? null);
-
-    // pre-fill week start from API
-    if (!weekStart && data.weekStart) {
-      const ws = new Date(data.weekStart).toISOString().slice(0, 10);
-      setPingWeekStart(ws);
-    }
-    // pre-fill ping date if one exists
-    if (data.ping?.scrimDate && !pingDate) {
-      const d = new Date(data.ping.scrimDate);
-      setPingDate(
-        new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
-      );
-    }
-    // pre-fill message
-    if (data.ping?.message && !pingMessage) {
-      setPingMessage(data.ping.message);
-    }
-  }, [pingDate, pingMessage]);
-
+  // ── Fetch All Match Challenges ────────────────────────────────
   const loadChallenges = useCallback(async () => {
-    setLoadingChallenges(true);
-    const { data, error: err } = await dashboardFetch<{ challenges: MatchChallenge[] }>(
-      "/api/matches/challenges"
-    );
-    setLoadingChallenges(false);
-    if (err || !data) return;
-    setChallenges(Array.isArray(data.challenges) ? data.challenges : []);
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: err } = await dashboardFetch<{ challenges: MatchChallenge[] }>(
+        "/api/matches/challenges"
+      );
+      if (err) {
+        setError(err);
+      } else if (data) {
+        setChallenges(Array.isArray(data.challenges) ? data.challenges : []);
+      }
+    } catch {
+      setError("Failed to load match challenges");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    void loadSeasonInfo();
-    void loadAvailability();
-    void loadChallenges();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    loadChallenges();
+  }, [loadChallenges]);
 
-  const refresh = () => {
+  // ── Admin Action: Accept Challenge ───────────────────────────
+  const handleAdminAccept = async (challengeId: string) => {
+    setSubmittingId(challengeId);
     setError(null);
     setSuccess(null);
-    void loadSeasonInfo();
-    loadAvailability(pingWeekStart || undefined);
-    loadChallenges();
-  };
-
-  // ── Scrim Tournament Actions ─────────────────────────────
-  const createScrimTournament = async () => {
-    if (!newTournamentName.trim()) { setError("Enter a tournament name"); return; }
-    setCreatingTournament(true);
-    setError(null);
-
-    // Upload image to Supabase first (if one was picked)
-    let bannerUrl: string | null = null;
-    if (newTournamentImage) {
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: newTournamentImage, type: "scrim-banner", bucket: "scrim-vault" }),
-      });
-      const uploadData = await uploadRes.json();
-      if (!uploadRes.ok) {
-        setCreatingTournament(false);
-        setError(uploadData?.error ?? "Image upload failed");
-        return;
-      }
-      bannerUrl = uploadData?.url ?? null;
-    }
-
-    const { data, error: err } = await dashboardFetch<{ tournament: ScrimTournament }>(
-      "/api/seasons/scrim-tournament",
-      { method: "POST", body: JSON.stringify({ name: newTournamentName.trim(), banner: bannerUrl, setAsDefault: true }) }
-    );
-    setCreatingTournament(false);
-    if (err) { setError(err); return; }
-    setSuccess(`Tournament "${data?.tournament?.name}" created and set as default.`);
-    setNewTournamentImage(null);
-    if (imageInputRef.current) imageInputRef.current.value = "";
-    await loadSeasonInfo();
-  };
-
-  const setExistingTournament = async () => {
-    if (!selectedExistingTournament) { setError("Select a tournament"); return; }
-    setSettingTournament(true);
-    setError(null);
-    const { error: err } = await dashboardFetch(
-      "/api/seasons/scrim-tournament",
-      { method: "PUT", body: JSON.stringify({ tournamentId: selectedExistingTournament }) }
-    );
-    setSettingTournament(false);
-    if (err) { setError(err); return; }
-    setSuccess("Scrim tournament updated.");
-    setSelectedExistingTournament("");
-    await loadSeasonInfo();
-  };
-
-  // ── Actions ──────────────────────────────────────────────
-  const sendPing = async () => {
-    if (!pingDate) { setError("Set a proposed scrim date/time first"); return; }
-    setPinging(true);
-    setError(null);
-    setPingSuccess(null);
-    const body: Record<string, string> = { scrimDate: new Date(pingDate).toISOString() };
-    if (pingWeekStart) body.weekStart = pingWeekStart;
-    if (pingMessage.trim()) body.message = pingMessage.trim();
-    const { data, error: err } = await dashboardFetch<{ sent: number; weekStart?: string }>(
-      "/api/matches/challenges/weekly-ping",
-      { method: "POST", body: JSON.stringify(body) }
-    );
-    setPinging(false);
-    if (err) { setError(err); return; }
-    setPingSuccess(`Ping sent to ${data?.sent ?? 0} captain(s).`);
-    if (data?.weekStart) setPingWeekStart(new Date(data.weekStart).toISOString().slice(0, 10));
-    await loadAvailability(pingWeekStart || undefined);
-  };
-
-  const scheduleChallenge = async (challenge: MatchChallenge) => {
-    const draft = scheduleDrafts[challenge.id];
-    if (!draft?.scheduledTime) { setError("Set date/time for this challenge"); return; }
-    setSchedulingId(challenge.id);
-    setError(null);
-    const { error: err } = await dashboardFetch(`/api/matches/challenges/${challenge.id}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        action: "schedule",
-        scheduledTime: new Date(draft.scheduledTime).toISOString(),
-        bestOf: draft.bestOf || 3,
-      }),
-    });
-    setSchedulingId(null);
-    if (err) { setError(err); return; }
-    setSuccess("Challenge scheduled — match created.");
-    await loadChallenges();
-  };
-
-  const scheduleDirectPair = async () => {
-    if (!pairA || !pairB || pairA === pairB) { setError("Select two different available teams"); return; }
-    if (!pairTime) { setError("Set a date/time for the match"); return; }
-    setPairing(true);
-    setError(null);
-    const body: Record<string, string | number> = {
-      teamAId: pairA,
-      teamBId: pairB,
-      scheduledTime: new Date(pairTime).toISOString(),
-      bestOf: pairBo,
-    };
-    if (pingWeekStart) body.weekStart = pingWeekStart;
-    const { error: err } = await dashboardFetch("/api/matches/challenges/admin-schedule", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    setPairing(false);
-    if (err) { setError(err); return; }
-    setSuccess("Match scheduled directly between available teams.");
-    await Promise.all([loadChallenges(), loadAvailability(pingWeekStart || undefined)]);
-  };
-
-  // ── Auto-generator helpers
-  type LeaderboardRow = { team?: { id: string; name?: string }; rank?: number; points?: number; wins?: number; losses?: number; tier?: string };
-  type TeamEntry = { id: string; name: string; rank: number };
-  const fetchStandings = async (): Promise<LeaderboardRow[]> => {
-    const res = await fetch(`/api/leaderboards/teams?limit=200`);
-    if (!res.ok) return [] as LeaderboardRow[];
-    const json = (await res.json()) as { standings?: LeaderboardRow[] } | LeaderboardRow[] | null;
-    if (!json) return [];
-    if (Array.isArray(json)) return json as LeaderboardRow[];
-    return json.standings ?? [];
-  };
-
-  const generateMatchups = async () => {
-    if (!firstMatchDateTime) { setError("Set first match date/time"); return; }
-    setGenerating(true);
-    setError(null);
     try {
-      // use availableTeams from state; require at least 2
-      const pool = availableTeams.filter((t) => t.isAvailable && t.teamId);
-    if (pool.length < 2) { setError("Need at least 2 available teams to generate matches"); setGenerating(false); return; }
-
-    // fetch standings with points to derive team strength
-    const standings = await fetchStandings();
-    const standingByTeam = new Map<string, { rank: number; points: number; wins: number; losses: number; tier: string }>();
-    for (const s of standings) {
-      if (s.team?.id) {
-        standingByTeam.set(s.team.id, {
-          rank: s.rank ?? 9999,
-          points: s.points ?? 0,
-          wins: s.wins ?? 0,
-          losses: s.losses ?? 0,
-          tier: s.tier ?? "C",
-        });
-      }
-    }
-
-    // Prepare team objects with strength metrics
-    interface TeamWithStrength extends TeamEntry {
-      points: number;
-      rank: number;
-    }
-    const teams: TeamWithStrength[] = pool.map((p) => {
-      const standing = standingByTeam.get(p.teamId) || { points: 0, rank: 9999, wins: 0, losses: 0 };
-      return {
-        id: p.teamId,
-        name: p.team?.name ?? p.teamId,
-        rank: standing.rank,
-        points: standing.points,
-      };
-    });
-
-    // Sort teams by points (primary) then rank to establish strength order - avoids ties
-    teams.sort((a, b) => {
-      const pointDiff = (b.points ?? 0) - (a.points ?? 0);
-      if (pointDiff !== 0) return pointDiff; // Sort by points first to avoid ties
-      return (a.rank ?? 9999) - (b.rank ?? 9999);
-    });
-
-    // Build set of previous pairs from server endpoint or fallback to challenges
-    const previousPairs = new Set<string>();
-    if (avoidRematches) {
-      try {
-        const since = pingWeekStart ? new Date(pingWeekStart).toISOString() : undefined;
-        const q = since ? `?since=${encodeURIComponent(since)}` : "";
-        const res = await fetch(`/api/matches/prior-opponents${q}`);
-        if (res.ok) {
-          const json = await res.json();
-          for (const p of json.pairs ?? []) {
-            const ida = p.teamAId;
-            const idb = p.teamBId;
-            if (!ida || !idb) continue;
-            const key = ida < idb ? `${ida}|${idb}` : `${idb}|${ida}`;
-            previousPairs.add(key);
-          }
-        } else {
-          throw new Error("Failed to fetch prior opponents");
+      const { data, error: err } = await dashboardFetch<{ message?: string }>(
+        `/api/matches/challenges/${challengeId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ action: "accept" }),
         }
-      } catch {
-        // fallback to using loaded challenges
-        for (const c of challenges) {
-          const ida = c.challengerTeam?.id;
-          const idb = c.challengedTeam?.id;
-          if (ida && idb) {
-            const key = ida < idb ? `${ida}|${idb}` : `${idb}|${ida}`;
-            previousPairs.add(key);
-          }
-        }
-      }
-    }
-
-    // Improved pairing algorithm: snake draft style with constraint checking
-    const pairCount = Math.floor(teams.length / 2);
-    let finalPairs: { a: TeamEntry; b: TeamEntry }[] | null = null;
-
-    if (avoidRematches && previousPairs.size > 0) {
-      // Use greedy matching with backtracking
-      const maxAttempts = 200; // Increased from 60 for better results
-      let bestPairs: { a: TeamWithStrength; b: TeamWithStrength }[] | null = null;
-      let bestViolations = previousPairs.size + 1;
-
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const copy = [...teams];
-        const pairs: { a: TeamWithStrength; b: TeamWithStrength }[] = [];
-        const used = new Set<string>();
-        let violations = 0;
-
-        // Try to pair teams: alternate from strongest and weakest to balance matchups
-        for (let i = 0; i < pairCount; i++) {
-          const remaining = copy.filter((t) => !used.has(t.id));
-          if (remaining.length < 2) break;
-
-          const teamA = remaining[0];
-          let teamB = remaining[1];
-
-          // Try to find teamB that hasn't faced teamA before
-          let foundGoodPair = false;
-          for (let j = 1; j < remaining.length; j++) {
-            const candidate = remaining[j];
-            const key = (teamA.id < candidate.id) ? `${teamA.id}|${candidate.id}` : `${candidate.id}|${teamA.id}`;
-            if (!previousPairs.has(key)) {
-              teamB = candidate;
-              foundGoodPair = true;
-              break;
-            }
-          }
-
-          if (!foundGoodPair) {
-            // Count violations if no perfect pair found
-            const key = (teamA.id < teamB.id) ? `${teamA.id}|${teamB.id}` : `${teamB.id}|${teamA.id}`;
-            if (previousPairs.has(key)) violations++;
-          }
-
-          pairs.push({ a: teamA, b: teamB });
-          used.add(teamA.id);
-          used.add(teamB.id);
-        }
-
-        // Keep best solution found
-        if (violations < bestViolations) {
-          bestViolations = violations;
-          bestPairs = pairs;
-          if (violations === 0) break; // Perfect solution found
-        }
-
-        // Shuffle for next attempt
-        for (let i = copy.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          const tmp = copy[i];
-          copy[i] = copy[j];
-          copy[j] = tmp;
-        }
-      }
-
-      if (bestPairs && bestPairs.length > 0) {
-        finalPairs = bestPairs;
-      }
-    }
-
-    // Fallback: if no pairs generated, use sequential pairing by strength
-    if (!finalPairs) {
-      finalPairs = [];
-      for (let i = 0; i < pairCount; i++) {
-        const a = teams[i * 2];
-        const b = teams[i * 2 + 1];
-        if (a && b) {
-          finalPairs.push({ a, b });
-        }
-      }
-    }
-
-    // Create draft matches from final pairs
-    const drafts: typeof autoDrafts = [];
-    const firstDate = new Date(firstMatchDateTime);
-
-    for (let i = 0; i < finalPairs.length; i++) {
-      const a = finalPairs[i].a;
-      const b = finalPairs[i].b;
-      const idx = i; // pair index
-      const dayIndex = Math.floor(idx / matchesPerDay);
-      const slotInDay = idx % matchesPerDay;
-      const scheduled = new Date(firstDate.getTime() + dayIndex * 24 * 60 * 60 * 1000 + slotInDay * spacingMinutes * 60000);
-
-      drafts.push({
-        id: `draft-${i}-${Date.now()}`,
-        teamAId: a.id,
-        teamAName: a.name,
-        teamBId: b.id,
-        teamBName: b.name,
-        scheduledTime: scheduled.toISOString(),
-        bestOf: autoBestOf,
-      });
-    }
-
-    setAutoDrafts(drafts);
-    setGenerating(false);
-    } catch (err) {
-      console.error('generateMatchups error', err);
-      setError(typeof err === 'string' ? err : (err as Error)?.message ?? 'Failed to generate matchups');
-      setGenerating(false);
-    }
-  };
-
-  const scheduleAutoMatches = async () => {
-    if (autoDrafts.length === 0) { setError("No generated matches to schedule"); return; }
-    setSchedulingAuto(true);
-    setError(null);
-
-    for (const d of autoDrafts) {
-      const body: Record<string, string | number> = {
-        teamAId: d.teamAId,
-        teamBId: d.teamBId,
-        scheduledTime: new Date(d.scheduledTime).toISOString(),
-        bestOf: d.bestOf,
-      };
-      if (pingWeekStart) body.weekStart = pingWeekStart;
-      const { error: err } = await dashboardFetch("/api/matches/challenges/admin-schedule", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      );
       if (err) {
         setError(err);
-        setSchedulingAuto(false);
-        return;
+      } else {
+        setSuccess(data?.message || "Challenge accepted on behalf of squad!");
+        await loadChallenges();
       }
+    } catch {
+      setError("Failed to accept challenge");
+    } finally {
+      setSubmittingId(null);
     }
-
-    setSchedulingAuto(false);
-    setSuccess(`Scheduled ${autoDrafts.length} auto-generated matches.`);
-    setAutoDrafts([]);
-    await Promise.all([loadChallenges(), loadAvailability(pingWeekStart || undefined)]);
   };
 
-  // ── Derived ──────────────────────────────────────────────
-  const acceptedChallenges = challenges.filter((c) => c.status === "ACCEPTED");
-  const pendingChallenges = challenges.filter((c) => c.status === "PENDING");
-  const scheduledChallenges = challenges.filter((c) => c.status === "SCHEDULED");
-  const otherChallenges = challenges.filter((c) =>
-    ["REJECTED", "CANCELLED"].includes(c.status)
-  );
+  // ── Admin Action: Decline/Cancel Challenge ───────────────────
+  const handleAdminAction = async (challengeId: string, action: "reject" | "cancel") => {
+    if (!confirm(`Are you sure you want to ${action} this challenge?`)) return;
+    setSubmittingId(challengeId);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { data, error: err } = await dashboardFetch<{ message?: string }>(
+        `/api/matches/challenges/${challengeId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ action }),
+        }
+      );
+      if (err) {
+        setError(err);
+      } else {
+        setSuccess(data?.message || `Challenge ${action}ed`);
+        await loadChallenges();
+      }
+    } catch {
+      setError(`Failed to ${action} challenge`);
+    } finally {
+      setSubmittingId(null);
+    }
+  };
 
-  const weekLabel = pingWeekStart
-    ? new Date(pingWeekStart + "T00:00:00").toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "this week";
+  // ── Assign Streamer & Publish to Scrim Vault ─────────────────
+  const handleAssignStreamer = async (challengeId: string) => {
+    const form = forms[challengeId] || { scheduledTime: "", streamerName: "", streamUrl: "" };
+
+    setSubmittingId(challengeId);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const { data, error: err } = await dashboardFetch<{ message?: string }>(
+        `/api/matches/challenges/${challengeId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            action: "assign_streamer",
+            scheduledTime: form.scheduledTime ? new Date(form.scheduledTime).toISOString() : new Date().toISOString(),
+            streamerName: form.streamerName.trim(),
+            streamUrl: form.streamUrl.trim(),
+          }),
+        }
+      );
+
+      if (err) {
+        setError(err);
+      } else {
+        setSuccess(
+          data?.message || "Streamer assigned & live stream link auto-published to Scrim Vault!"
+        );
+        await loadChallenges();
+      }
+    } catch {
+      setError("Failed to assign streamer");
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
+  // ── Hard Delete All Challenges ───────────────────────────────
+  const handleResetAllChallenges = async () => {
+    setResetting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { data, error: err } = await dashboardFetch<{ message?: string; count?: number }>(
+        "/api/matches/challenges/reset",
+        { method: "DELETE" }
+      );
+      if (err) {
+        setError(err);
+      } else {
+        setSuccess(data?.message || "All challenges have been reset and hard deleted.");
+        setShowResetModal(false);
+        await loadChallenges();
+      }
+    } catch {
+      setError("Failed to reset challenges");
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const acceptedChallenges = challenges.filter((c) => c.status === "ACCEPTED");
+  const scheduledChallenges = challenges.filter((c) => c.status === "SCHEDULED");
+  const openPendingChallenges = challenges.filter((c) => c.status === "PENDING");
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-black text-2xl text-white uppercase tracking-[0.08em]">
-            Weekly Scrims
+    <div className="space-y-8 pb-16 text-white">
+      {/* ── Top Header Hero Banner ────────────────────────────── */}
+      <div className="p-8 rounded-3xl bg-gradient-to-r from-red-950/40 via-[#0e0f17] to-[#07070c] border border-red-500/25 shadow-2xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="space-y-2 z-10">
+          <div className="flex items-center gap-2">
+            <span className="px-3.5 py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg shadow-red-500/10">
+              <Swords size={13} /> Challenge & Scrim Arena Control Hub
+            </span>
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
+            Challenge <span className="text-red-500">Streamer Hub</span>
           </h1>
-          <p className="mt-1 text-sm text-[#888]">
-            Manage the weekly challenge window — ping captains, track availability, schedule matches.
+          <p className="text-zinc-400 text-xs sm:text-sm max-w-xl leading-relaxed">
+            Manage accepted squad challenges, assign official streamers, enter YouTube live stream URLs, and auto-publish matches directly to the Scrim Vault.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={refresh}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-2 border border-white/10 text-[#888] hover:text-white hover:border-white/30 text-[10px] font-black uppercase tracking-wider transition-colors"
-        >
-          <RefreshCw size={12} /> Refresh
-        </button>
+
+        <div className="flex items-center gap-3 shrink-0 z-10">
+          <button
+            onClick={loadChallenges}
+            className="px-4 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin text-red-400" : "text-zinc-400"} />
+            <span>Refresh</span>
+          </button>
+
+          <button
+            onClick={() => setShowResetModal(true)}
+            className="px-4 py-3 rounded-2xl bg-red-600/20 border border-red-500/40 hover:bg-red-600 text-red-400 hover:text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all shadow-xl shadow-red-600/20"
+          >
+            <Trash2 size={14} />
+            <span>Reset All Challenges</span>
+          </button>
+        </div>
       </div>
 
-      {/* Global alerts */}
+      {/* ── Live Metric Counter Cards ─────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="p-6 rounded-2xl bg-gradient-to-b from-[#10111a] to-[#0a0a0f] border border-blue-500/30 flex items-center justify-between shadow-xl">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">Needs Streamer</p>
+            <p className="text-3xl font-black text-white mt-1">{acceptedChallenges.length}</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+            <Clock size={22} />
+          </div>
+        </div>
+
+        <div className="p-6 rounded-2xl bg-gradient-to-b from-[#10111a] to-[#0a0a0f] border border-emerald-500/30 flex items-center justify-between shadow-xl">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Streamed Scrims</p>
+            <p className="text-3xl font-black text-white mt-1">{scheduledChallenges.length}</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+            <Radio size={22} />
+          </div>
+        </div>
+
+        <div className="p-6 rounded-2xl bg-gradient-to-b from-[#10111a] to-[#0a0a0f] border border-amber-500/30 flex items-center justify-between shadow-xl">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-amber-400">Open Board</p>
+            <p className="text-3xl font-black text-white mt-1">{openPendingChallenges.length}</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+            <Globe size={22} />
+          </div>
+        </div>
+
+        <div className="p-6 rounded-2xl bg-gradient-to-b from-[#10111a] to-[#0a0a0f] border border-purple-500/30 flex items-center justify-between shadow-xl">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-purple-400">Total Challenges</p>
+            <p className="text-3xl font-black text-white mt-1">{challenges.length}</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+            <Swords size={22} />
+          </div>
+        </div>
+      </div>
+
+      {/* Global Alerts */}
       {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          <AlertCircle size={14} className="shrink-0" /> {error}
+        <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2.5 shadow-lg">
+          <AlertCircle size={16} className="shrink-0" />
+          <span>{error}</span>
         </div>
       )}
       {success && (
-        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-          <CheckCircle size={14} className="shrink-0" /> {success}
+        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2.5 shadow-lg">
+          <CheckCircle size={16} className="shrink-0" />
+          <span>{success}</span>
         </div>
       )}
 
-      {/* ── Step 0: Configure Scrim Tournament ── */}
-      <Section title="Step 0 — Scrim Tournament" icon={<Trophy size={14} />}>
-        {loadingSeason ? (
-          <div className="flex items-center gap-2 text-[#666] text-sm">
-            <Loader2 size={14} className="animate-spin" /> Loading season info...
-          </div>
-        ) : !seasonInfo ? (
-          <div className="flex items-center gap-2 text-red-400 text-sm">
-            <AlertCircle size={14} /> No active season found. Create one first.
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Current status */}
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-black uppercase tracking-wider text-[#666]">
-                Active Season:
-              </span>
-              <span className="text-white font-bold">{seasonInfo.name}</span>
-            </div>
-
-            {scrimTournament ? (
-              <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-4">
-                <div className="flex items-center justify-between gap-4">
-                  {scrimTournament.banner && (
-                    <div className="shrink-0 w-16 h-16 rounded-md overflow-hidden border border-white/10">
-                      <Image
-                        src={scrimTournament.banner}
-                        alt={scrimTournament.name}
-                        width={64}
-                        height={64}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <p className="text-emerald-400 text-[10px] font-black uppercase tracking-wider mb-1">
-                      Current Scrim Tournament
-                    </p>
-                    <p className="text-white font-bold text-lg">{scrimTournament.name}</p>
-                    <p className="text-[#666] text-xs mt-1">
-                      {scrimTournament._count?.matches ?? 0} matches · {scrimTournament.status}
-                    </p>
-                  </div>
-                  <CheckCircle size={20} className="text-emerald-400 shrink-0" />
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-md border border-yellow-500/30 bg-yellow-500/5 p-4">
-                <p className="text-yellow-400 text-sm flex items-center gap-2">
-                  <AlertCircle size={14} />
-                  No scrim tournament configured. Create one or select an existing tournament.
-                </p>
-              </div>
-            )}
-
-            {/* Create new or select existing */}
-            <div className="grid sm:grid-cols-2 gap-4 pt-2">
-              {/* Create new */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block">
-                  Create New Tournament
-                </label>
-                <input
-                  type="text"
-                  value={newTournamentName}
-                  onChange={(e) => setNewTournamentName(e.target.value)}
-                  placeholder={`${seasonInfo.name} Scrims`}
-                  className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-                />
-                {/* File picker — uploads to Supabase on submit */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="scrim-banner-img"
-                    className="block text-[10px] font-black uppercase tracking-[0.18em] text-[#555] cursor-pointer"
-                  >
-                    Banner (optional)
-                  </label>
-                  <div
-                    onClick={() => imageInputRef.current?.click()}
-                    className="flex items-center gap-3 px-3 py-2 border border-white/10 bg-[#0d0d14] cursor-pointer hover:border-[#e8a000]/40 transition-colors"
-                  >
-                    {newTournamentImage ? (
-                      <>
-                        <img
-                          src={newTournamentImage}
-                          alt="preview"
-                          className="w-10 h-10 object-cover rounded shrink-0 border border-white/10"
-                        />
-                        <span className="text-xs text-[#aaa] truncate flex-1">Image selected</span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setNewTournamentImage(null);
-                            if (imageInputRef.current) imageInputRef.current.value = "";
-                          }}
-                          className="text-[#555] hover:text-red-400 transition-colors text-[10px] font-black uppercase tracking-wider shrink-0"
-                        >
-                          Remove
-                        </button>
-                      </>
-                    ) : (
-                      <span className="text-[#444] text-xs tracking-wide">
-                        Click to choose file…
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    ref={imageInputRef}
-                    id="scrim-banner-img"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = () => setNewTournamentImage(reader.result as string);
-                      reader.readAsDataURL(file);
-                    }}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={createScrimTournament}
-                  disabled={creatingTournament || !newTournamentName.trim()}
-                  className="w-full flex items-center justify-center gap-1.5 px-4 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50"
-                >
-                  {creatingTournament ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-                  Create
-                </button>
-              </div>
-
-              {/* Select existing */}
-              {availableTournaments.length > 0 && (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block">
-                    Or Select Existing Tournament
-                  </label>
-                  <div className="flex gap-2">
-                    <select
-                      value={selectedExistingTournament}
-                      onChange={(e) => setSelectedExistingTournament(e.target.value)}
-                      className="flex-1 bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-                    >
-                      <option value="">— Select —</option>
-                      {availableTournaments.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} ({t._count?.matches ?? 0} matches)
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={setExistingTournament}
-                      disabled={settingTournament || !selectedExistingTournament}
-                      className="flex items-center gap-1.5 px-4 py-2 border border-white/10 text-white text-xs font-black uppercase tracking-wider hover:border-[#e8a000]/50 disabled:opacity-50"
-                    >
-                      {settingTournament ? <Loader2 size={12} className="animate-spin" /> : null}
-                      Set
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <p className="text-[#555] text-[10px] pt-2">
-              All scheduled scrims will be added as matches under this tournament for easier tracking and leaderboard integration.
-            </p>
-          </div>
-        )}
-      </Section>
-
-      {/* ── Step 3c: Auto-generate matchups ── */}
-      <Section title="Step 3c — Auto-generate matchups" icon={<RefreshCw size={14} /> }>
-        <p className="text-[#666] text-xs mb-3">Generate a balanced set of matchups from available teams. Edit drafts before scheduling.</p>
-
-        <div className="grid sm:grid-cols-3 gap-2 items-end">
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">First match (date & time)</label>
-            <input
-              type="datetime-local"
-              value={firstMatchDateTime}
-              onChange={(e) => setFirstMatchDateTime(e.target.value)}
-              className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Matches / day</label>
-            <input
-              type="number"
-              min={1}
-              value={matchesPerDay}
-              onChange={(e) => setMatchesPerDay(Math.max(1, parseInt(e.target.value || '1', 10)))}
-              className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Days</label>
-            <input
-              type="number"
-              min={1}
-              value={daysCount}
-              onChange={(e) => setDaysCount(Math.max(1, parseInt(e.target.value || '1', 10)))}
-              className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Spacing (mins)</label>
-            <input
-              type="number"
-              min={5}
-              value={spacingMinutes}
-              onChange={(e) => setSpacingMinutes(Math.max(5, parseInt(e.target.value || '60', 10)))}
-              className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Format</label>
-            <select
-              value={autoBestOf}
-              onChange={(e) => setAutoBestOf(parseInt(e.target.value, 10))}
-              className="bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-            >
-              <option value={1}>BO1</option>
-              <option value={3}>BO3</option>
-              <option value={5}>BO5</option>
-            </select>
-          </div>
-          <div className="sm:col-span-3">
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 text-sm text-[#bbb]">
-                <input
-                  type="checkbox"
-                  checked={avoidRematches}
-                  onChange={(e) => setAvoidRematches(e.target.checked)}
-                  className="w-4 h-4"
-                />
-                <span className="text-[10px] font-black uppercase tracking-[0.12em]">Avoid rematches</span>
-              </label>
-              <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={generating}
-                onClick={generateMatchups}
-                className="px-4 py-2 bg-[#e8a000] text-black text-[10px] font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50"
-              >
-                {generating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                Generate
-              </button>
-              <button
-                type="button"
-                disabled={schedulingAuto || autoDrafts.length === 0}
-                onClick={scheduleAutoMatches}
-                className="px-4 py-2 border border-white/10 text-white text-[10px] font-black uppercase tracking-wider hover:border-[#e8a000]/50 disabled:opacity-50"
-              >
-                {schedulingAuto ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
-                Schedule All
-              </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {autoDrafts.length > 0 && (
-          <div className="mt-4 space-y-2">
-            {autoDrafts.map((d) => (
-              <div key={d.id} className="flex items-center gap-2 border border-white/5 bg-white/[0.02] rounded px-3 py-2">
-                <div className="flex-1">
-                  <p className="text-white font-semibold text-sm">{d.teamAName} vs {d.teamBName}</p>
-                  <div className="flex gap-2 items-center mt-1">
-                    <input
-                      type="datetime-local"
-                      value={new Date(d.scheduledTime).toISOString().slice(0,16)}
-                      onChange={(e) => setAutoDrafts((prev) => prev.map((p) => p.id === d.id ? { ...p, scheduledTime: new Date(e.target.value).toISOString() } : p))}
-                      className="bg-[#0d0d14] border border-white/10 text-white px-2 py-1 text-xs outline-none focus:border-[#e8a000]/50"
-                    />
-                    <select
-                      value={d.bestOf}
-                      onChange={(e) => setAutoDrafts((prev) => prev.map((p) => p.id === d.id ? { ...p, bestOf: parseInt(e.target.value, 10) } : p))}
-                      className="bg-[#0d0d14] border border-white/10 text-white px-2 py-1 text-xs outline-none focus:border-[#e8a000]/50"
-                    >
-                      <option value={1}>BO1</option>
-                      <option value={3}>BO3</option>
-                      <option value={5}>BO5</option>
-                    </select>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setAutoDrafts((prev) => prev.filter((p) => p.id !== d.id))}
-                  className="text-red-400 text-[10px] font-black uppercase tracking-wider"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* ── Step 1: Open window + ping ── */}
-      <Section title="Step 1 — Open weekly window & ping captains" icon={<Megaphone size={14} />}>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="space-y-3">
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">
-                Week start (Monday)
-              </label>
-              <input
-                type="date"
-                value={pingWeekStart}
-                onChange={(e) => setPingWeekStart(e.target.value)}
-                className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-              />
-              <p className="text-[10px] text-[#555] mt-1">Leave blank to use the current week.</p>
-            </div>
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">
-                Proposed scrim date &amp; time *
-              </label>
-              <input
-                type="datetime-local"
-                value={pingDate}
-                onChange={(e) => setPingDate(e.target.value)}
-                className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">
-                Message to captains (optional)
-              </label>
-              <textarea
-                value={pingMessage}
-                onChange={(e) => setPingMessage(e.target.value)}
-                rows={2}
-                maxLength={200}
-                placeholder="e.g. This week's scrim window is open. Good luck!"
-                className="w-full bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50 resize-none"
-              />
-            </div>
+      {/* ── Sub-Navigation Bar ────────────────────────────────── */}
+      <div className="flex items-center gap-3 border-b border-white/10 pb-4 overflow-x-auto scrollbar-hide">
+        {[
+          { key: "accepted", label: "Accepted (Needs Streamer)", count: acceptedChallenges.length, icon: UserCheck },
+          { key: "scheduled", label: "Scheduled & Live Streamed", count: scheduledChallenges.length, icon: Video },
+          { key: "open", label: "Open Board Listings", count: openPendingChallenges.length, icon: Globe },
+          { key: "all", label: "All Challenges History", count: challenges.length, icon: Clock },
+        ].map((tab) => {
+          const active = activeTab === tab.key;
+          const Icon = tab.icon;
+          return (
             <button
-              type="button"
-              onClick={sendPing}
-              disabled={pinging || !pingDate}
-              className="flex items-center gap-2 px-5 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50"
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as any)}
+              className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
+                active
+                  ? "bg-red-600 text-white shadow-xl shadow-red-600/20"
+                  : "bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10 border border-white/5"
+              }`}
             >
-              {pinging ? <Loader2 size={13} className="animate-spin" /> : <Megaphone size={13} />}
-              Ping All Captains
+              <Icon size={15} />
+              <span>{tab.label}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold ${active ? "bg-black/40 text-white" : "bg-white/10 text-zinc-400"}`}>
+                {tab.count}
+              </span>
             </button>
-            {pingSuccess && (
-              <p className="text-emerald-400 text-xs flex items-center gap-1">
-                <CheckCircle size={12} /> {pingSuccess}
-              </p>
-            )}
-          </div>
+          );
+        })}
+      </div>
 
-          {/* Current ping info */}
-          {currentPing ? (
-            <div className="rounded-md border border-[#e8a000]/20 bg-[#e8a000]/5 p-4 space-y-2">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e8a000]">
-                Current active ping
-              </p>
-              <p className="text-white text-sm font-semibold">
-                Week of{" "}
-                {new Date(currentPing.weekStart).toLocaleDateString(undefined, {
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </p>
-              <p className="text-[#aaa] text-sm">
-                Proposed date:{" "}
-                <span className="text-white font-semibold">
-                  {new Date(currentPing.scrimDate).toLocaleString()}
-                </span>
-              </p>
-              {currentPing.message && (
-                <p className="text-[#888] text-xs italic">&ldquo;{currentPing.message}&rdquo;</p>
-              )}
-              <p className="text-[#555] text-[10px]">
-                Last updated: {new Date(currentPing.updatedAt).toLocaleString()}
+      {/* ── Tab Content ────────────────────────────────────────── */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
+          <Loader2 size={36} className="animate-spin text-red-500" />
+          <p className="text-xs font-mono font-black uppercase tracking-widest text-zinc-500">Loading Challenge Queue...</p>
+        </div>
+      ) : activeTab === "accepted" ? (
+        /* ── SECTION 1: ACCEPTED CHALLENGES (Assign Streamer & Publish) ─ */
+        <div className="space-y-6">
+          {acceptedChallenges.length === 0 ? (
+            <div className="p-16 rounded-3xl border border-dashed border-white/10 bg-white/[0.01] text-center space-y-3">
+              <CheckCircle size={44} className="text-zinc-600 mx-auto" />
+              <h4 className="text-base font-black uppercase tracking-wide text-zinc-400">All Accepted Challenges Streamed!</h4>
+              <p className="text-xs text-zinc-600 max-w-md mx-auto">
+                No accepted squad challenges currently awaiting streamer assignment. When two captains accept a challenge, it will appear here.
               </p>
             </div>
           ) : (
-            <div className="rounded-md border border-white/5 bg-white/[0.02] p-4 flex items-center justify-center">
-              <p className="text-[#555] text-sm">No ping sent yet for {weekLabel}.</p>
-            </div>
-          )}
-        </div>
-      </Section>
+            <div className="grid grid-cols-1 gap-6">
+              {acceptedChallenges.map((challenge) => {
+                const formState = forms[challenge.id] || {
+                  scheduledTime: "",
+                  streamerName: "",
+                  streamUrl: "",
+                };
 
-      {/* ── Step 2: Availability ── */}
-      <Section
-        title="Step 2 — Team availability"
-        count={availableTeams.length}
-        icon={<CalendarCheck size={14} />}
-      >
-        {loadingAvail ? (
-          <div className="flex items-center gap-2 text-[#666] text-sm">
-            <Loader2 size={14} className="animate-spin" /> Loading...
-          </div>
-        ) : availabilities.length === 0 ? (
-          <p className="text-[#555] text-sm">No teams have responded yet. Ping captains in Step 1.</p>
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-            {availabilities.map((entry) => (
-              <div
-                key={entry.id}
-                className={`border px-3 py-2.5 rounded-md ${
-                  entry.isAvailable
-                    ? "border-emerald-500/30 bg-emerald-500/5"
-                    : "border-red-500/20 bg-red-500/5"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-white text-sm font-bold">{entry.team?.name ?? "Team"}</p>
-                  <span
-                    className={`text-[9px] font-black uppercase tracking-wider ${
-                      entry.isAvailable ? "text-emerald-400" : "text-red-400"
-                    }`}
+                return (
+                  <div
+                    key={challenge.id}
+                    className="p-7 rounded-3xl bg-gradient-to-b from-[#10121d] to-[#08090f] border border-blue-500/30 space-y-6 shadow-2xl relative overflow-hidden"
                   >
-                    {entry.isAvailable ? "✓ Available" : "✗ Busy"}
-                  </span>
-                </div>
-                <p className="text-[#555] text-[10px]">[{entry.team?.tag ?? "—"}]</p>
-                {entry.note && <p className="text-[#888] text-[10px] mt-1 italic">&ldquo;{entry.note}&rdquo;</p>}
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* ── Step 3a: Challenge queue ── */}
-      <Section
-        title="Step 3a — Challenge queue"
-        count={challenges.length}
-        icon={<Swords size={14} />}
-      >
-        {loadingChallenges ? (
-          <div className="flex items-center gap-2 text-[#666] text-sm">
-            <Loader2 size={14} className="animate-spin" /> Loading...
-          </div>
-        ) : challenges.length === 0 ? (
-          <p className="text-[#555] text-sm">No challenges sent yet this week.</p>
-        ) : (
-          <div className="space-y-6">
-            {/* Needs scheduling — ACCEPTED */}
-            {acceptedChallenges.length > 0 && (
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400 mb-2 flex items-center gap-1.5">
-                  <Clock size={11} /> Needs scheduling ({acceptedChallenges.length})
-                </p>
-                <div className="space-y-2">
-                  {acceptedChallenges.map((c) => (
-                    <div
-                      key={c.id}
-                      className="border border-blue-500/20 bg-blue-500/5 rounded-md p-3 grid md:grid-cols-[1fr_auto] gap-3 items-start"
-                    >
-                      <div>
-                        <p className="text-white font-bold text-sm">
-                          {c.challengerTeam?.name ?? "Team A"}{" "}
-                          <span className="text-[#555]">vs</span>{" "}
-                          {c.challengedTeam?.name ?? "Team B"}
-                        </p>
-                        <p className="text-[#666] text-[10px] mt-0.5">
-                          Week of {new Date(c.weekStart).toLocaleDateString()} · Challenged by{" "}
-                          {c.initiatedBy?.ign ?? "—"}
-                        </p>
-                        {c.message && (
-                          <p className="text-[#888] text-[10px] italic mt-0.5">&ldquo;{c.message}&rdquo;</p>
-                        )}
+                    {/* Top Status Header */}
+                    <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                      <div className="flex items-center gap-2">
+                        <span className="px-3.5 py-1.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                          <UserCheck size={13} /> BOTH CAPTAINS AGREED — AWAITING STREAMER
+                        </span>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="datetime-local"
-                          value={scheduleDrafts[c.id]?.scheduledTime ?? ""}
-                          onChange={(e) =>
-                            setScheduleDrafts((prev) => ({
-                              ...prev,
-                              [c.id]: {
-                                scheduledTime: e.target.value,
-                                bestOf: prev[c.id]?.bestOf ?? 3,
-                              },
-                            }))
-                          }
-                          className="bg-[#0d0d14] border border-white/10 text-white px-2 py-1.5 text-xs outline-none focus:border-[#e8a000]/50"
-                        />
-                        <select
-                          value={scheduleDrafts[c.id]?.bestOf ?? 3}
-                          onChange={(e) =>
-                            setScheduleDrafts((prev) => ({
-                              ...prev,
-                              [c.id]: {
-                                scheduledTime: prev[c.id]?.scheduledTime ?? "",
-                                bestOf: parseInt(e.target.value, 10),
-                              },
-                            }))
-                          }
-                          className="bg-[#0d0d14] border border-white/10 text-white px-2 py-1.5 text-xs outline-none focus:border-[#e8a000]/50"
-                        >
-                          <option value={1}>BO1</option>
-                          <option value={3}>BO3</option>
-                          <option value={5}>BO5</option>
-                          <option value={7}>BO7</option>
-                        </select>
-                        <button
-                          type="button"
-                          disabled={schedulingId === c.id}
-                          onClick={() => scheduleChallenge(c)}
-                          className="px-3 py-1.5 bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider hover:bg-blue-400 disabled:opacity-50 flex items-center gap-1"
-                        >
-                          {schedulingId === c.id ? (
-                            <Loader2 size={11} className="animate-spin" />
+
+                      <button
+                        onClick={() => handleAdminAction(challenge.id, "cancel")}
+                        className="px-3.5 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase hover:bg-red-500 hover:text-white transition-colors"
+                      >
+                        Cancel Challenge
+                      </button>
+                    </div>
+
+                    {/* Esports VS Matchup Display */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 py-3 px-4 rounded-2xl bg-black/40 border border-white/5">
+                      {/* Team A */}
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-white/15 flex items-center justify-center text-amber-400 font-black text-2xl shrink-0 overflow-hidden shadow-xl">
+                          {challenge.challengerTeam?.logo ? (
+                            <Image src={challenge.challengerTeam.logo} alt={challenge.challengerTeam.name} width={64} height={64} className="object-cover" />
                           ) : (
-                            <CheckCircle size={11} />
+                            challenge.challengerTeam?.tag || 'A'
                           )}
-                          Schedule
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-mono text-amber-400 uppercase font-black px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                            [{challenge.challengerTeam?.tag}] Challenger
+                          </span>
+                          <h3 className="text-xl font-black uppercase text-white tracking-tight mt-1">{challenge.challengerTeam?.name}</h3>
+                          <p className="text-[10px] text-zinc-500 font-medium">Captain {challenge.initiatedBy?.ign || '—'}</p>
+                        </div>
+                      </div>
+
+                      {/* Center VS Shield Badge */}
+                      <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 font-black text-sm uppercase shrink-0 shadow-lg shadow-red-500/10">
+                        VS
+                      </div>
+
+                      {/* Team B */}
+                      <div className="flex items-center gap-4 flex-1 justify-end text-right">
+                        <div>
+                          <span className="text-[10px] font-mono text-amber-400 uppercase font-black px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                            [{challenge.challengedTeam?.tag}] Accepting Rival
+                          </span>
+                          <h3 className="text-xl font-black uppercase text-white tracking-tight mt-1">{challenge.challengedTeam?.name}</h3>
+                          <p className="text-[10px] text-zinc-500 font-medium">Captain {challenge.respondedBy?.ign || '—'}</p>
+                        </div>
+                        <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-white/15 flex items-center justify-center text-amber-400 font-black text-2xl shrink-0 overflow-hidden shadow-xl">
+                          {challenge.challengedTeam?.logo ? (
+                            <Image src={challenge.challengedTeam.logo} alt={challenge.challengedTeam.name} width={64} height={64} className="object-cover" />
+                          ) : (
+                            challenge.challengedTeam?.tag || 'B'
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Challenge Note */}
+                    {challenge.message && (
+                      <div className="p-3.5 rounded-2xl bg-black/40 border border-white/5 text-xs text-zinc-300 italic">
+                        "{challenge.message}"
+                      </div>
+                    )}
+
+                    {/* ── Streamer Assignment Setup Box ───────────────────── */}
+                    <div className="p-6 rounded-2xl bg-[#06070c] border border-white/10 space-y-5">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={16} className="text-amber-400" />
+                        <h4 className="text-xs font-black uppercase tracking-wider text-white">
+                          Assign Official Streamer & Publish Stream to Scrim Vault
+                        </h4>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-zinc-400 mb-1.5">
+                            Match Date & Time
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={formState.scheduledTime}
+                            onChange={(e) =>
+                              setForms((prev) => ({
+                                ...prev,
+                                [challenge.id]: { ...formState, scheduledTime: e.target.value },
+                              }))
+                            }
+                            className="w-full bg-[#0d0e17] border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-red-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-zinc-400 mb-1.5">
+                            Streamer / Caster Name
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Caster Pro"
+                            value={formState.streamerName}
+                            onChange={(e) =>
+                              setForms((prev) => ({
+                                ...prev,
+                                [challenge.id]: { ...formState, streamerName: e.target.value },
+                              }))
+                            }
+                            className="w-full bg-[#0d0e17] border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-red-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-zinc-400 mb-1.5">
+                            YouTube Live Stream URL
+                          </label>
+                          <input
+                            type="url"
+                            placeholder="https://youtube.com/live/..."
+                            value={formState.streamUrl}
+                            onChange={(e) =>
+                              setForms((prev) => ({
+                                ...prev,
+                                [challenge.id]: { ...formState, streamUrl: e.target.value },
+                              }))
+                            }
+                            className="w-full bg-[#0d0e17] border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-red-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-2">
+                        <button
+                          onClick={() => handleAssignStreamer(challenge.id)}
+                          disabled={submittingId === challenge.id}
+                          className="px-7 py-3.5 rounded-2xl bg-gradient-to-r from-red-600 to-amber-500 hover:opacity-90 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-xl shadow-red-500/20 disabled:opacity-50 transition-all"
+                        >
+                          {submittingId === challenge.id ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <Video size={16} />
+                          )}
+                          <span>Assign Streamer & Publish to Scrim Vault 🎥</span>
                         </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Pending response */}
-            {pendingChallenges.length > 0 && (
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-400 mb-2 flex items-center gap-1.5">
-                  <Clock size={11} /> Awaiting opponent response ({pendingChallenges.length})
-                </p>
-                <div className="space-y-1">
-                  {pendingChallenges.map((c) => (
-                    <div
-                      key={c.id}
-                      className="border border-yellow-500/15 bg-yellow-500/5 rounded-md px-3 py-2 flex items-center justify-between gap-3"
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : activeTab === "scheduled" ? (
+        /* ── SECTION 2: SCHEDULED & STREAMED MATCHES ────────────── */
+        <div className="space-y-6">
+          {scheduledChallenges.length === 0 ? (
+            <div className="p-16 rounded-3xl border border-dashed border-white/10 bg-white/[0.01] text-center space-y-3">
+              <Tv size={44} className="text-zinc-600 mx-auto" />
+              <h4 className="text-base font-black uppercase tracking-wide text-zinc-400">No Scheduled Streamed Matches</h4>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {scheduledChallenges.map((c) => (
+                <div key={c.id} className="p-7 rounded-3xl bg-[#0a0b12] border border-emerald-500/30 space-y-5 shadow-xl">
+                  <div className="flex items-center justify-between">
+                    <span className="px-3.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                      <Radio size={12} className="animate-pulse" /> LIVE STREAM PUBLISHED TO SCRIM VAULT
+                    </span>
+                    <button
+                      onClick={() => handleAdminAction(c.id, "cancel")}
+                      className="text-xs text-red-400 hover:underline font-bold"
                     >
-                      <div>
-                        <p className="text-white text-sm font-semibold">
-                          {c.challengerTeam?.name ?? "?"} → {c.challengedTeam?.name ?? "?"}
-                        </p>
-                        <p className="text-[#666] text-[10px]">
-                          Week of {new Date(c.weekStart).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <StatusBadge status={c.status} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                      Cancel Match
+                    </button>
+                  </div>
 
-            {/* Scheduled */}
-            {scheduledChallenges.length > 0 && (
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 mb-2 flex items-center gap-1.5">
-                  <CheckCircle size={11} /> Scheduled matches ({scheduledChallenges.length})
-                </p>
-                <div className="space-y-1">
-                  {scheduledChallenges.map((c) => (
-                    <div
-                      key={c.id}
-                      className="border border-emerald-500/15 bg-emerald-500/5 rounded-md px-3 py-2 flex items-center justify-between gap-3"
+                  <div className="flex items-center justify-between gap-4 py-3 border-y border-white/5">
+                    <div className="text-center flex-1">
+                      <span className="text-xs font-mono font-black text-amber-400">[{c.challengerTeam?.tag}]</span>
+                      <h4 className="text-white font-black text-base uppercase">{c.challengerTeam?.name}</h4>
+                    </div>
+                    <div className="text-red-500 font-black text-sm">VS</div>
+                    <div className="text-center flex-1">
+                      <span className="text-xs font-mono font-black text-amber-400">[{c.challengedTeam?.tag}]</span>
+                      <h4 className="text-white font-black text-base uppercase">{c.challengedTeam?.name}</h4>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-1">
+                    <span className="text-zinc-400 font-mono text-[10px]">Published to Scrim Vault</span>
+                    <a
+                      href="/scrim-vault"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-amber-400 hover:underline font-bold flex items-center gap-1 text-xs"
                     >
-                      <p className="text-white text-sm font-semibold">
-                        {c.challengerTeam?.name ?? "?"} vs {c.challengedTeam?.name ?? "?"}
-                      </p>
-                      <div className="flex items-center gap-3">
-                        {c.scheduledMatch && (
-                          <span className="text-[#aaa] text-xs">
-                            {new Date(c.scheduledMatch.scheduledTime).toLocaleString()}
-                          </span>
-                        )}
-                        <StatusBadge status={c.status} />
-                      </div>
-                    </div>
-                  ))}
+                      Watch Live Stream <ExternalLink size={12} />
+                    </a>
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
+          )}
+        </div>
+      ) : activeTab === "open" ? (
+        /* ── SECTION 3: OPEN BOARD LISTINGS ────────────────────── */
+        <div className="space-y-6">
+          {openPendingChallenges.length === 0 ? (
+            <div className="p-16 rounded-3xl border border-dashed border-white/10 bg-white/[0.01] text-center space-y-3">
+              <Globe size={44} className="text-zinc-600 mx-auto" />
+              <h4 className="text-base font-black uppercase tracking-wide text-zinc-400">No Open Public Listings Active</h4>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {openPendingChallenges.map((c) => (
+                <div key={c.id} className="p-6 rounded-3xl bg-[#0a0b12] border border-white/10 space-y-4 shadow-xl">
+                  <div className="flex items-center justify-between">
+                    <span className="text-amber-400 font-black text-xs uppercase px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/20">
+                      [{c.challengerTeam?.tag}] {c.challengerTeam?.name}
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-500">{new Date(c.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  <p className="text-xs text-zinc-300 italic">"{c.message || 'Open Scrim Challenge'}"</p>
 
-            {/* Rejected / Cancelled */}
-            {otherChallenges.length > 0 && (
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#555] mb-2 flex items-center gap-1.5">
-                  <XCircle size={11} /> Rejected / Cancelled ({otherChallenges.length})
-                </p>
-                <div className="space-y-1">
-                  {otherChallenges.map((c) => (
-                    <div
-                      key={c.id}
-                      className="border border-white/5 bg-white/[0.02] rounded-md px-3 py-2 flex items-center justify-between gap-3 opacity-60"
+                  <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                    <button
+                      onClick={() => handleAdminAccept(c.id)}
+                      disabled={submittingId === c.id}
+                      className="flex-1 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-600 hover:text-white text-[10px] font-black uppercase tracking-wider transition-colors disabled:opacity-50"
                     >
-                      <p className="text-[#888] text-sm">
-                        {c.challengerTeam?.name ?? "?"} vs {c.challengedTeam?.name ?? "?"}
-                      </p>
-                      <StatusBadge status={c.status} />
-                    </div>
-                  ))}
+                      Accept on Behalf
+                    </button>
+                    <button
+                      onClick={() => handleAdminAction(c.id, "reject")}
+                      disabled={submittingId === c.id}
+                      className="py-2.5 px-3.5 rounded-xl bg-red-600/20 border border-red-500/30 text-red-400 hover:bg-red-600 hover:text-white text-[10px] font-black uppercase tracking-wider transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-      </Section>
-
-      {/* ── Step 3b: Direct pair available teams ── */}
-      <Section
-        title="Step 3b — Schedule available teams directly"
-        count={availableTeams.length}
-        icon={<Users size={14} />}
-      >
-        <p className="text-[#666] text-xs mb-4">
-          Pair any two available teams without requiring them to have exchanged a challenge first.
-          Useful when time is short or when teams cannot find opponents through the challenge flow.
-        </p>
-
-        {availableTeams.length < 2 ? (
-          <p className="text-[#555] text-sm">
-            Need at least 2 available teams. Check Step 2 — teams must mark themselves available first.
-          </p>
-        ) : (
-          <div className="grid sm:grid-cols-[1fr_1fr_1fr_auto_auto] gap-2 items-end">
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Team A</label>
-              <select
-                value={pairA}
-                onChange={(e) => setPairA(e.target.value)}
-                className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-              >
-                <option value="">Select team</option>
-                {availableTeams.map((entry) => (
-                  <option key={`a-${entry.teamId}`} value={entry.teamId}>
-                    {entry.team?.name ?? entry.teamId}
-                  </option>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* ── SECTION 4: ALL CHALLENGES HISTORY ──────────────────── */
+        <div className="space-y-4">
+          <div className="rounded-3xl border border-white/10 bg-[#0a0b12] overflow-hidden shadow-2xl">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-white/10 text-[10px] font-black uppercase text-zinc-400 bg-white/[0.02]">
+                  <th className="p-4">Challenger Squad</th>
+                  <th className="p-4">Rival Target</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4">Date Created</th>
+                  <th className="p-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 text-xs">
+                {challenges.map((c) => (
+                  <tr key={c.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="p-4 font-bold text-white">
+                      [{c.challengerTeam?.tag}] {c.challengerTeam?.name}
+                    </td>
+                    <td className="p-4 text-zinc-300">
+                      {c.challengedTeam ? `[${c.challengedTeam.tag}] ${c.challengedTeam.name}` : 'Open Public Challenge'}
+                    </td>
+                    <td className="p-4">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        c.status === 'ACCEPTED' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                        c.status === 'SCHEDULED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                        c.status === 'PENDING' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      }`}>
+                        {c.status}
+                      </span>
+                    </td>
+                    <td className="p-4 text-zinc-500 font-mono text-[10px]">
+                      {new Date(c.createdAt).toLocaleString()}
+                    </td>
+                    <td className="p-4 text-right">
+                      <button
+                        onClick={() => handleAdminAction(c.id, "cancel")}
+                        className="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-colors"
+                        title="Delete Challenge"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
                 ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Team B</label>
-              <select
-                value={pairB}
-                onChange={(e) => setPairB(e.target.value)}
-                className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-              >
-                <option value="">Select team</option>
-                {availableTeams.map((entry) => (
-                  <option key={`b-${entry.teamId}`} value={entry.teamId}>
-                    {entry.team?.name ?? entry.teamId}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Date &amp; time</label>
-              <input
-                type="datetime-local"
-                value={pairTime}
-                onChange={(e) => setPairTime(e.target.value)}
-                className="w-full bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#666] block mb-1">Format</label>
-              <select
-                value={pairBo}
-                onChange={(e) => setPairBo(parseInt(e.target.value, 10))}
-                className="bg-[#0d0d14] border border-white/10 text-white px-2 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-              >
-                <option value={1}>BO1</option>
-                <option value={3}>BO3</option>
-                <option value={5}>BO5</option>
-                <option value={7}>BO7</option>
-              </select>
-            </div>
-            <button
-              type="button"
-              disabled={pairing}
-              onClick={scheduleDirectPair}
-              className="px-4 py-2 bg-[#e8a000] text-black text-[10px] font-black uppercase tracking-wider hover:bg-[#ffb800] disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
-            >
-              {pairing ? <Loader2 size={12} className="animate-spin" /> : <Swords size={12} />}
-              Set Match
-            </button>
+              </tbody>
+            </table>
           </div>
-        )}
-      </Section>
+        </div>
+      )}
+
+      {/* ── RESET ALL CHALLENGES CONFIRMATION MODAL ─────────────── */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="relative w-full max-w-md bg-[#0e1017] border border-red-500/30 rounded-3xl p-8 shadow-2xl space-y-6 text-white text-center">
+            <div className="w-16 h-16 rounded-3xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 mx-auto shadow-xl">
+              <AlertTriangle size={32} />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-black uppercase tracking-tight text-white">Reset All Match Challenges?</h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                This will <span className="text-red-400 font-bold">HARD DELETE ALL ({challenges.length}) challenge records</span> from the database. This action cannot be undone!
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => setShowResetModal(false)}
+                className="px-5 py-3 rounded-2xl border border-white/10 text-zinc-400 text-xs font-bold uppercase hover:bg-white/5 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetAllChallenges}
+                disabled={resetting}
+                className="px-6 py-3 rounded-2xl bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-xl shadow-red-600/30 disabled:opacity-50 transition-all"
+              >
+                {resetting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                <span>Yes, Hard Delete All</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

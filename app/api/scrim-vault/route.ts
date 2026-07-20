@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const featured = searchParams.get("featured");
     const tournamentId = searchParams.get("tournamentId");
+    const category = searchParams.get("category");
     const limit = parseInt(searchParams.get("limit") || "50");
     const skip = parseInt(searchParams.get("skip") || "0");
 
@@ -48,6 +49,10 @@ export async function GET(request: NextRequest) {
 
     if (tournamentId) {
       where.tournamentId = tournamentId;
+    }
+
+    if (category) {
+      where.category = category;
     }
 
     const [videos, total] = await Promise.all([
@@ -97,7 +102,7 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireActiveUser();
     const body = await request.json();
-    const { tournamentId, title, matchup, thumbnail, videoUrl, duration, featured } = body;
+    const { tournamentId, title, matchup, thumbnail, videoUrl, duration, featured, category } = body;
 
     if (!title || !videoUrl) {
       return apiError("Title and video URL are required");
@@ -122,6 +127,7 @@ export async function POST(request: NextRequest) {
         duration: duration || null,
         status: isAdminSubmission ? ScrimVaultStatus.APPROVED : ScrimVaultStatus.PENDING,
         featured: isAdminSubmission ? Boolean(featured) : false,
+        category: category || "SCRIM",
       },
     });
 
@@ -143,9 +149,9 @@ export async function POST(request: NextRequest) {
 // PUT - Approve/reject scrim vault video
 export async function PUT(request: NextRequest) {
   try {
-    const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR, AdminRoleType.STREAMER]);
     const body = await request.json();
-    const { videoId, action, rejectionReason, featured, title, matchup, videoUrl, duration, thumbnail } = body; // action: "approve" | "reject" | "update"
+    const { videoId, action, rejectionReason, featured, title, matchup, videoUrl, duration, thumbnail, tournamentId, category } = body; // action: "approve" | "reject" | "update"
 
     if (!videoId || !action) {
       return apiError("Video ID and action are required");
@@ -165,6 +171,16 @@ export async function PUT(request: NextRequest) {
 
     if (!video) {
       return apiError("Video not found", 404);
+    }
+
+    // STREAMER can only update their own videos — no moderation of others' content
+    if (admin.role === AdminRoleType.STREAMER) {
+      if (action !== "update") {
+        return apiError("Streamers cannot approve or reject videos", 403);
+      }
+      if (video.submittedById !== admin.id) {
+        return apiError("Streamers can only edit their own videos", 403);
+      }
     }
 
     if (action === "update") {
@@ -188,6 +204,14 @@ export async function PUT(request: NextRequest) {
         updateData.videoUrl = normalizedVideoUrl;
       }
       if (featured !== undefined) updateData.featured = Boolean(featured);
+      if (tournamentId !== undefined) {
+        updateData.tournament = tournamentId
+          ? { connect: { id: tournamentId } }
+          : { disconnect: true };
+      }
+      if (category !== undefined) {
+        updateData.category = category || "SCRIM";
+      }
 
       if (Object.keys(updateData).length === 0) {
         return apiError("No fields to update");
@@ -288,7 +312,7 @@ export async function PUT(request: NextRequest) {
 // DELETE - Remove scrim vault video
 export async function DELETE(request: NextRequest) {
   try {
-    const admin = await requireAdmin(AdminRoleType.CONTENT_ADMIN);
+    const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR, AdminRoleType.STREAMER]);
     const body = await request.json();
     const { videoId } = body;
 
@@ -299,6 +323,11 @@ export async function DELETE(request: NextRequest) {
     const video = await prisma.scrimVault.findUnique({ where: { id: videoId } });
     if (!video) {
       return apiError("Video not found", 404);
+    }
+
+    // STREAMER can only delete their own videos
+    if (admin.role === AdminRoleType.STREAMER && video.submittedById !== admin.id) {
+      return apiError("Streamers can only delete their own videos", 403);
     }
 
     await prisma.scrimVault.delete({ where: { id: videoId } });

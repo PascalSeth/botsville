@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server";
-import { requireAdmin, apiError, apiSuccess } from "@/lib/api-utils";
+import { requireSuperAdmin, apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/app/generated/prisma/client";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAdmin();
+    await requireSuperAdmin();
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "50");

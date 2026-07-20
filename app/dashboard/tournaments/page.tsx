@@ -1,5 +1,7 @@
 "use client";
 
+
+import { useRoleGuard } from "../lib/useRole";
 /* eslint-disable @next/next/no-img-element */
 
 import { useState, useEffect } from "react";
@@ -45,6 +47,7 @@ const GlassCard = ({ children, className = "", delay = 0 }: { children: React.Re
 );
 
 export default function DashboardTournamentsPage() {
+  const { isAllowed: __roleAllowed } = useRoleGuard(["TOURNAMENT_ADMIN"]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [pagination, setPagination] = useState({ total: 0, limit: 50, skip: 0 });
   const [loading, setLoading] = useState(true);

@@ -26,20 +26,30 @@ export async function serverUploadBase64Image(
   path: string,
   base64Data: string
 ): Promise<{ url: string | null; error: Error | null }> {
-  const base64Match = base64Data.match(/^data:image\/(\w+);base64,(.+)$/);
-  if (!base64Match) {
-    return { url: null, error: new Error('Invalid base64 image data') };
+  // Locate base64 marker
+  const commaIndex = base64Data.indexOf(';base64,');
+  if (commaIndex === -1) {
+    return { url: null, error: new Error('Invalid base64 image/video data format') };
   }
 
-  const extension = base64Match[1] || 'png';
-  const base64 = base64Match[2];
+  const prefix = base64Data.slice(0, commaIndex);
+  const base64 = base64Data.slice(commaIndex + 8); // Skip ";base64,"
+
+  // Support both image/* and video/* MIME types
+  const prefixMatch = prefix.match(/^data:(image|video)\/(\w+)$/);
+  if (!prefixMatch) {
+    return { url: null, error: new Error('Invalid base64 image/video mime type') };
+  }
+
+  const mimeType = prefixMatch[1];
+  const extension = prefixMatch[2] || 'png';
 
   const byteCharacters = atob(base64);
   const byteArray = new Uint8Array(byteCharacters.length);
   for (let i = 0; i < byteCharacters.length; i++) {
     byteArray[i] = byteCharacters.charCodeAt(i);
   }
-  const blob = new Blob([byteArray], { type: `image/${extension}` });
+  const blob = new Blob([byteArray], { type: `${mimeType}/${extension}` });
   const fullPath = `${path}.${extension}`;
 
   try {

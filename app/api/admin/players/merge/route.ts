@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { requireAdmin, apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
-import { Prisma, Player, User } from "@/app/generated/prisma/client";
+import { Player, User } from "@/app/generated/prisma/client";
+import { AdminRoleType } from "@/app/generated/prisma/enums";
 
 type UserWithPlayer = User & {
   player: Player | null;
@@ -10,7 +11,7 @@ type UserWithPlayer = User & {
 export async function POST(request: NextRequest) {
   try {
     // 1. Authorization
-    const adminUser = await requireAdmin();
+    const adminUser = await requireAdmin([AdminRoleType.SUPER_ADMIN, AdminRoleType.TOURNAMENT_ADMIN]);
 
     const body = await request.json();
     const { userId, placeholderPlayerId } = body;

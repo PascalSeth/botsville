@@ -5,6 +5,7 @@ import {
   TournamentFormat,
   TournamentStatus,
   MatchStatus,
+  AdminRoleType,
 } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
@@ -21,7 +22,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const { id: seasonId } = await params;
     const body = await request.json();
     const { playoffsStartDate }: { playoffsStartDate: string } = body;

@@ -74,7 +74,7 @@ export async function POST(
     }
 
     // Only referees and tournament admins can record performance
-    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
+    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.COMMENTATOR || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
 
 
     if (!isReferee) {
@@ -213,7 +213,7 @@ export async function DELETE(
     const match = await prisma.match.findUnique({ where: { id } });
     if (!match) return apiError('Match not found', 404);
 
-    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
+    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.COMMENTATOR || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
     if (!isReferee) return apiError('Only referees can remove performances', 403);
 
     const gm = parseInt(gameNumber as any);

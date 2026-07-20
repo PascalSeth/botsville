@@ -1,5 +1,7 @@
 "use client";
 
+
+import { useRoleGuard } from "../lib/useRole";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { dashboardFetch } from "../lib/api";
@@ -15,6 +17,7 @@ type Season = {
 };
 
 export default function DashboardSeasonsPage() {
+  const { isAllowed: __roleAllowed } = useRoleGuard(["TOURNAMENT_ADMIN"]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

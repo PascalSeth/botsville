@@ -25,9 +25,9 @@ import {
   LogOut,
   ExternalLink,
   Bell,
-  Megaphone,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
+import { useRole } from "../lib/useRole";
 
 const SIDEBAR_NAV: { label: string; href: string; icon: React.ReactNode; roles?: string[] }[] = [
   { label: "Overview", href: "/dashboard", icon: <LayoutDashboard size={18} /> },
@@ -38,6 +38,7 @@ const SIDEBAR_NAV: { label: string; href: string; icon: React.ReactNode; roles?:
   { label: "Setup Tournament", href: "/dashboard/tournaments/setup", icon: <Trophy size={18} />, roles: ["SUPER_ADMIN", "TOURNAMENT_ADMIN"] },
   { label: "Tournaments", href: "/dashboard/tournaments", icon: <Trophy size={18} /> },
   { label: "Matches", href: "/dashboard/matches", icon: <Swords size={18} /> },
+  { label: "Weekly Scrims", href: "/dashboard/scrims", icon: <Swords size={18} />, roles: ["SUPER_ADMIN", "TOURNAMENT_ADMIN"] },
   { label: "News", href: "/dashboard/news", icon: <Newspaper size={18} /> },
   { label: "Trivia", href: "/dashboard/trivia", icon: <Brain size={18} />, roles: ["SUPER_ADMIN", "CONTENT_ADMIN"] },
   { label: "Heroes", href: "/dashboard/heroes", icon: <ImagePlus size={18} /> },
@@ -118,8 +119,10 @@ function DashboardNotificationBell({ isLoggedIn }: { isLoggedIn: boolean }) {
 
     void fetchNotifications();
     const interval = setInterval(() => {
-      void fetchNotifications();
-    }, 30000);
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void fetchNotifications();
+      }
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [fetchNotifications, isLoggedIn]);
@@ -269,8 +272,11 @@ export function DashboardShell({
   const isLoggedIn = Boolean(user?.id);
   const role = (user as { role?: string | null }).role ?? null;
 
+  const { role: clientRole, actualRole } = useRole();
+  const activeRole = clientRole || role;
+
   const filteredNav = SIDEBAR_NAV.filter(
-    (item) => !item.roles || (role && item.roles.includes(role))
+    (item) => !item.roles || (activeRole && item.roles.includes(activeRole))
   );
 
   return (
@@ -461,9 +467,9 @@ export function DashboardShell({
             >
               <ExternalLink size={12} /> Site
             </Link>
-            <div className="flex items-center gap-2 rounded-md border border-[#e8a000]/20 bg-[#e8a000]/5 px-3 py-1.5">
-              <span className="text-[10px] font-black uppercase tracking-wider text-[#e8a000]">
-                {(user as { role?: string | null }).role ?? "Admin"}
+            <div className="flex items-center gap-2 rounded-md border border-[#e8a000]/25 bg-[#e8a000]/5 px-3 py-1.5 text-[#e8a000]">
+              <span className="text-[10px] font-black uppercase tracking-wider">
+                {activeRole ?? "Admin"}
               </span>
               <span className="text-[#888] text-xs">{(user as { ign?: string | null }).ign ?? user.name ?? "—"}</span>
             </div>
@@ -477,7 +483,6 @@ export function DashboardShell({
           </div>
         </header>
 
-        {/* Content */}
         <main className="flex-1 p-4 sm:p-6">
           <div className="mx-auto max-w-7xl">{children}</div>
         </main>

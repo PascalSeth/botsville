@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireActiveUser, apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
-import { cacheResult, invalidatePattern } from "@/lib/redis";
+import { cacheResult, invalidatePattern, deleteFromCache } from "@/lib/redis";
 
 function toHeroKey(value: string): string {
   return value
@@ -39,7 +39,7 @@ export async function GET() {
     );
 
     return apiSuccess({ heroes }, 200, {
-      "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
+      "Cache-Control": "no-store, no-cache, must-revalidate"
     });
   } catch (error: unknown) {
     console.error("Hero catalog GET error:", error);
@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
 
     // Invalidate hero catalog cache
     await invalidatePattern("hero-*");
+    await deleteFromCache("hero-catalog");
 
     return apiSuccess({ message: "Hero added", hero }, 201);
   } catch (error: unknown) {

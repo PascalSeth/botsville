@@ -53,7 +53,7 @@ export async function POST(
     }
 
     // Only referees and tournament admins can upload screenshots
-    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
+    const isReferee = user.role === AdminRoleType.REFEREE || user.role === AdminRoleType.COMMENTATOR || user.role === AdminRoleType.TOURNAMENT_ADMIN || user.role === AdminRoleType.SUPER_ADMIN;
 
     if (!isReferee) {
       return apiError("Only referees can upload screenshots", 403);

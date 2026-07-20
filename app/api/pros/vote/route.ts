@@ -48,10 +48,12 @@ export async function POST(request: NextRequest) {
       return apiError('candidateId is required', 400);
     }
 
-    const candidateExists = PRO_CANDIDATES.some((c) => c.id === candidateId);
+    const stats = await getAggregatedVotes(user.id);
+    const candidateExists = stats.candidates.some((c) => c.id === candidateId);
     if (!candidateExists) {
-      return apiError('Invalid pro candidate ID', 400);
+      return apiError('Invalid candidate ID', 400);
     }
+
 
     // 3. Determine toggle action
     const currentVote = await getUserVote(user.id);

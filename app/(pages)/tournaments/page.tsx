@@ -564,7 +564,7 @@ export default function TournamentsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#05050a] selection:bg-[#e8a000]/30 overflow-x-hidden">
+    <div className="min-h-screen bg-[#05050a] selection:bg-[#e8a000]/30 overflow-x-hidden pt-24 lg:pt-28">
       <AnimatePresence>
         {registering && <RegisterModal t={registering} onClose={() => setRegistering(null)} />}
       </AnimatePresence>

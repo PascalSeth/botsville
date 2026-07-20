@@ -82,7 +82,7 @@ export default function PollsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#08080d] text-white px-4 sm:px-8 pb-14">
+    <main className="min-h-screen bg-[#08080d] text-white px-4 sm:px-8 pt-24 lg:pt-28 pb-14">
       <div className="relative max-w-4xl mx-auto pt-10">
         <motion.div
           initial={{ opacity: 0, y: -12 }}
