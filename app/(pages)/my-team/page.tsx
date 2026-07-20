@@ -206,19 +206,40 @@ export default function MyTeamPage() {
 
   // ── Remove Player from Roster ─────────────────────────────
   const handleRemovePlayer = async (playerId: string) => {
-    if (!team || !confirm('Are you sure you want to remove this player?')) return;
+    if (!team) return;
     try {
       const res = await fetch(`/api/teams/${team.id}/players/${playerId}`, {
         method: 'DELETE',
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        toast.success('Player removed');
+        toast.success('Player removed from squad');
         fetchMyTeam();
       } else {
-        toast.error('Failed to remove player');
+        toast.error(data.error || 'Failed to remove player');
       }
     } catch {
       toast.error('Error removing player');
+    }
+  };
+
+  // ── Leave Team ───────────────────────────────────────────
+  const handleLeaveTeam = async (playerId: string) => {
+    if (!team) return;
+    try {
+      const res = await fetch(`/api/teams/${team.id}/players/${playerId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success('You have left the squad');
+        setTeam(null);
+        fetchMyTeam();
+      } else {
+        toast.error(data.error || 'Failed to leave squad');
+      }
+    } catch {
+      toast.error('Error leaving squad');
     }
   };
 
@@ -521,7 +542,9 @@ export default function MyTeamPage() {
               <TeamRosterView
                 team={team}
                 isCaptain={isCaptain}
+                currentUserId={session?.user?.id}
                 onRemovePlayer={handleRemovePlayer}
+                onLeaveTeam={handleLeaveTeam}
                 onEditPlayer={handleEditPlayer}
                 onInvitePlayer={handleInvitePlayer}
                 onGenerateTeamCode={generateInviteCode}
