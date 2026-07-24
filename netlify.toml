@@ -2,7 +2,7 @@
 # This ensures fresh builds every time
 [build]
   command = "npx prisma generate && npm run build"
-  # Do NOT set publish - the @netlify/plugin-nextjs handles this automatically
+  publish = ".next"
 
 # Disable build cache to prevent stale chunk issues
 [build.environment]
