@@ -300,7 +300,7 @@ export default function TeamRosterView({
 
                   {/* Controls for Captain managing other players */}
                   {isCaptain && !isCapt && editingPlayerId !== player.id && (
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-1 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                       <button
                         onClick={() => {
                           setEditingPlayerId(player.id);
@@ -469,12 +469,13 @@ export default function TeamRosterView({
                   </h5>
 
                   {isCaptain && !isCapt && editingPlayerId !== player.id && (
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-1 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                       <button
                         onClick={() => {
                           setEditingPlayerId(player.id);
                           setEditRole(player.role);
                           setEditIsSub(player.isSubstitute);
+                          setEditPhotoUrl(player.photo || '');
                         }}
                         className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20 transition-all"
                       >
