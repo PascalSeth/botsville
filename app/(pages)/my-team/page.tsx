@@ -265,8 +265,8 @@ export default function MyTeamPage() {
   };
 
   // ── Invite Player by IGN ──────────────────────────────────
-  const handleInvitePlayer = async (ign: string, role: string) => {
-    if (!team) return;
+  const handleInvitePlayer = async (ign: string, role: string): Promise<boolean> => {
+    if (!team) return false;
     try {
       const res = await fetch(`/api/teams/${team.id}/invites`, {
         method: 'POST',
@@ -275,12 +275,16 @@ export default function MyTeamPage() {
       });
       if (res.ok) {
         toast.success(`Invite sent to ${ign}!`);
+        fetchInvites();
+        return true;
       } else {
         const err = await res.json();
         toast.error(err.error || 'Failed to send invite');
+        return false;
       }
     } catch {
       toast.error('Error sending invite');
+      return false;
     }
   };
 

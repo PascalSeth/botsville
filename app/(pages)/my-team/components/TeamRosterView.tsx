@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, Crown, Users, Star, ArrowUpDown, Trash2, Copy, Check, Plus, Trophy,
-  Loader2, UploadCloud, LogOut, UserX, AlertTriangle, X
+  Loader2, UploadCloud, LogOut, UserX, AlertTriangle, X, Search, CheckCircle2
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -37,6 +37,19 @@ interface Team {
   players: Player[];
 }
 
+interface AvailableUser {
+  id: string;
+  ign: string;
+  photo: string | null;
+  mainRole: string | null;
+  region: string | null;
+  openToOffers: boolean;
+  inTeam: boolean;
+  teamName: string | null;
+  teamTag: string | null;
+  hasPendingInvite: boolean;
+}
+
 interface TeamRosterViewProps {
   team: Team;
   isCaptain: boolean;
@@ -44,7 +57,7 @@ interface TeamRosterViewProps {
   onRemovePlayer: (playerId: string) => Promise<void> | void;
   onLeaveTeam: (playerId: string) => Promise<void> | void;
   onEditPlayer: (playerId: string, updates: { role?: string; isSubstitute?: boolean; photo?: string | null }) => void;
-  onInvitePlayer: (ign: string, role: string) => void;
+  onInvitePlayer: (ign: string, role: string) => Promise<boolean | void> | void;
   onGenerateTeamCode: () => void;
   teamCode: string | null;
   generatingCode: boolean;
@@ -79,6 +92,35 @@ export default function TeamRosterView({
   const [editIsSub, setEditIsSub] = React.useState(false);
   const [editPhotoUrl, setEditPhotoUrl] = React.useState('');
   const [uploadingImage, setUploadingImage] = React.useState(false);
+
+  // Available players / Search state
+  const [availableUsers, setAvailableUsers] = React.useState<AvailableUser[]>([]);
+  const [loadingAvailable, setLoadingAvailable] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [invitingUserId, setInvitingUserId] = React.useState<string | null>(null);
+
+  const fetchAvailableUsers = React.useCallback(async (query: string) => {
+    setLoadingAvailable(true);
+    try {
+      const res = await fetch(`/api/users/available?q=${encodeURIComponent(query)}&teamId=${team.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableUsers(data.users || []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingAvailable(false);
+    }
+  }, [team.id]);
+
+  React.useEffect(() => {
+    if (!isCaptain) return;
+    const timer = setTimeout(() => {
+      fetchAvailableUsers(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, isCaptain, fetchAvailableUsers]);
 
   // Modals state
   const [showLeaveModal, setShowLeaveModal] = React.useState(false);
@@ -195,44 +237,188 @@ export default function TeamRosterView({
         </div>
       </div>
 
-      {/* Direct IGN Invite Form */}
+      {/* Interactive Add Player / Available Players Workflow */}
       {isCaptain && (
-        <div className="p-4 rounded-xl bg-[#0a0a0f] border border-white/5 flex flex-col sm:flex-row items-center gap-3">
-          <h4 className="text-xs font-black uppercase tracking-widest text-zinc-400 shrink-0">
-            <Plus size={14} className="inline mr-1" /> Add Player
-          </h4>
-          <input
-            type="text"
-            placeholder="Player IGN..."
-            value={inviteIGN}
-            onChange={(e) => setInviteIGN(e.target.value)}
-            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/50"
-          />
-          <select
-            value={inviteRole}
-            onChange={(e) => setInviteRole(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-zinc-300 outline-none focus:border-amber-500/50"
-          >
-            <option value="FLEX">FLEX</option>
-            <option value="EXP">EXP</option>
-            <option value="JUNGLE">JUNGLE</option>
-            <option value="MID">MID</option>
-            <option value="GOLD">GOLD</option>
-            <option value="ROAM">ROAM</option>
-          </select>
-          <button
-            onClick={async () => {
-              if (!inviteIGN.trim()) return;
-              setIsInviting(true);
-              await onInvitePlayer(inviteIGN.trim(), inviteRole);
-              setIsInviting(false);
-              setInviteIGN('');
-            }}
-            disabled={isInviting || !inviteIGN.trim()}
-            className="px-4 py-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 font-bold text-[10px] uppercase tracking-widest rounded-lg disabled:opacity-50 border border-emerald-500/30 transition-all w-full sm:w-auto"
-          >
-            {isInviting ? 'Sending...' : 'Send Invite'}
-          </button>
+        <div className="p-5 rounded-2xl bg-gradient-to-b from-[#12121e] to-[#0a0a0f] border border-white/10 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <Plus size={16} />
+              </div>
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-wider text-white">
+                  Add Player to Squad
+                </h4>
+                <p className="text-[11px] text-zinc-400">
+                  Search active players, view their status, or invite free agents not currently in a team
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Assign Role:</span>
+              <select
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value)}
+                className="bg-black/60 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-amber-400 font-bold outline-none focus:border-amber-500/50"
+              >
+                <option value="FLEX">FLEX</option>
+                <option value="EXP">EXP</option>
+                <option value="JUNGLE">JUNGLE</option>
+                <option value="MID">MID</option>
+                <option value="GOLD">GOLD</option>
+                <option value="ROAM">ROAM</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Search & Custom IGN bar */}
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative w-full flex-1">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+              <input
+                type="text"
+                placeholder="Search player by IGN (e.g. Shadow, Phantom)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-black/60 border border-white/10 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder-zinc-500 outline-none focus:border-amber-500/50 transition-colors"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Manual invite button if typing exact IGN not in search list */}
+            {searchQuery.trim() && !availableUsers.some(u => u.ign.toLowerCase() === searchQuery.trim().toLowerCase()) && (
+              <button
+                onClick={async () => {
+                  const ign = searchQuery.trim();
+                  if (!ign) return;
+                  setIsInviting(true);
+                  await onInvitePlayer(ign, inviteRole);
+                  setIsInviting(false);
+                  setSearchQuery('');
+                  fetchAvailableUsers('');
+                }}
+                disabled={isInviting}
+                className="w-full sm:w-auto px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 shrink-0"
+              >
+                {isInviting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                Invite &quot;{searchQuery.trim()}&quot;
+              </button>
+            )}
+          </div>
+
+          {/* Available Players Grid / List */}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                {searchQuery ? `Search Results for "${searchQuery}"` : 'Available Free Agents (Not in a Team)'}
+              </span>
+              {loadingAvailable && <Loader2 size={12} className="animate-spin text-amber-400" />}
+            </div>
+
+            {availableUsers.length === 0 && !loadingAvailable ? (
+              <div className="p-4 rounded-xl bg-black/30 border border-dashed border-white/10 text-center space-y-1">
+                <p className="text-xs text-zinc-400 font-medium">
+                  No matching players found.
+                </p>
+                <p className="text-[10px] text-zinc-500">
+                  You can type any exact registered IGN above and click &quot;Invite&quot;.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto pr-1">
+                {availableUsers.map((u) => {
+                  const isInvitingThis = invitingUserId === u.id;
+                  const roleColor = ROLE_COLORS[u.mainRole || 'FLEX'] || '#e8a000';
+
+                  return (
+                    <div
+                      key={u.id}
+                      className="p-3 rounded-xl bg-black/40 border border-white/5 flex items-center justify-between gap-3 hover:border-white/15 transition-all"
+                    >
+                      {/* User Info */}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-zinc-800 shrink-0 border border-white/10 flex items-center justify-center text-xs font-black text-amber-400">
+                          {u.photo ? (
+                            <Image src={u.photo} alt={u.ign} fill className="object-cover" />
+                          ) : (
+                            u.ign.slice(0, 2).toUpperCase()
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <h5 className="text-xs font-black text-white truncate">{u.ign}</h5>
+                            {u.mainRole && (
+                              <span
+                                className="px-1.5 py-0.2 rounded text-[8px] font-black uppercase"
+                                style={{ background: `${roleColor}20`, color: roleColor }}
+                              >
+                                {u.mainRole}
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Status Badge */}
+                          <div className="mt-0.5 flex items-center gap-1">
+                            {u.inTeam ? (
+                              <span className="text-[9px] font-bold text-zinc-500 truncate">
+                                On team [{u.teamTag || u.teamName}]
+                              </span>
+                            ) : u.hasPendingInvite ? (
+                              <span className="text-[9px] font-bold text-amber-400 flex items-center gap-0.5">
+                                <CheckCircle2 size={10} /> Invite Pending
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-emerald-400 flex items-center gap-0.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Not in a team
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Invite Button */}
+                      {!u.inTeam && !u.hasPendingInvite && (
+                        <button
+                          onClick={async () => {
+                            setInvitingUserId(u.id);
+                            const ok = await onInvitePlayer(u.ign, inviteRole);
+                            if (ok !== false) {
+                              setAvailableUsers(prev => prev.map(item => item.id === u.id ? { ...item, hasPendingInvite: true } : item));
+                            }
+                            setInvitingUserId(null);
+                          }}
+                          disabled={isInvitingThis}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30 transition-all shrink-0 disabled:opacity-50"
+                        >
+                          {isInvitingThis ? 'Sending...' : 'Invite'}
+                        </button>
+                      )}
+
+                      {u.hasPendingInvite && (
+                        <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 text-[9px] font-bold uppercase tracking-wider border border-amber-500/20 shrink-0">
+                          Sent
+                        </span>
+                      )}
+
+                      {u.inTeam && (
+                        <span className="px-2.5 py-1 rounded-lg bg-zinc-800/80 text-zinc-500 text-[9px] font-bold uppercase tracking-wider shrink-0">
+                          In Team
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -355,27 +541,46 @@ export default function TeamRosterView({
                         <option value="true">Substitute</option>
                       </select>
                       <div className="flex flex-col gap-1.5">
-                        <input 
-                          type="text" 
-                          placeholder="Image URL (optional)" 
-                          value={editPhotoUrl}
-                          onChange={(e) => setEditPhotoUrl(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 text-[10px] text-white p-1.5 rounded outline-none focus:border-amber-500/50"
-                        />
-                        <label className="flex items-center justify-center gap-1.5 w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-[9px] text-zinc-400 py-1.5 rounded cursor-pointer transition-colors">
-                          {uploadingImage ? (
-                            <><Loader2 size={10} className="animate-spin" /> Uploading...</>
-                          ) : (
-                            <><UploadCloud size={10} /> Upload Image File</>
-                          )}
-                          <input 
-                            type="file" 
-                            accept="image/*" 
-                            className="hidden" 
-                            onChange={handlePhotoUpload} 
-                            disabled={uploadingImage}
-                          />
-                        </label>
+                        {editPhotoUrl ? (
+                          <div className="relative w-full h-16 rounded-lg overflow-hidden bg-black/60 border border-white/10 flex items-center justify-center group">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={editPhotoUrl} alt="Player photo" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/70 flex items-center justify-center gap-1 transition-opacity">
+                              <label className="bg-amber-500 hover:bg-amber-400 text-black text-[9px] font-black uppercase px-2 py-1 rounded cursor-pointer transition-colors">
+                                {uploadingImage ? "..." : "Change"}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={handlePhotoUpload}
+                                  disabled={uploadingImage}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => setEditPhotoUrl('')}
+                                className="bg-red-500/30 text-red-300 hover:bg-red-500/50 text-[9px] font-bold uppercase px-2 py-1 rounded transition-colors"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="flex items-center justify-center gap-1.5 w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-[9px] text-zinc-300 py-2 rounded cursor-pointer transition-colors">
+                            {uploadingImage ? (
+                              <><Loader2 size={12} className="animate-spin text-amber-400" /> Uploading...</>
+                            ) : (
+                              <><UploadCloud size={12} className="text-amber-400" /> Upload Image File</>
+                            )}
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              className="hidden" 
+                              onChange={handlePhotoUpload} 
+                              disabled={uploadingImage}
+                            />
+                          </label>
+                        )}
                       </div>
                       <div className="flex gap-1 pt-1">
                         <button
@@ -523,27 +728,46 @@ export default function TeamRosterView({
                         <option value="true">Substitute</option>
                       </select>
                       <div className="flex flex-col gap-1.5">
-                        <input 
-                          type="text" 
-                          placeholder="Image URL (optional)" 
-                          value={editPhotoUrl}
-                          onChange={(e) => setEditPhotoUrl(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 text-[10px] text-white p-1.5 rounded outline-none focus:border-amber-500/50"
-                        />
-                        <label className="flex items-center justify-center gap-1.5 w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-[9px] text-zinc-400 py-1.5 rounded cursor-pointer transition-colors">
-                          {uploadingImage ? (
-                            <><Loader2 size={10} className="animate-spin" /> Uploading...</>
-                          ) : (
-                            <><UploadCloud size={10} /> Upload Image File</>
-                          )}
-                          <input 
-                            type="file" 
-                            accept="image/*" 
-                            className="hidden" 
-                            onChange={handlePhotoUpload} 
-                            disabled={uploadingImage}
-                          />
-                        </label>
+                        {editPhotoUrl ? (
+                          <div className="relative w-full h-16 rounded-lg overflow-hidden bg-black/60 border border-white/10 flex items-center justify-center group">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={editPhotoUrl} alt="Player photo" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/70 flex items-center justify-center gap-1 transition-opacity">
+                              <label className="bg-amber-500 hover:bg-amber-400 text-black text-[9px] font-black uppercase px-2 py-1 rounded cursor-pointer transition-colors">
+                                {uploadingImage ? "..." : "Change"}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={handlePhotoUpload}
+                                  disabled={uploadingImage}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => setEditPhotoUrl('')}
+                                className="bg-red-500/30 text-red-300 hover:bg-red-500/50 text-[9px] font-bold uppercase px-2 py-1 rounded transition-colors"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="flex items-center justify-center gap-1.5 w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-[9px] text-zinc-300 py-2 rounded cursor-pointer transition-colors">
+                            {uploadingImage ? (
+                              <><Loader2 size={12} className="animate-spin text-amber-400" /> Uploading...</>
+                            ) : (
+                              <><UploadCloud size={12} className="text-amber-400" /> Upload Image File</>
+                            )}
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              className="hidden" 
+                              onChange={handlePhotoUpload} 
+                              disabled={uploadingImage}
+                            />
+                          </label>
+                        )}
                       </div>
                       <div className="flex gap-1 pt-1">
                         <button
