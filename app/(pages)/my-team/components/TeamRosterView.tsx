@@ -567,8 +567,8 @@ export default function TeamRosterView({
                     )}
                   </h5>
 
-                  {/* Controls for Captain managing other players */}
-                  {isCaptain && !isCapt && editingPlayerId !== player.id && (
+                  {/* Controls for Captain — shown on every card including own */}
+                  {isCaptain && editingPlayerId !== player.id && (
                     <div className="flex gap-1 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                       <button
                         onClick={() => {
@@ -581,18 +581,21 @@ export default function TeamRosterView({
                       >
                         Edit
                       </button>
-                      <button
-                        onClick={() => setPlayerToRemove(player)}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
-                        title="Remove member"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      {/* Only show Remove for other players, not self */}
+                      {!isSelf && (
+                        <button
+                          onClick={() => setPlayerToRemove(player)}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
+                          title="Remove member"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
                     </div>
                   )}
 
-                  {/* Leave button directly on player's own card */}
-                  {isSelf && (
+                  {/* Non-captain member's leave button */}
+                  {isSelf && !isCaptain && (
                     <button
                       onClick={() => setShowLeaveModal(true)}
                       className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
@@ -758,7 +761,7 @@ export default function TeamRosterView({
                     )}
                   </h5>
 
-                  {isCaptain && !isCapt && editingPlayerId !== player.id && (
+                  {isCaptain && editingPlayerId !== player.id && (
                     <div className="flex gap-1 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                       <button
                         onClick={() => {
@@ -771,17 +774,19 @@ export default function TeamRosterView({
                       >
                         Edit
                       </button>
-                      <button
-                        onClick={() => setPlayerToRemove(player)}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
-                        title="Remove member"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      {!isSelf && (
+                        <button
+                          onClick={() => setPlayerToRemove(player)}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
+                          title="Remove member"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
                     </div>
                   )}
 
-                  {isSelf && (
+                  {isSelf && !isCaptain && (
                     <button
                       onClick={() => setShowLeaveModal(true)}
                       className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
