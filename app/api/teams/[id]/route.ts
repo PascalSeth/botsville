@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 
-// GET - Get team by ID
+// GET - Get team by ID, Tag, Invite Link Code, or Invite ID
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -22,43 +22,82 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const team = await prisma.team.findUnique({
-      where: { id },
-      include: {
-        captain: {
-          select: {
-            id: true,
-            ign: true,
-            photo: true,
-          },
-        },
-        players: {
-          where: { deletedAt: null },
-          include: {
-            user: {
-              select: {
-                id: true,
-                ign: true,
-                photo: true,
-              },
-            },
-          },
-          orderBy: [
-            { isSubstitute: "asc" },
-            { role: "asc" },
-            { createdAt: "asc" },
-          ],
-        },
-        _count: {
-          select: {
-            players: true,
-            registrations: true,
-            matchesAsA: true,
-            matchesAsB: true,
-          },
+    const teamInclude = {
+      captain: {
+        select: {
+          id: true,
+          ign: true,
+          photo: true,
         },
       },
+      players: {
+        where: { deletedAt: null },
+        include: {
+          user: {
+            select: {
+              id: true,
+              ign: true,
+              photo: true,
+            },
+          },
+        },
+        orderBy: [
+          { isSubstitute: "asc" as const },
+          { role: "asc" as const },
+          { createdAt: "asc" as const },
+        ],
+      },
+      _count: {
+        select: {
+          players: true,
+          registrations: true,
+          matchesAsA: true,
+          matchesAsB: true,
+        },
+      },
+    };
+
+    // 1. Try finding team directly by UUID/ID
+    let team = await prisma.team.findUnique({
+      where: { id },
+      include: teamInclude,
     });
+
+    // 2. If not found, try finding team by Tag
+    if (!team) {
+      team = await prisma.team.findFirst({
+        where: { tag: { equals: id, mode: "insensitive" }, deletedAt: null },
+        include: teamInclude,
+      });
+    }
+
+    // 3. If not found, try finding by Invite Link Code (TeamInviteLink)
+    if (!team) {
+      const inviteLink = await prisma.teamInviteLink.findUnique({
+        where: { code: id.toUpperCase() },
+        select: { teamId: true },
+      });
+      if (inviteLink?.teamId) {
+        team = await prisma.team.findUnique({
+          where: { id: inviteLink.teamId },
+          include: teamInclude,
+        });
+      }
+    }
+
+    // 4. If not found, try finding by direct TeamInvite ID
+    if (!team) {
+      const directInvite = await prisma.teamInvite.findUnique({
+        where: { id },
+        select: { teamId: true },
+      });
+      if (directInvite?.teamId) {
+        team = await prisma.team.findUnique({
+          where: { id: directInvite.teamId },
+          include: teamInclude,
+        });
+      }
+    }
 
     if (!team || team.deletedAt) {
       return apiError("Team not found", 404);
