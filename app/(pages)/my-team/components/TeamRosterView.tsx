@@ -37,6 +37,20 @@ interface Team {
   players: Player[];
 }
 
+interface TeamInvite {
+  id: string;
+  toIGN?: string | null;
+  toUser?: {
+    id: string;
+    ign: string;
+    photo?: string | null;
+  } | null;
+  role?: string | null;
+  createdAt?: string | null;
+  sentAt?: string | null;
+  expiresAt?: string | null;
+}
+
 interface AvailableUser {
   id: string;
   ign: string;
@@ -61,6 +75,8 @@ interface TeamRosterViewProps {
   onGenerateTeamCode: () => void;
   teamCode: string | null;
   generatingCode: boolean;
+  invites?: TeamInvite[];
+  onCancelInvite?: (inviteId: string) => Promise<void> | void;
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -82,12 +98,15 @@ export default function TeamRosterView({
   onGenerateTeamCode,
   teamCode,
   generatingCode,
+  invites = [],
+  onCancelInvite,
 }: TeamRosterViewProps) {
   const [copiedCode, setCopiedCode] = React.useState(false);
   const [inviteIGN, setInviteIGN] = React.useState('');
   const [inviteRole, setInviteRole] = React.useState('FLEX');
   const [isInviting, setIsInviting] = React.useState(false);
   const [editingPlayerId, setEditingPlayerId] = React.useState<string | null>(null);
+  const [cancellingInviteId, setCancellingInviteId] = React.useState<string | null>(null);
   const [editRole, setEditRole] = React.useState('');
   const [editIsSub, setEditIsSub] = React.useState(false);
   const [editPhotoUrl, setEditPhotoUrl] = React.useState('');
@@ -419,6 +438,70 @@ export default function TeamRosterView({
               </div>
             )}
           </div>
+
+          {/* Pending Sent Invites list for Captains */}
+          {isCaptain && invites && invites.length > 0 && (
+            <div className="mt-3 p-3 rounded-xl bg-black/40 border border-amber-500/20 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
+                  <CheckCircle2 size={12} /> Pending Sent Invites ({invites.length})
+                </span>
+                <span className="text-[9px] text-zinc-500">You can cancel pending invites anytime</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {invites.map((inv) => {
+                  const targetIgn = inv.toUser?.ign || inv.toIGN || 'Player';
+                  const targetPhoto = inv.toUser?.photo;
+                  const roleColor = ROLE_COLORS[inv.role || 'FLEX'] || '#e8a000';
+                  const isCancellingThis = cancellingInviteId === inv.id;
+
+                  return (
+                    <div
+                      key={inv.id}
+                      className="p-2.5 rounded-lg bg-zinc-900/80 border border-white/10 flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-7 h-7 rounded bg-zinc-800 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden text-[9px] font-black text-amber-400">
+                          {targetPhoto ? (
+                            <img src={targetPhoto} alt={targetIgn} className="w-full h-full object-cover" />
+                          ) : (
+                            targetIgn.slice(0, 2).toUpperCase()
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="text-xs font-bold text-white truncate">{targetIgn}</span>
+                            {inv.role && (
+                              <span className="text-[8px] font-black px-1 rounded uppercase" style={{ background: `${roleColor}20`, color: roleColor }}>
+                                {inv.role}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[8px] text-amber-400/80 font-mono">Pending response</span>
+                        </div>
+                      </div>
+
+                      {onCancelInvite && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setCancellingInviteId(inv.id);
+                            await onCancelInvite(inv.id);
+                            setCancellingInviteId(null);
+                          }}
+                          disabled={isCancellingThis}
+                          className="p-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-[9px] font-bold uppercase transition-all shrink-0"
+                          title="Cancel Invite"
+                        >
+                          {isCancellingThis ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -538,7 +621,9 @@ export default function TeamRosterView({
                         className="w-full bg-white/5 border border-white/10 text-xs text-white p-1 rounded"
                       >
                         <option value="false">Starter</option>
-                        <option value="true">Substitute</option>
+                        <option value="true" disabled={starters.length <= 5 && team.players.length >= 5}>
+                          Substitute {starters.length <= 5 && team.players.length >= 5 ? '(Needs 5 starters)' : ''}
+                        </option>
                       </select>
                       <div className="flex flex-col gap-1.5">
                         {editPhotoUrl ? (
@@ -724,7 +809,9 @@ export default function TeamRosterView({
                         onChange={(e) => setEditIsSub(e.target.value === "true")}
                         className="w-full bg-white/5 border border-white/10 text-xs text-white p-1 rounded"
                       >
-                        <option value="false">Starter</option>
+                        <option value="false" disabled={starters.length >= 5}>
+                          Starter {starters.length >= 5 ? '(5/5 Starters Full)' : ''}
+                        </option>
                         <option value="true">Substitute</option>
                       </select>
                       <div className="flex flex-col gap-1.5">

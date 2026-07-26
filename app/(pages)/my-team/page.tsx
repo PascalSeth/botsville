@@ -271,7 +271,7 @@ export default function MyTeamPage() {
       const res = await fetch(`/api/teams/${team.id}/invites`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ign, role }),
+        body: JSON.stringify({ toIGN: ign, ign, role }),
       });
       if (res.ok) {
         toast.success(`Invite sent to ${ign}!`);
@@ -285,6 +285,25 @@ export default function MyTeamPage() {
     } catch {
       toast.error('Error sending invite');
       return false;
+    }
+  };
+
+  // ── Cancel Sent Invite ────────────────────────────────────
+  const handleCancelInvite = async (inviteId: string) => {
+    if (!team) return;
+    try {
+      const res = await fetch(`/api/teams/${team.id}/invites?inviteId=${inviteId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        toast.success('Invite cancelled');
+        fetchInvites();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Failed to cancel invite');
+      }
+    } catch {
+      toast.error('Error cancelling invite');
     }
   };
 
@@ -553,7 +572,8 @@ export default function MyTeamPage() {
                 onInvitePlayer={handleInvitePlayer}
                 onGenerateTeamCode={generateInviteCode}
                 teamCode={inviteCode}
-                generatingCode={generatingCode}
+                invites={invites}
+                onCancelInvite={handleCancelInvite}
               />
             )}
 

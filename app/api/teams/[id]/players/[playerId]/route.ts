@@ -120,6 +120,19 @@ export async function PUT(
           );
         }
       }
+
+      // Demoting from starter to sub
+      if (!wantsToBeStarter === false && !currentlySubstitute) {
+        const currentStartersCount = player.team.players.filter(
+          (p) => !p.isSubstitute
+        ).length;
+        
+        if (currentStartersCount <= 5 && player.team.players.length >= 5) {
+          return apiError(
+            "A team must maintain 5 starting players in its main lineup. Promote a substitute first before demoting a starter."
+          );
+        }
+      }
       
       updateData.isSubstitute = Boolean(isSubstitute);
     }

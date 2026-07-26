@@ -99,9 +99,11 @@ export async function POST(
     const user = await requireActiveUser();
     const { id } = await context.params;
     const body = await request.json();
-    const { toIGN, message } = body;
+    const targetIGN = (body.toIGN || body.ign)?.trim();
+    const role = body.role ? String(body.role).toUpperCase() : undefined;
+    const { message } = body;
 
-    if (!toIGN) {
+    if (!targetIGN) {
       return apiError("Target IGN is required");
     }
 
@@ -129,9 +131,9 @@ export async function POST(
     }
 
     // Find target user by IGN
-    const targetUser = await findUserByEmailOrIgn(toIGN);
+    const targetUser = await findUserByEmailOrIgn(targetIGN);
     if (!targetUser) {
-      return apiError("Player not found");
+      return apiError(`Player "${targetIGN}" not found. Players must have a registered Botsville account.`);
     }
 
     // Check if user is already on a team
@@ -140,29 +142,30 @@ export async function POST(
         userId: targetUser.id,
         deletedAt: null,
       },
+      include: { team: { select: { name: true, tag: true } } },
     });
 
     if (existingPlayer) {
-      return apiError("Player is already on a team");
+      return apiError(`Player ${targetUser.ign} is already on a team (${existingPlayer.team.name})`);
     }
 
     // Check for duplicate pending invite
     const duplicateInvite = await prisma.teamInvite.findFirst({
       where: {
         teamId: id,
-        toIGN,
+        toIGN: { equals: targetUser.ign, mode: "insensitive" },
         status: InviteStatus.PENDING,
       },
     });
 
     if (duplicateInvite) {
-      return apiError("Invite already sent to this player");
+      return apiError(`Invite already sent to ${targetUser.ign}`);
     }
 
     // Check if player has 3+ pending invites
     const pendingCount = await prisma.teamInvite.count({
       where: {
-        toIGN,
+        toUserId: targetUser.id,
         status: InviteStatus.PENDING,
         expiresAt: { gt: new Date() },
       },
@@ -180,8 +183,9 @@ export async function POST(
       data: {
         teamId: id,
         fromUserId: user.id,
-        toIGN,
+        toIGN: targetUser.ign,
         toUserId: targetUser.id,
+        role: role || targetUser.mainRole || null,
         message: message || null,
         expiresAt,
         status: InviteStatus.PENDING,
@@ -205,16 +209,13 @@ export async function POST(
       },
     });
 
-    console.log('[teams][invites] Invite created', { inviteId: invite.id, teamId: id, toIGN: invite.toIGN, toUserId: invite.toUser?.id });
-
     // Create notification for target user
-    console.log('[teams][invites] Creating notification for target user', { userId: targetUser.id, inviteId: invite.id });
     await prisma.notification.create({
       data: {
         userId: targetUser.id,
         type: "TEAM_INVITE_RECEIVED",
         title: `Team Invite from ${team.name}`,
-        message: message || `${team.name} (${team.tag}) has invited you to join their team`,
+        message: message || `${team.name} (${team.tag}) has invited you to join their squad as ${role || 'Player'}`,
         linkUrl: `/teams/${id}`,
       },
     });
@@ -230,6 +231,55 @@ export async function POST(
     const message = error instanceof Error ? error.message : "Failed to send invite";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
     console.error("Send invite error:", error);
+    return apiError(message, 500);
+  }
+}
+
+// DELETE - Cancel pending sent invite by captain
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await requireActiveUser();
+    const { id } = await context.params;
+    const { searchParams } = new URL(request.url);
+    const inviteId = searchParams.get("inviteId");
+
+    if (!inviteId) {
+      return apiError("inviteId is required");
+    }
+
+    const team = await prisma.team.findUnique({
+      where: { id },
+      select: { id: true, captainId: true },
+    });
+
+    if (!team || team.captainId !== user.id) {
+      return apiError("Only team captain can cancel invites", 403);
+    }
+
+    const invite = await prisma.teamInvite.findUnique({
+      where: { id: inviteId },
+    });
+
+    if (!invite || invite.teamId !== id) {
+      return apiError("Invite not found", 404);
+    }
+
+    await prisma.teamInvite.update({
+      where: { id: inviteId },
+      data: {
+        status: InviteStatus.CANCELLED,
+        respondedAt: new Date(),
+      },
+    });
+
+    return apiSuccess({ message: "Invite cancelled successfully" });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to cancel invite";
+    if (message === "Unauthorized") return apiError("Unauthorized", 401);
+    console.error("Cancel invite error:", error);
     return apiError(message, 500);
   }
 }
