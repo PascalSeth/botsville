@@ -175,6 +175,15 @@ export async function POST(
       return apiError("Player has too many pending invites. Please wait for them to respond.");
     }
 
+    // Clean up older non-pending invites for this team & player to avoid unique constraint collisions
+    await prisma.teamInvite.deleteMany({
+      where: {
+        teamId: id,
+        toIGN: { equals: targetUser.ign, mode: "insensitive" },
+        status: { in: [InviteStatus.CANCELLED, InviteStatus.DECLINED, InviteStatus.EXPIRED] },
+      },
+    });
+
     // Create invite
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 48); // 48 hours
@@ -266,13 +275,31 @@ export async function DELETE(
       return apiError("Invite not found", 404);
     }
 
-    await prisma.teamInvite.update({
-      where: { id: inviteId },
-      data: {
-        status: InviteStatus.CANCELLED,
-        respondedAt: new Date(),
+    // Delete any existing non-pending invites for this team & player to avoid @@unique([teamId, toIGN, status]) collision
+    await prisma.teamInvite.deleteMany({
+      where: {
+        teamId: id,
+        toIGN: { equals: invite.toIGN, mode: "insensitive" },
+        id: { not: inviteId },
+        status: { in: [InviteStatus.CANCELLED, InviteStatus.DECLINED, InviteStatus.EXPIRED] },
       },
     });
+
+    try {
+      await prisma.teamInvite.update({
+        where: { id: inviteId },
+        data: {
+          status: InviteStatus.CANCELLED,
+          respondedAt: new Date(),
+        },
+      });
+    } catch (err: unknown) {
+      // Fallback: If unique constraint fails, delete the cancelled invite record directly
+      console.warn("Falling back to delete on invite cancellation collision:", err);
+      await prisma.teamInvite.delete({
+        where: { id: inviteId },
+      });
+    }
 
     return apiSuccess({ message: "Invite cancelled successfully" });
   } catch (error: unknown) {
