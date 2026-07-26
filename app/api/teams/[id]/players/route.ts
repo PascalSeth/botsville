@@ -116,23 +116,33 @@ export async function POST(
       return apiError("Team is full (maximum 20 players)");
     }
 
-    // Check if the user already has a player record by userId or case-insensitive IGN (active or soft-deleted)
-    let existingPlayerRecord = userId ? await prisma.player.findFirst({
-      where: { userId },
-    }) : null;
+    // Find target user account (must be registered on Botsville)
+    const targetUser = userId
+      ? await prisma.user.findUnique({ where: { id: userId, deletedAt: null } })
+      : await prisma.user.findFirst({ where: { ign: { equals: ign, mode: "insensitive" }, deletedAt: null } });
 
-    if (!existingPlayerRecord) {
-      existingPlayerRecord = await prisma.player.findFirst({
-        where: { ign: { equals: ign, mode: "insensitive" } },
-      });
+    if (!targetUser) {
+      return apiError(`Player "${ign}" does not have a registered Botsville account. All players must have an account.`);
     }
+
+    const resolvedUserId = targetUser.id;
+
+    // Check if the user already has a player record by userId or case-insensitive IGN (active or soft-deleted)
+    let existingPlayerRecord = await prisma.player.findFirst({
+      where: {
+        OR: [
+          { userId: resolvedUserId },
+          { ign: { equals: ign, mode: "insensitive" } },
+        ],
+      },
+    });
 
     if (existingPlayerRecord) {
       if (!existingPlayerRecord.deletedAt) {
         if (existingPlayerRecord.teamId === id) {
           return apiError("Player is already on your team");
         } else {
-          return apiError("IGN or User is already an active member of another team");
+          return apiError(`Player "${targetUser.ign}" is already an active member of another team`);
         }
       }
     }
@@ -157,6 +167,7 @@ export async function POST(
         where: { id: existingPlayerRecord.id },
         data: {
           teamId: id,
+          userId: resolvedUserId,
           ign,
           role: role as GameRole,
           secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,
@@ -188,7 +199,7 @@ export async function POST(
       player = await prisma.player.create({
         data: {
           teamId: id,
-          userId: userId || null,
+          userId: resolvedUserId,
           ign,
           role: role as GameRole,
           secondaryRole: secondaryRole ? (secondaryRole as GameRole) : null,

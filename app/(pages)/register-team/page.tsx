@@ -8,7 +8,7 @@ import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, X, Plus, ChevronDown, Shield, Sword, Zap,
-  Crosshair, Anchor, CheckCircle, AlertCircle, User, Image as ImageIcon, Loader2
+  Crosshair, Anchor, CheckCircle, AlertCircle, User, Image as ImageIcon, Loader2, Search
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────
@@ -16,10 +16,14 @@ type Role = 'exp' | 'jungle' | 'mid' | 'gold' | 'roam';
 
 interface Player {
   id: string;
+  userId: string | null;
   inGameName: string;
   role: Role | '';
   image: string | null;
   imageUrl: string | null; // URL from Supabase storage
+  isVerified?: boolean;
+  userPhoto?: string | null;
+  mainRole?: string | null;
 }
 
 interface TeamForm {
@@ -73,10 +77,12 @@ const getRoleConfig = (role: Role | '') => ROLES.find(r => r.value === role) || 
 
 const emptyPlayer = (): Player => ({
   id: Math.random().toString(36).slice(2),
+  userId: null,
   inGameName: '',
   role: '',
   image: null,
   imageUrl: null,
+  isVerified: false,
 });
 
 // ── File → base64 ──────────────────────────────────────────
@@ -274,6 +280,221 @@ const FieldInput = ({
   </div>
 );
 
+// ── Registered User Account Search Input ─────────────────────
+const UserSearchInput = ({
+  player,
+  onChange,
+  locked,
+  existingUserIds = [],
+}: {
+  player: Player;
+  onChange: (p: Partial<Player>) => void;
+  locked?: boolean;
+  existingUserIds?: string[];
+}) => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Search API
+  useEffect(() => {
+    if (!query.trim() || player.userId) {
+      setResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/users/available?q=${encodeURIComponent(query.trim())}`);
+        if (res.ok) {
+          const data = await res.json();
+          setResults(data.users || []);
+          setOpen(true);
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query, player.userId]);
+
+  // Click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  if (locked) {
+    return (
+      <div>
+        <p className="text-[#555] text-[9px] tracking-[0.18em] uppercase mb-1.5">Registered Player Account</p>
+        <div className="w-full bg-[#0d0d14] border border-[#e8a000]/30 text-[#e8a000] text-xs font-bold tracking-wide uppercase px-3 py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span>{player.inGameName || '—'}</span>
+          </div>
+          <span className="text-[8px] text-[#e8a000] tracking-widest bg-amber-500/10 px-2 py-0.5 border border-amber-500/20 uppercase font-black">CAPTAIN</span>
+        </div>
+      </div>
+    );
+  }
+
+  // If a player account has been selected
+  if (player.userId && player.inGameName) {
+    return (
+      <div>
+        <p className="text-[#555] text-[9px] tracking-[0.18em] uppercase mb-1.5">Registered Player Account</p>
+        <div className="w-full bg-[#0d0d14] border border-emerald-500/30 p-2 flex items-center justify-between gap-2 transition-all">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded bg-zinc-800 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+              {player.userPhoto ? (
+                <img src={player.userPhoto} alt={player.inGameName} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-[10px] font-black text-emerald-400">{player.inGameName.slice(0, 2).toUpperCase()}</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-white text-xs font-black uppercase truncate">{player.inGameName}</span>
+                <span className="text-[8px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.2 rounded shrink-0">
+                  ✓ VERIFIED
+                </span>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              onChange({ userId: null, inGameName: '', isVerified: false, userPhoto: null });
+              setQuery('');
+            }}
+            className="text-[9px] font-bold text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 px-2 py-1 rounded transition-colors shrink-0"
+          >
+            Change
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Unselected state: Search registered user box
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <p className="text-[#555] text-[9px] tracking-[0.18em] uppercase mb-1.5">Search Registered Botsville Account</p>
+      <div className="relative">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => { if (results.length > 0) setOpen(true); }}
+          placeholder="Search by IGN (e.g. Shadow)..."
+          className="w-full bg-[#0d0d14] border border-white/[0.1] text-white text-xs font-bold tracking-wide uppercase placeholder-[#444] pl-3 pr-8 py-2.5 outline-none focus:border-amber-500/50 transition-colors"
+        />
+        {loading ? (
+          <Loader2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-amber-400" />
+        ) : query ? (
+          <button
+            type="button"
+            onClick={() => { setQuery(''); setResults([]); setOpen(false); }}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
+          >
+            <X size={12} />
+          </button>
+        ) : null}
+      </div>
+
+      {/* Autocomplete dropdown */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#0d0d14] border border-white/15 shadow-2xl shadow-black/80 max-h-48 overflow-y-auto divide-y divide-white/5"
+          >
+            {results.length === 0 ? (
+              <div className="p-3 text-[10px] text-zinc-400 text-center">
+                No active player found matching &quot;{query}&quot;. Players must have a Botsville account.
+              </div>
+            ) : (
+              results.map((u) => {
+                const isAlreadySelected = existingUserIds.includes(u.id);
+                const roleColor = ROLES.find(r => r.value.toUpperCase() === u.mainRole)?.color || '#e8a000';
+
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    disabled={u.inTeam || isAlreadySelected}
+                    onClick={() => {
+                      onChange({
+                        userId: u.id,
+                        inGameName: u.ign,
+                        userPhoto: u.photo,
+                        image: u.photo || player.image,
+                        isVerified: true,
+                        role: player.role || (ROLES.find(r => r.value.toUpperCase() === u.mainRole)?.value || ''),
+                      });
+                      setOpen(false);
+                      setQuery('');
+                    }}
+                    className={`w-full p-2.5 text-left flex items-center justify-between gap-2 transition-colors ${
+                      u.inTeam || isAlreadySelected
+                        ? 'opacity-40 cursor-not-allowed bg-black/40'
+                        : 'hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-6 h-6 rounded bg-zinc-800 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden text-[9px] font-black text-amber-400">
+                        {u.photo ? (
+                          <img src={u.photo} alt={u.ign} className="w-full h-full object-cover" />
+                        ) : (
+                          u.ign.slice(0, 2).toUpperCase()
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span className="text-white text-xs font-bold truncate">{u.ign}</span>
+                          {u.mainRole && (
+                            <span className="text-[8px] font-black px-1 rounded uppercase" style={{ color: roleColor, background: `${roleColor}20` }}>
+                              {u.mainRole}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0">
+                      {isAlreadySelected ? (
+                        <span className="text-[8px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">Selected</span>
+                      ) : u.inTeam ? (
+                        <span className="text-[8px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">In Team</span>
+                      ) : (
+                        <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">+ Select</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 // ── Captain role map (MainRole → form Role) ──────────────
 const MAIN_TO_FORM_ROLE: Record<string, Role> = {
   EXP: 'exp', JUNGLE: 'jungle', MID: 'mid', GOLD: 'gold', ROAM: 'roam',
@@ -281,7 +502,7 @@ const MAIN_TO_FORM_ROLE: Record<string, Role> = {
 
 // ── Player Card Editor ─────────────────────────────────────
 const PlayerEditor = ({
-  player, index, onChange, onRemove, canRemove, locked, takenRoles = [],
+  player, index, onChange, onRemove, canRemove, locked, takenRoles = [], existingUserIds = [],
 }: {
   player: Player; index: number;
   onChange: (p: Player) => void;
@@ -289,6 +510,7 @@ const PlayerEditor = ({
   canRemove: boolean;
   locked?: boolean;
   takenRoles?: Role[];
+  existingUserIds?: string[];
 }) => {
   const role = getRoleConfig(player.role);
 
@@ -354,23 +576,12 @@ const PlayerEditor = ({
 
           {/* Fields */}
           <div className="flex flex-col gap-3">
-            {locked ? (
-              <div>
-                <p className="text-[#555] text-[9px] tracking-[0.18em] uppercase mb-1.5">In-Game Name</p>
-                <div className="w-full bg-[#0d0d14] border border-[#e8a000]/20 text-[#e8a000] text-sm font-bold tracking-wide uppercase px-3 py-2.5 flex items-center gap-2">
-                  <span className="flex-1">{player.inGameName || '—'}</span>
-                  <span className="text-[8px] text-[#e8a000]/40 tracking-widest">LOCKED</span>
-                </div>
-              </div>
-            ) : (
-              <FieldInput
-                label="In-Game Name"
-                value={player.inGameName}
-                onChange={v => onChange({ ...player, inGameName: v })}
-                placeholder="YourIGN"
-                maxLength={20}
-              />
-            )}
+            <UserSearchInput
+              player={player}
+              onChange={(updates) => onChange({ ...player, ...updates })}
+              locked={locked}
+              existingUserIds={existingUserIds}
+            />
             <RoleSelector
               value={player.role}
               onChange={locked ? () => {} : r => onChange({ ...player, role: r })}
@@ -567,8 +778,15 @@ const ReviewScreen = ({
   const subPlayers = form.players.slice(5).filter(p => p.inGameName);
   const roles = mainPlayers.map(p => p.role).filter(Boolean);
   const uniqueRoles = new Set(roles);
-  if (uniqueRoles.size < 5) issues.push('All 5 role slots must be filled');
-  if (mainPlayers.some(p => !p.inGameName)) issues.push('All 5 main players need an in-game name');
+  if (uniqueRoles.size < 5) issues.push('All 5 starter role slots must be assigned');
+  if (mainPlayers.some(p => !p.userId || !p.inGameName)) {
+    issues.push('All 5 main players must be registered Botsville accounts');
+  }
+  const userIds = form.players.map(p => p.userId).filter(Boolean);
+  const uniqueUserIds = new Set(userIds);
+  if (uniqueUserIds.size < userIds.length) {
+    issues.push('Duplicate player accounts selected in roster');
+  }
   const valid = issues.length === 0;
 
   return (
@@ -763,7 +981,16 @@ export default function RegisterTeamPage() {
     const mappedRole = MAIN_TO_FORM_ROLE[session.user.mainRole ?? ''] ?? '';
     setForm(f => {
       const players = [...f.players];
-      players[0] = { ...players[0], inGameName: session.user.ign, role: mappedRole as Role | '' };
+      const userPhoto = (session.user as any).photo || null;
+      players[0] = {
+        ...players[0],
+        userId: session.user.id,
+        inGameName: session.user.ign,
+        role: mappedRole as Role | '',
+        userPhoto: userPhoto,
+        image: userPhoto || players[0].image,
+        isVerified: true,
+      };
       return { ...f, players };
     });
   }, [session]);
@@ -904,7 +1131,7 @@ export default function RegisterTeamPage() {
       const validPlayers = playersWithUrls
         .slice(1)
         .map((p, idx) => ({ ...p, isSub: (idx + 1) >= 5 }))
-        .filter(p => p.inGameName && (p.isSub || p.role));
+        .filter(p => p.inGameName && p.userId && (p.isSub || p.role));
       
       for (const player of validPlayers) {
         const playerResponse = await fetch(`/api/teams/${teamId}/players`, {
@@ -912,8 +1139,9 @@ export default function RegisterTeamPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ign: player.inGameName,
+            userId: player.userId,
             role: player.role ? player.role.toUpperCase() : undefined,
-            photo: player.imageUrl,
+            photo: player.imageUrl || player.userPhoto || undefined,
             isSubstitute: player.isSub,
           }),
         });
@@ -922,7 +1150,7 @@ export default function RegisterTeamPage() {
 
         if (!playerResponse.ok) {
           console.error(`Failed to add player ${player.inGameName}:`, playerData.error);
-          // Continue adding other players even if one fails
+          throw new Error(`Failed to add player ${player.inGameName}: ${playerData.error}`);
         }
       }
 
@@ -1227,6 +1455,7 @@ export default function RegisterTeamPage() {
                             canRemove={i > 4}
                             locked={i === 0}
                             takenRoles={takenRoles}
+                            existingUserIds={form.players.map(p => p.userId).filter(Boolean) as string[]}
                           />
                         );
                         })}
