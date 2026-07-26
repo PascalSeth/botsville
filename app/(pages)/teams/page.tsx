@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Zap, Swords, Star, Target, Wind, Trophy, Search, X, MapPin, Users, ChevronRight, Crown, Loader2, AlertTriangle, CheckCircle2, MessageSquare, Send, ArrowRight, Clock } from 'lucide-react';
 import { useHero } from '@/app/contexts/HeroContext';
@@ -337,9 +338,17 @@ const SpotlightPanel = ({ team, userTeamId }: { team: ApiTeam; userTeamId?: stri
               </div>
             )}
 
-          {/* Apply button for users without a team */}
-          {team.isRecruiting && (
-            <div>
+          {/* Actions: View Squad Profile + Apply */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <Link
+              href={`/teams/${team.id}`}
+              className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-4 py-2 bg-gradient-to-r from-[#e8a000] to-[#ffb800] text-black rounded-lg hover:brightness-110 transition-all shadow-md"
+            >
+              <Shield size={12} />
+              View Squad Profile →
+            </Link>
+
+            {team.isRecruiting && (
               <button
                 type="button"
                 onClick={() => {
@@ -349,14 +358,14 @@ const SpotlightPanel = ({ team, userTeamId }: { team: ApiTeam; userTeamId?: stri
                 }}
                 disabled={Boolean(userTeamId)}
                 className={
-                  `text-[10px] font-black uppercase tracking-widest px-3 py-2 border border-white/10 ` +
+                  `text-[10px] font-black uppercase tracking-widest px-3 py-2 border border-white/10 rounded-lg transition-all ` +
                   (userTeamId ? 'opacity-40 cursor-not-allowed text-[#bbb]' : 'text-white hover:bg-white/5')
                 }
               >
                 {userTeamId ? 'Already In A Team' : 'Apply To Join'}
               </button>
-            </div>
-          )}
+            )}
+          </div>
           </div>
 
           {/* ── Starting Five ── */}
@@ -643,9 +652,17 @@ const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, 
                   </button>
                 </div>
               )}
-              {/* Apply button for users without a team */}
-              {!canChallenge && team.isRecruiting && (
-                <div className="mb-4">
+              {/* Actions: View Squad Profile + Apply */}
+              <div className="flex items-center gap-2 flex-wrap mb-4">
+                <Link
+                  href={`/teams/${team.id}`}
+                  className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-3.5 py-2 rounded-xl bg-[#e8a000] text-black hover:bg-[#ffb800] transition-all shadow-md"
+                >
+                  <Shield size={12} />
+                  View Squad Profile →
+                </Link>
+
+                {!canChallenge && team.isRecruiting && (
                   <button
                     type="button"
                     onClick={() => {
@@ -673,8 +690,8 @@ const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, 
                           : 'Apply For Roster'}
                     </span>
                   </button>
-                </div>
-              )}
+                )}
+              </div>
 
 
 

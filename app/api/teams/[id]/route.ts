@@ -47,6 +47,49 @@ export async function GET(
           { createdAt: "asc" as const },
         ],
       },
+      standings: {
+        orderBy: { season: { startDate: "desc" as const } },
+        take: 1,
+        select: {
+          rank: true,
+          wins: true,
+          losses: true,
+          forfeits: true,
+          points: true,
+          streak: true,
+          tier: true,
+          season: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+            },
+          },
+        },
+      },
+      nameHistory: {
+        orderBy: { changedAt: "desc" as const },
+        take: 5,
+        select: {
+          oldName: true,
+          oldTag: true,
+          changedAt: true,
+        },
+      },
+      registrations: {
+        select: {
+          id: true,
+          tournament: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+            },
+          },
+        },
+        take: 5,
+        orderBy: { registeredAt: "desc" as const },
+      },
       _count: {
         select: {
           players: true,
