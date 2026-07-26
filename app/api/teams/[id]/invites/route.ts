@@ -185,7 +185,6 @@ export async function POST(
         fromUserId: user.id,
         toIGN: targetUser.ign,
         toUserId: targetUser.id,
-        role: role || targetUser.mainRole || null,
         message: message || null,
         expiresAt,
         status: InviteStatus.PENDING,

@@ -572,6 +572,7 @@ export default function MyTeamPage() {
                 onInvitePlayer={handleInvitePlayer}
                 onGenerateTeamCode={generateInviteCode}
                 teamCode={inviteCode}
+                generatingCode={generatingCode}
                 invites={invites}
                 onCancelInvite={handleCancelInvite}
               />
