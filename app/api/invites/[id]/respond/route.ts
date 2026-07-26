@@ -218,8 +218,8 @@ export async function POST(
     };
 
     // If active user is the recipient (normal invite accept)
-    // Only treat as a recipient-accept when the invite was sent by the team (not when it's an application from a user)
-    if (isRecipient && invite.toUserId === user.id && invite.fromUserId === invite.team?.captain?.id) {
+    // isRecipient covers both userId-based and IGN-based invites sent to this user
+    if (isRecipient && !isCaptain) {
       // Existing behavior: recipient accepts invite for themselves
       if (!role) {
         return apiError('Role is required when accepting invite');
