@@ -92,18 +92,12 @@ export async function PUT(
         return apiError("Invalid status");
       }
 
-      // If setting to ACTIVE, ensure no other season is ACTIVE
+      // Activating a season must go through the /activate endpoint
+      // so that competitive data resets run correctly.
       if (status === SeasonStatus.ACTIVE) {
-        const activeSeason = await prisma.season.findFirst({
-          where: {
-            status: SeasonStatus.ACTIVE,
-            id: { not: id },
-          },
-        });
-
-        if (activeSeason) {
-          return apiError("Another season is already active. Deactivate it first.");
-        }
+        return apiError(
+          "Use POST /api/seasons/{id}/activate to start a new season. This ensures standings, player stats, and scrim data are properly reset."
+        );
       }
 
       updateData.status = status;

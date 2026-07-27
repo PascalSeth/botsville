@@ -105,6 +105,27 @@ enum TournamentFormat {
   DOUBLE_ELIMINATION
   ROUND_ROBIN
   SWISS_PLAYOFFS
+  SWISS
+  GROUP_STAGE
+}
+
+// Stage type within a tournament
+enum StageType {
+  REGISTRATION
+  GROUP_STAGE
+  ROUND_ROBIN
+  SWISS
+  SINGLE_ELIMINATION
+  DOUBLE_ELIMINATION
+  GRAND_FINAL
+}
+
+// Stage lifecycle
+enum StageStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  CANCELLED
 }
 
 // Bracket type for individual matches — double elimination uses both
@@ -113,6 +134,8 @@ enum BracketType {
   LOSER_BRACKET     // Consolation bracket
   GRAND_FINAL       // Winner bracket winner vs Loser bracket winner (best-of-5)
   GROUP_STAGE       // Group round-robin
+  SWISS_ROUND       // Swiss round match
+  BRACKET_RESET     // Grand final reset match
 }
 
 // Registration lifecycle
@@ -122,16 +145,21 @@ enum RegistrationStatus {
   REJECTED
   WITHDRAWN  // team withdrew before deadline
   FORFEITED  // team withdrew after deadline
+  DISQUALIFIED
 }
 
 // Match lifecycle — extended
 enum MatchStatus {
   UPCOMING
+  READY
   LIVE
+  RESULT_SUBMITTED
+  VERIFIED
   COMPLETED
   FORFEITED  // one team no-showed
   DISPUTED   // result contested, under review
   RESTING    // Selection V2: Team is resting for the day (Bye)
+  CANCELLED
 }
 
 enum MatchChallengeStatus {
@@ -652,6 +680,7 @@ model Tournament {
   registrations      TournamentRegistration[]
   waitlist           Waitlist[]
   matches            Match[]
+  stages             TournamentStage[]
   groups             TournamentGroup[]        // New: tournament groups for group stage
   mvpAwards          TournamentMvp[]          // New: tournament MVP aggregates
   groupStandings     GroupStageStanding[]
@@ -663,6 +692,60 @@ model Tournament {
   @@index([date])
   @@index([seasonId])
   @@map("tournaments")
+}
+
+// Stages within a tournament (e.g., Group Stage, Playoffs)
+model TournamentStage {
+  id                    String           @id @default(uuid())
+  tournamentId          String
+  name                  String           // e.g. "Group Stage", "Playoffs"
+  order                 Int              @default(1)
+  stageType             StageType        @default(GROUP_STAGE)
+  status                StageStatus      @default(UPCOMING)
+  format                TournamentFormat @default(ROUND_ROBIN)
+  defaultBestOf         Int              @default(3)
+  pointSystem           PointSystem      @default(MLBB_WEIGHTED)
+  tiebreakerSequence    String[]         @default(["H2H", "GD", "TIME"])
+  // Group Stage config
+  numGroups             Int?
+  teamsPerGroup         Int?
+  teamsAdvancingPerGroup Int?
+  // Swiss config
+  swissRounds           Int?
+  swissQualifyAt        Int?
+  swissEliminateAt      Int?
+  // Seeding config
+  seedingByesCount      Int              @default(0)
+  startsAt              DateTime?
+  endsAt                DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  rounds     Round[]
+  matches    Match[]
+
+  @@index([tournamentId, order])
+  @@map("tournament_stages")
+}
+
+// Rounds within a tournament stage
+model Round {
+  id          String    @id @default(uuid())
+  stageId     String
+  number      Int       // 1, 2, 3...
+  displayName String    // "Week 1", "Quarter Finals", "Swiss Round 2"
+  bestOf      Int       @default(3)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  stage   TournamentStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  matches Match[]
+
+  @@unique([stageId, number])
+  @@index([stageId])
+  @@map("rounds")
 }
 
 // Configurable points per placement — set by admin when creating tournament
@@ -760,10 +843,14 @@ model Match {
   nextMatchId   String?      // Match ID for winner to advance to (if bracketType matches progression logic)
   loserNextId   String?      // Match ID for loser to advance to (used in double-elimination)
   bracketPosition Int?       // Seeding/position in bracket tree (1 = first match, 2 = second, etc.)
-  
+  stageId       String?
+  roundId       String?
+
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
+  stageRef      TournamentStage? @relation(fields: [stageId], references: [id])
+  roundRef      Round?           @relation(fields: [roundId], references: [id])
   tournament     Tournament       @relation(fields: [tournamentId], references: [id])
   teamA          Team             @relation("TeamA", fields: [teamAId], references: [id])
   teamB          Team?            @relation("TeamB", fields: [teamBId], references: [id])
@@ -781,6 +868,8 @@ model Match {
   mvpAwards      MatchMvp[]
 
   @@index([tournamentId])
+  @@index([stageId])
+  @@index([roundId])
   @@index([status])
   @@index([scheduledTime])
   @@index([bracketType])

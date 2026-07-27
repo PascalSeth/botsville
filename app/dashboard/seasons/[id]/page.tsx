@@ -7,7 +7,7 @@ import Image from "next/image";
 import { dashboardFetch } from "../../lib/api";
 import {
   Calendar, ChevronLeft, Loader2, Plus, Trophy, Zap,
-  RefreshCw, CheckCircle, AlertTriangle,
+  RefreshCw, CheckCircle, AlertTriangle, RotateCcw, ShieldAlert,
 } from "lucide-react";
 import { TournamentAwardsDashboard } from "@/app/components/sections/TournamentAwardsDashboard";
 
@@ -239,6 +239,28 @@ export default function SeasonDetailPage() {
     await load();
   };
 
+  // ── Activate Season ───────────────────────────────────────
+  const [showActivatePanel, setShowActivatePanel] = useState(false);
+  const [activateConfirmText, setActivateConfirmText] = useState("");
+  const [activating, setActivating] = useState(false);
+
+  const handleActivateSeason = async () => {
+    if (activateConfirmText !== "ACTIVATE") return;
+    setActivating(true);
+    setError(null);
+    setSuccess(null);
+    const { data, error: err } = await dashboardFetch<{ message: string; reset: { playersStatsZeroed: number; challengesCancelled: number; scrimAvailabilityCleared: number }; completedSeason: { name: string } | null }>(
+      `/api/seasons/${seasonId}/activate`,
+      { method: "POST" }
+    );
+    setActivating(false);
+    if (err) { setError(err); return; }
+    setSuccess(data?.message ?? "Season activated!");
+    setShowActivatePanel(false);
+    setActivateConfirmText("");
+    await load();
+  };
+
   // ── Recalculate All Standings ──────────────────────────────
   const [recalculating, setRecalculating] = useState(false);
   const recalculateAll = async () => {
@@ -367,6 +389,97 @@ export default function SeasonDetailPage() {
           </table>
         )}
       </div>
+
+      {/* ── Activate Season Panel (UPCOMING only) ─────────── */}
+      {season.status === "UPCOMING" && (
+        <div className="rounded-lg border border-[#e8a000]/40 bg-[#e8a000]/5 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowActivatePanel(!showActivatePanel)}
+            className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-[#e8a000]/10 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <RotateCcw size={18} className="text-[#e8a000]" />
+              <div>
+                <p className="text-sm font-black uppercase tracking-wider text-[#e8a000]">Activate This Season</p>
+                <p className="text-[11px] text-[#888] mt-0.5">Start fresh — resets all competitive data and closes the previous season</p>
+              </div>
+            </div>
+            <span className="text-[#e8a000] text-xs font-bold">{showActivatePanel ? "▲ HIDE" : "▼ SHOW"}</span>
+          </button>
+
+          {showActivatePanel && (
+            <div className="px-5 pb-5 space-y-5 border-t border-[#e8a000]/20">
+              {/* What resets */}
+              <div className="grid sm:grid-cols-2 gap-4 mt-4">
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-400 mb-2 flex items-center gap-1"><ShieldAlert size={11} /> Resets (starts fresh)</p>
+                  {[
+                    "Player stats: KDA, win rate, MVP count, matches played",
+                    "All pending scrim challenges cancelled",
+                    "Scrim availability cleared (teams re-submit)",
+                    "Old season tournaments → COMPLETED",
+                    "Unplayed matches from old season → cancelled",
+                    "Season standings, rankings, hero meta start blank",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-2 text-[11px] text-[#aaa]">
+                      <span className="text-red-400 shrink-0 mt-0.5">✕</span> {item}
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-2 flex items-center gap-1"><CheckCircle size={11} /> Preserved (never deleted)</p>
+                  {[
+                    "All match history and performances",
+                    "Team & player identity (rosters stay)",
+                    "User accounts and profiles",
+                    "Old season awards & Hall of Fame",
+                    "Prize money records",
+                    "News, fan art, and community content",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-2 text-[11px] text-[#aaa]">
+                      <span className="text-emerald-400 shrink-0 mt-0.5">✓</span> {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Confirmation input */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-black uppercase tracking-wider text-[#666] block">
+                  Type <span className="text-[#e8a000] font-mono">ACTIVATE</span> to confirm
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    value={activateConfirmText}
+                    onChange={(e) => setActivateConfirmText(e.target.value.toUpperCase())}
+                    placeholder="ACTIVATE"
+                    className="bg-[#0d0d14] border border-[#e8a000]/30 text-white px-3 py-2 text-sm font-mono outline-none focus:border-[#e8a000] w-40"
+                    disabled={activating}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleActivateSeason}
+                    disabled={activateConfirmText !== "ACTIVATE" || activating}
+                    className="flex items-center gap-2 px-5 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider hover:bg-[#ffb800] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {activating ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                    {activating ? "Activating..." : "Activate Season"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowActivatePanel(false); setActivateConfirmText(""); }}
+                    className="px-4 py-2 border border-white/20 text-[#aaa] text-xs font-bold uppercase tracking-wider hover:bg-white/5"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Action buttons row */}
       <div className="flex flex-wrap gap-3">

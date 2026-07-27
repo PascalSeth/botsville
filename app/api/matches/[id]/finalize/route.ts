@@ -86,6 +86,14 @@ export async function POST(
             ...(winnerId ? { winner: { connect: { id: winnerId } } } : {}),
           },
         });
+
+        // Trigger shared auto-bracket progression
+        try {
+          const { handleMatchProgression } = await import("@/lib/tournament-engine/bracket-progression");
+          await handleMatchProgression(matchId);
+        } catch (progErr) {
+          console.error("Bracket progression error:", progErr);
+        }
       }
     }
 

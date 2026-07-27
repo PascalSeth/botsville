@@ -225,7 +225,8 @@ export async function PUT(
     if (body.matchesPerTeam !== undefined) updateData.matchesPerTeam = body.matchesPerTeam;
     if (body.matchesBeforeBracket !== undefined) updateData.matchesBeforeBracket = body.matchesBeforeBracket;
 
-    // Advanced Seeding & Points
+    if (body.playDaysPerWeek !== undefined) updateData.playDaysPerWeek = body.playDaysPerWeek;
+    if (body.matchesPerDay !== undefined) updateData.matchesPerDay = body.matchesPerDay;
     if (body.pointSystem !== undefined) updateData.pointSystem = body.pointSystem;
     if (body.tiebreakerSequence !== undefined) updateData.tiebreakerSequence = body.tiebreakerSequence;
     if (body.defaultBestOf !== undefined) updateData.defaultBestOf = body.defaultBestOf;

@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
       return apiError("Season not found", 404);
     }
 
-    // Create tournament
+    // Create tournament + initial stage
     const tournament = await prisma.tournament.create({
       data: {
         seasonId,
@@ -174,13 +174,24 @@ export async function POST(request: NextRequest) {
         date: startDate,
         registrationDeadline: deadline,
         slots,
-        status: TournamentStatus.UPCOMING,
+        status: TournamentStatus.OPEN,
         color: color || null,
         tags: tags || [],
         heroImage: heroImage || null,
         banner: banner || null,
         rules: rules || [],
         prizePool: normalizedPrizePool,
+        stages: {
+          create: {
+            name: "Stage 1",
+            order: 1,
+            format: format as TournamentFormat,
+            status: "UPCOMING",
+          },
+        },
+      },
+      include: {
+        stages: true,
       },
     });
 
