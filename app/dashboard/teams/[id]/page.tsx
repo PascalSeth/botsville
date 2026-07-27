@@ -64,6 +64,43 @@ export default function TeamDetailPage() {
   const [downloading, setDownloading] = useState(false);
   const [dlError, setDlError] = useState<string | null>(null);
 
+  const [selectedNewCaptain, setSelectedNewCaptain] = useState<string>("");
+  const [transferring, setTransferring] = useState(false);
+  const [transferMsg, setTransferMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Direct Add Player State
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addIgn, setAddIgn] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [addRole, setAddRole] = useState("EXP");
+  const [addIsSub, setAddIsSub] = useState(false);
+  const [addMakeCaptain, setAddMakeCaptain] = useState(false);
+  const [addingPlayer, setAddingPlayer] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [registeredUsers, setRegisteredUsers] = useState<Array<{
+    id: string;
+    ign: string;
+    email: string;
+    mainRole?: string | null;
+    player?: { team?: { name: string } | null } | null;
+  }>>([]);
+  const [addMsg, setAddMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const loadRegisteredUsers = useCallback(async () => {
+    setLoadingUsers(true);
+    const { data } = await dashboardFetch<{ users: Array<{
+      id: string;
+      ign: string;
+      email: string;
+      mainRole?: string | null;
+      player?: { team?: { name: string } | null } | null;
+    }> }>("/api/admin/users?limit=100");
+    if (data?.users && Array.isArray(data.users)) {
+      setRegisteredUsers(data.users);
+    }
+    setLoadingUsers(false);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error: err } = await dashboardFetch<Team>(`/api/teams/${id}`);
@@ -73,6 +110,69 @@ export default function TeamDetailPage() {
   }, [id]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (showAddModal) {
+      void loadRegisteredUsers();
+    }
+  }, [showAddModal, loadRegisteredUsers]);
+
+  async function handleTransferCaptaincy() {
+    if (!selectedNewCaptain || !team) return;
+    setTransferring(true);
+    setTransferMsg(null);
+
+    const { error: err } = await dashboardFetch(`/api/teams/${team.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ captainId: selectedNewCaptain }),
+    });
+
+    setTransferring(false);
+    if (err) {
+      setTransferMsg({ type: "error", text: err });
+    } else {
+      setTransferMsg({ type: "success", text: "Captaincy transferred successfully!" });
+      load();
+    }
+  }
+
+  async function handleAddPlayerDirectly(e: React.FormEvent) {
+    e.preventDefault();
+    if (!team) return;
+
+    const chosenUser = registeredUsers.find((u) => u.id === selectedUserId);
+    const finalIgn = chosenUser ? chosenUser.ign : addIgn.trim();
+
+    if (!finalIgn) {
+      setAddMsg({ type: "error", text: "Please select a registered player or enter IGN." });
+      return;
+    }
+
+    setAddingPlayer(true);
+    setAddMsg(null);
+
+    const { error: err } = await dashboardFetch(`/api/teams/${team.id}/players`, {
+      method: "POST",
+      body: JSON.stringify({
+        userId: selectedUserId || undefined,
+        ign: finalIgn,
+        role: addRole,
+        isSubstitute: addIsSub,
+        makeCaptain: addMakeCaptain,
+      }),
+    });
+
+    setAddingPlayer(false);
+    if (err) {
+      setAddMsg({ type: "error", text: err });
+    } else {
+      setAddMsg({ type: "success", text: `Player ${finalIgn} added to team successfully!` });
+      setAddIgn("");
+      setSelectedUserId("");
+      setShowAddModal(false);
+      load();
+    }
+  }
 
   const playersWithPhoto = team?.players.filter((p) => playerPhoto(p) !== null) ?? [];
 
@@ -187,9 +287,183 @@ export default function TeamDetailPage() {
             </span>
           </div>
           <p className="mt-1 text-sm text-[#666]">
-            {team.region} · Captain: <span className="text-[#aaa]">{team.captain?.ign ?? "—"}</span>
+            {team.region} · Captain: <span className="text-[#e8a000] font-bold">{team.captain?.ign ?? "—"}</span>
           </p>
         </div>
+      </div>
+
+      {/* Admin Emergency Captaincy Transfer Panel */}
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-amber-400">
+              Admin Emergency Captaincy Transfer
+            </h3>
+            <p className="text-[11px] text-[#888]">
+              Transfer team ownership and captaincy if the primary captain is unavailable or inactive.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap pt-1">
+          <select
+            value={selectedNewCaptain}
+            onChange={(e) => setSelectedNewCaptain(e.target.value)}
+            className="flex-1 min-w-[220px] bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#e8a000]"
+          >
+            <option value="" disabled>Select New Captain from Roster</option>
+            {team.players.map((p) => {
+              const targetId = p.user?.id || p.id;
+              const isCurrent = targetId === team.captain?.id;
+              return (
+                <option key={p.id} value={targetId} disabled={isCurrent}>
+                  {p.ign} ({p.role}) {isCurrent ? "— Current Captain" : ""}
+                </option>
+              );
+            })}
+          </select>
+          <button
+            onClick={handleTransferCaptaincy}
+            disabled={!selectedNewCaptain || transferring}
+            className="px-4 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider rounded-lg hover:bg-[#ffb800] transition-colors disabled:opacity-40"
+          >
+            {transferring ? "Transferring..." : "Reassign Captain"}
+          </button>
+        </div>
+
+        {transferMsg && (
+          <p className={`text-xs font-bold ${transferMsg.type === "success" ? "text-emerald-400" : "text-red-400"}`}>
+            {transferMsg.text}
+          </p>
+        )}
+      </div>
+
+      {/* Admin Direct Add Free Player Panel */}
+      <div className="rounded-xl border border-white/10 bg-[#0a0a0f] p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-white">
+              Direct Add Player to Roster (Alternative Option)
+            </h3>
+            <p className="text-[11px] text-[#888]">
+              Add a registered player to this team directly without invite codes, with optional instant captain assignment.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAddModal(!showAddModal)}
+            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase rounded-lg border border-white/15 transition-colors"
+          >
+            {showAddModal ? "Close" : "+ Add Player"}
+          </button>
+        </div>
+
+        {showAddModal && (
+          <form onSubmit={handleAddPlayerDirectly} className="space-y-4 pt-2 border-t border-white/10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-[10px] font-bold uppercase text-[#888] block mb-1">
+                  Select Registered Player / User (Botsville Account)
+                </label>
+                {loadingUsers ? (
+                  <div className="h-9 bg-white/5 animate-pulse rounded-lg flex items-center px-3 text-xs text-[#666]">
+                    Loading registered players...
+                  </div>
+                ) : (
+                  <select
+                    value={selectedUserId}
+                    onChange={(e) => {
+                      const uid = e.target.value;
+                      setSelectedUserId(uid);
+                      const u = registeredUsers.find((user) => user.id === uid);
+                      if (u) {
+                        setAddIgn(u.ign);
+                        if (u.mainRole) setAddRole(u.mainRole);
+                      }
+                    }}
+                    className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#e8a000]"
+                  >
+                    <option value="">-- Choose Registered Player --</option>
+                    {registeredUsers.map((u) => {
+                      const onTeam = u.player?.team?.name;
+                      return (
+                        <option key={u.id} value={u.id}>
+                          {u.ign} ({u.email}) {u.mainRole ? `[${u.mainRole}]` : ""} {onTeam ? `— Current Team: ${onTeam}` : "— Free Agent"}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-[#888] block mb-1">Player In-Game Name (IGN)</label>
+                <input
+                  type="text"
+                  value={addIgn}
+                  onChange={(e) => setAddIgn(e.target.value)}
+                  placeholder="e.g. BlackStar"
+                  required
+                  className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#e8a000]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-[#888] block mb-1">Primary Game Role</label>
+                <select
+                  value={addRole}
+                  onChange={(e) => setAddRole(e.target.value)}
+                  className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#e8a000]"
+                >
+                  <option value="EXP">EXP Laner</option>
+                  <option value="JUNGLE">Jungler</option>
+                  <option value="MID">Mid Laner</option>
+                  <option value="GOLD">Gold Laner</option>
+                  <option value="ROAM">Roamer</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-[10px] font-bold uppercase text-[#888] block mb-1">Roster Designation</label>
+                <select
+                  value={addIsSub ? "sub" : "starter"}
+                  onChange={(e) => setAddIsSub(e.target.value === "sub")}
+                  className="w-full bg-black/60 border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#e8a000]"
+                >
+                  <option value="starter">Starter Lineup</option>
+                  <option value="sub">Substitute Player</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addMakeCaptain}
+                  onChange={(e) => setAddMakeCaptain(e.target.checked)}
+                  className="w-4 h-4 rounded border-white/20 accent-[#e8a000]"
+                />
+                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                  👑 Make this player Team Captain immediately
+                </span>
+              </label>
+
+              <button
+                type="submit"
+                disabled={addingPlayer || !addIgn.trim()}
+                className="px-5 py-2 bg-[#e8a000] text-black text-xs font-black uppercase tracking-wider rounded-lg hover:bg-[#ffb800] transition-colors disabled:opacity-40"
+              >
+                {addingPlayer ? "Adding..." : "Add to Team"}
+              </button>
+            </div>
+
+            {addMsg && (
+              <p className={`text-xs font-bold ${addMsg.type === "success" ? "text-emerald-400" : "text-red-400"}`}>
+                {addMsg.text}
+              </p>
+            )}
+          </form>
+        )}
       </div>
 
       {/* Download controls */}

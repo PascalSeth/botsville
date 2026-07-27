@@ -184,7 +184,7 @@ export async function POST(
             round: 0,
             playDay: basePlayDay,
             scheduledTime: new Date(tomorrow.getTime() + (i * 2 * 60 * 60 * 1000)),
-            bestOf: tournament.defaultBestOf || 3,
+            bestOf: 5, // Playoffs always BO5
           }
         });
         createdMatches.push(match);

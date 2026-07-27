@@ -396,8 +396,38 @@ export default function MyTeamPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
-    if (!res.ok) throw new Error('Failed to update squad');
     setTeam((prev) => (prev ? { ...prev, ...updates } : prev));
+  };
+
+  const [uploadingHeaderBanner, setUploadingHeaderBanner] = useState(false);
+
+  const handleHeaderBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !team) return;
+    setUploadingHeaderBanner(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const imageDataUrl = reader.result as string;
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: imageDataUrl, type: 'teams', bucket: 'images' }),
+        });
+        const data = await res.json();
+        if (res.ok && data.url) {
+          await handleUpdateTeamSettings({ banner: data.url });
+          toast.success('Team banner updated!');
+        } else {
+          toast.error(data.error || 'Upload failed');
+        }
+        setUploadingHeaderBanner(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      toast.error('Upload failed');
+      setUploadingHeaderBanner(false);
+    }
   };
 
   if (loading) {
@@ -457,11 +487,29 @@ export default function MyTeamPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
         <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#0c0c14] shadow-2xl">
           {/* Banner Image / Gradient */}
-          <div className="h-44 sm:h-52 w-full relative bg-gradient-to-r from-amber-950/40 via-purple-950/30 to-[#0c0c14]">
+          <div className="h-44 sm:h-52 w-full relative bg-gradient-to-r from-amber-950/40 via-purple-950/30 to-[#0c0c14] group">
             {team.banner && (
               <Image src={team.banner} alt={team.name} fill className="object-cover opacity-30" />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c14] via-[#0c0c14]/60 to-transparent" />
+            
+            {/* Captain Banner File Upload Button Overlay */}
+            {isCaptain && (
+              <label className="absolute top-4 right-4 z-20 px-3.5 py-2 rounded-xl bg-black/60 hover:bg-black/80 border border-white/20 text-white text-xs font-bold uppercase tracking-wider cursor-pointer transition-all backdrop-blur-md flex items-center gap-2 shadow-xl group-hover:scale-105">
+                {uploadingHeaderBanner ? (
+                  <><Loader2 size={14} className="animate-spin text-amber-400" /> Uploading Banner...</>
+                ) : (
+                  <><Camera size={14} className="text-amber-400" /> Change Banner File</>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleHeaderBannerUpload}
+                  disabled={uploadingHeaderBanner}
+                />
+              </label>
+            )}
           </div>
 
           {/* Banner Content Body */}

@@ -227,6 +227,14 @@ export async function POST(
       });
     }
 
+    // Optional: make new player captain immediately
+    if (body.makeCaptain || body.setCaptain) {
+      await prisma.team.update({
+        where: { id },
+        data: { captainId: resolvedUserId },
+      });
+    }
+
     // Fire-and-forget: notify captain + existing members
     void notifyTeamMemberJoined({
       teamId: id,

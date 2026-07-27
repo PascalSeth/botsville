@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { requireAdmin, apiError, apiSuccess } from "@/lib/api-utils";
+import { requireSuperAdmin, apiError, apiSuccess } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
 import { invalidatePattern } from "@/lib/redis";
 import { TeamStatus } from "@/app/generated/prisma/enums";
@@ -10,7 +10,7 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireSuperAdmin();
     const resolvedParams = await (context.params as any);
     const id = resolvedParams?.id;
 

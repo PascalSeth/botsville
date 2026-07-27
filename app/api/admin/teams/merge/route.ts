@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { apiError, apiSuccess, requireAdmin } from '@/lib/api-utils';
+import { apiError, apiSuccess, requireSuperAdmin } from '@/lib/api-utils';
 
 export async function POST(req: NextRequest) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireSuperAdmin();
     // requireAdmin inherently throws or returns apiError if unauthorized/forbidden
     // Wait, let's verify if requireAdmin returns an error response or just throws an Error/returns user.
     // If it returns user, we can proceed. If it throws, try-catch handles it.

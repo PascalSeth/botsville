@@ -240,18 +240,26 @@ export async function PUT(
       updateData.isRecruiting = isRecruiting;
     }
 
-    // Captain transfer - only current captain can transfer
+    // Captain transfer - current captain or admins can transfer captaincy
     if (captainId !== undefined && captainId !== team.captainId) {
-      // Only current captain can transfer captaincy (not admins)
-      if (team.captainId !== user.id) {
-        return apiError("Only the current captain can transfer captaincy", 403);
+      const isCurrentCaptain = team.captainId === user.id;
+      const isAdmin = Boolean(user.role);
+      if (!isCurrentCaptain && !isAdmin) {
+        return apiError("Only the current captain or an admin can transfer captaincy", 403);
       }
-      // Verify new captain is a player on this team with a linked user account
-      const newCaptainPlayer = team.players.find((p) => p.userId === captainId);
+      // Verify new captain is a player on this team with a linked account or valid user ID
+      const newCaptainPlayer = team.players.find((p) => p.userId === captainId || p.id === captainId);
       if (!newCaptainPlayer) {
-        return apiError("New captain must be a player on this team with a linked account");
+        return apiError("New captain must be a player on this team");
       }
-      updateData.captainId = captainId;
+
+      // If captainId provided was player ID instead of userId, get the user's ID
+      const targetUserId = newCaptainPlayer.userId || captainId;
+      if (!targetUserId) {
+        return apiError("Selected player must be linked to a registered user account to become captain");
+      }
+
+      updateData.captainId = targetUserId;
     }
 
     if (Object.keys(updateData).length === 0) {

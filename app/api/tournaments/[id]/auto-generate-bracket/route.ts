@@ -147,7 +147,7 @@ export async function POST(
               teamBId: createdMatches[i + 1].teamAId, // Placeholder
               scheduledTime: new Date(Date.now() + (createdMatches.length + 2) * 24 * 60 * 60 * 1000),
               status: MatchStatus.UPCOMING,
-              bestOf: 5,
+              bestOf: 7, // Grand Finals always BO7
               stage: "Grand Finals",
               bracketType: "GRAND_FINAL",
               bracketPosition: i / 2 + 1,

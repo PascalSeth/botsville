@@ -518,14 +518,18 @@ export default function EditTournamentPage() {
               </div>
 
               {/* Match Specs Summary Badge */}
-              <div className="p-3.5 rounded-xl border border-white/10 bg-white/[0.02] flex items-center justify-between text-xs mt-2">
+              <div className="p-3.5 rounded-xl border border-white/10 bg-white/[0.02] flex flex-wrap items-center justify-between gap-3 text-xs mt-2">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-white uppercase">Standard Match:</span>
+                  <span className="font-bold text-[#888] uppercase text-[10px]">Group Games:</span>
                   <span className="text-[#e8a000] font-black">BO{defaultBestOf}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-white uppercase">Grand Finals:</span>
-                  <span className="text-amber-400 font-black">BO{defaultBestOf + 2}</span>
+                  <span className="font-bold text-[#888] uppercase text-[10px]">Playoffs Matches:</span>
+                  <span className="text-amber-400 font-black">BO5</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-[#888] uppercase text-[10px]">Grand Finals:</span>
+                  <span className="text-emerald-400 font-black">BO7</span>
                 </div>
               </div>
 

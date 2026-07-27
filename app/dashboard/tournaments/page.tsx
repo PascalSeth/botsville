@@ -165,44 +165,44 @@ export default function UnifiedTournamentsDashboardPage() {
   const liveCount = tournaments.filter((t) => t.status === "ONGOING" || t.status === "OPEN").length;
 
   return (
-    <div className="min-h-screen bg-[#05050a] text-white p-6 md:p-10 space-y-8 relative overflow-hidden selection:bg-[#e8a000]/30 selection:text-white">
-      {/* Glow Effects */}
+    <div className="min-h-screen bg-[#05050a] text-white p-4 sm:p-6 md:p-10 space-y-6 sm:space-y-8 selection:bg-[#e8a000]/30 relative overflow-x-hidden">
+      {/* Background Subtle Ambient Glow */}
       <div className="absolute top-0 left-1/4 w-[32rem] h-[32rem] bg-[#e8a000]/5 rounded-full blur-3xl pointer-events-none -z-10" />
       <div className="absolute top-1/3 right-1/4 w-[28rem] h-[28rem] bg-purple-600/5 rounded-full blur-3xl pointer-events-none -z-10" />
 
       {/* Top Command Bar Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-white/10 pb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-6 border-b border-white/10 pb-6 sm:pb-8">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#e8a000] to-amber-600 flex items-center justify-center text-black font-black shadow-lg shadow-[#e8a000]/20">
-              <Trophy size={22} />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#e8a000] to-amber-600 flex items-center justify-center text-black font-black shadow-lg shadow-[#e8a000]/20 shrink-0">
+              <Trophy size={20} />
             </div>
             <div>
-              <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tight text-white flex items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-black uppercase tracking-tight text-white flex items-center gap-2">
                 Tournaments <span className="text-[#e8a000]">&amp;</span> Seasons
               </h1>
-              <p className="text-xs text-gray-400 font-medium mt-0.5">
+              <p className="text-[11px] sm:text-xs text-gray-400 font-medium mt-0.5">
                 Esports Command Center — Multi-stage brackets, dynamic seeding, and automated match progression.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
           <button
             type="button"
             onClick={loadData}
-            className="p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-gray-400 hover:text-white hover:border-white/20 active:scale-95"
+            className="p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-gray-400 hover:text-white hover:border-white/20 active:scale-95 shrink-0"
             title="Refresh Registry"
           >
             <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
           </button>
           <Link
             href="/dashboard/tournaments/setup"
-            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-[#e8a000] to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded-xl hover:from-[#ffb800] hover:to-amber-400 transition-all shadow-xl shadow-[#e8a000]/15 hover:shadow-[#e8a000]/25 hover:scale-[1.02] active:scale-95"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-[#e8a000] to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded-xl hover:from-[#ffb800] hover:to-amber-400 transition-all shadow-xl shadow-[#e8a000]/15 hover:shadow-[#e8a000]/25 hover:scale-[1.02] active:scale-95"
           >
             <Plus size={18} />
-            Launch New Tournament
+            Launch Tournament
           </Link>
         </div>
       </div>
