@@ -466,6 +466,7 @@ model Team {
   captainId       String?
   status          TeamStatus @default(ACTIVE)
   isRecruiting    Boolean    @default(true)
+  isDraftTeam     Boolean    @default(false)
   trophies        String[]   @default([])
   // Career totals — auto-computed, never manually edited
   totalPrizeMoney Int        @default(0) // in pesewas for precision
@@ -2021,4 +2022,21 @@ model ProInterviewVote {
 
   @@index([candidateId])
   @@map("pro_interview_votes")
+}
+
+// ═══════════════════════════════════════════════════════════
+// SOLO DRAFT EVENT (TEMPORARY TEAMS)
+// ═══════════════════════════════════════════════════════════
+
+model SoloDraftEvent {
+  id             String   @id @default(uuid())
+  title          String   @default("Solo Draft Event")
+  isActive       Boolean  @default(true)
+  maxTeams       Int      @default(8)
+  playersPerTeam Int      @default(5)
+  tournamentId   String?  // Optional tournament link for auto-registration
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("solo_draft_events")
 }
