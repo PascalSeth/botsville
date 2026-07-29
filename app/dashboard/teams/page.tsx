@@ -20,7 +20,7 @@ type Team = {
 type Payload = { teams: Team[]; pagination: { total: number; limit: number; skip: number } };
 
 export default function DashboardTeamsPage() {
-  const { isAllowed: __roleAllowed } = useRoleGuard(["TOURNAMENT_ADMIN"]);
+  const { isAllowed: __roleAllowed } = useRoleGuard(["TOURNAMENT_ADMIN", "STREAMER"]);
   const { role } = useRole();
   const [teams, setTeams] = useState<Team[]>([]);
   const [pagination, setPagination] = useState({ total: 0, limit: 50, skip: 0 });
@@ -193,24 +193,26 @@ export default function DashboardTeamsPage() {
                     <td className="p-3 text-[#aaa] text-sm">{t.captain?.ign ?? "—"}</td>
                     <td className="p-3 text-[#666] text-sm flex items-center justify-between gap-3">
                       <span>{t._count?.players ?? 0}</span>
-                      <button
-                        onClick={async () => {
-                          if (!confirm(`Disband team "${t.name}"? This will remove it from the league.`)) return;
-                          const res = await dashboardFetch<{ message?: string }>(`/api/admin/teams/${t.id}/disband`, {
-                            method: "DELETE",
-                          });
-                          if (res.error) {
-                            setError(res.error);
-                            return;
-                          }
-                          setError(null);
-                          await load();
-                        }}
-                        className="px-2 py-1 text-[10px] font-bold tracking-widest uppercase bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors"
-                        title="Disband team (admin only)"
-                      >
-                        Disband
-                      </button>
+                      {["SUPER_ADMIN", "TOURNAMENT_ADMIN"].includes(role ?? "") && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Disband team "${t.name}"? This will remove it from the league.`)) return;
+                            const res = await dashboardFetch<{ message?: string }>(`/api/admin/teams/${t.id}/disband`, {
+                              method: "DELETE",
+                            });
+                            if (res.error) {
+                              setError(res.error);
+                              return;
+                            }
+                            setError(null);
+                            await load();
+                          }}
+                          className="px-2 py-1 text-[10px] font-bold tracking-widest uppercase bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors"
+                          title="Disband team (admin only)"
+                        >
+                          Disband
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

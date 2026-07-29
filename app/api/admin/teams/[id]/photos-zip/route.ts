@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin, apiError } from "@/lib/api-utils";
+import { requireAdmin, apiError } from "@/lib/api-utils";
+import { AdminRoleType } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import JSZip from "jszip";
 
@@ -8,7 +9,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireSuperAdmin();
+    await requireAdmin([AdminRoleType.SUPER_ADMIN, AdminRoleType.TOURNAMENT_ADMIN, AdminRoleType.STREAMER]);
     const { id } = await params;
     const body = await request.json() as { playerIds?: string[]; includeLogo?: boolean };
     const playerIds: string[] = body.playerIds ?? [];
