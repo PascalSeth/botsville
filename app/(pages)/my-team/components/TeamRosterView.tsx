@@ -624,8 +624,8 @@ export default function TeamRosterView({
                         className="w-full bg-white/5 border border-white/10 text-xs text-white p-1 rounded"
                       >
                         <option value="false">Starter</option>
-                        <option value="true" disabled={starters.length <= 5 && team.players.length >= 5}>
-                          Substitute {starters.length <= 5 && team.players.length >= 5 ? '(Needs 5 starters)' : ''}
+                        <option value="true" disabled={team.players.length <= 5}>
+                          Substitute {team.players.length <= 5 ? '(Needs 5 starters)' : ''}
                         </option>
                       </select>
                       <div className="flex flex-col gap-1.5">
