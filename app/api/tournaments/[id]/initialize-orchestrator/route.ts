@@ -14,8 +14,8 @@ export async function POST(
 ) {
   try {
     const { id: tournamentId } = await params;
-    const body = await req.json();
-    let { startDate, playDays, matchesPerDay = 6, roundsLimit } = body;
+    const body = await req.json().catch(() => ({}));
+    let { startDate, playDays, matchesPerDay, bestOf, numGroups, pointSystem } = body;
 
     // 1. Fetch Tournament Config & Approved Registrations
     const tournament = await prisma.tournament.findUnique({
@@ -25,9 +25,17 @@ export async function POST(
 
     if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
 
-    // Fallbacks for zero-config orchestration
+    // Dynamic fallbacks using existing tournament record or defaults
     if (!startDate) startDate = tournament.date;
-    if (!playDays || !Array.isArray(playDays)) playDays = [3, 4, 5, 6, 0]; // Default: Wed-Sun
+    if (!playDays || !Array.isArray(playDays) || playDays.length === 0) {
+      playDays = tournament.playDaysPerWeek && tournament.playDaysPerWeek.length > 0
+        ? tournament.playDaysPerWeek
+        : [5, 6, 0, 2, 4]; // Default: Fri, Sat, Sun, Tue, Thu
+    }
+    if (!matchesPerDay || typeof matchesPerDay !== "number") {
+      matchesPerDay = tournament.matchesPerDay || 4;
+    }
+    const seriesBestOf = typeof bestOf === "number" ? bestOf : (tournament.defaultBestOf || 3);
 
     if (!startDate) {
       return NextResponse.json({ error: "Tournament has no start date defined." }, { status: 400 });
@@ -58,45 +66,100 @@ export async function POST(
       );
     }
 
-    // 2. Group Allocation Logic
-    // If no groups exist, we create them based on expected numGroups (minimum 1)
-    let groups = tournament.groups;
-    if (groups.length === 0) {
-      const numGroupsToCreate = 1; // Default to 1 group for Selection V2 if not specified
-      const createdGroups = [];
-      for (let i = 0; i < numGroupsToCreate; i++) {
-        const group = await prisma.tournamentGroup.create({
-          data: {
-            tournamentId,
-            name: `Group ${String.fromCharCode(65 + i)}`,
-          }
-        });
-        createdGroups.push({ ...group, teams: [] });
-      }
-      groups = createdGroups;
+    const { previewOnly = false, customGroupings } = body;
+    let targetNumGroups = 1;
+    if (typeof numGroups === "number" && numGroups >= 1) {
+      targetNumGroups = numGroups;
+    } else if (tournament.teamsPerGroup && tournament.teamsPerGroup >= 2 && approvedTeams.length > tournament.teamsPerGroup) {
+      targetNumGroups = Math.ceil(approvedTeams.length / tournament.teamsPerGroup);
+    } else if (tournament.numGroups && tournament.numGroups >= 1) {
+      targetNumGroups = tournament.numGroups;
     }
 
-    // Identify teams not in any group
-    const assignedTeamIds = new Set(groups.flatMap(g => g.teams.map(t => t.teamId)));
-    const unassignedTeams = approvedTeams.filter(t => !assignedTeamIds.has(t.id));
+    // 2. Group Allocation Logic
+    // Construct target groups and distribute approved teams
+    let groupAllocations: { name: string; teamIds: string[] }[] = [];
 
-    if (unassignedTeams.length > 0) {
-      // Auto-assign unassigned teams to groups (Round Robin distribution)
-      const shuffledUnassigned = [...unassignedTeams].sort(() => Math.random() - 0.5);
-      for (let i = 0; i < shuffledUnassigned.length; i++) {
-        const targetGroupIndex = i % groups.length;
-        const targetGroup = groups[targetGroupIndex];
-        
-        await prisma.tournamentGroupTeam.create({
-          data: {
-            groupId: targetGroup.id,
-            teamId: shuffledUnassigned[i].id
-          }
+    if (customGroupings && Array.isArray(customGroupings) && customGroupings.length > 0) {
+      groupAllocations = customGroupings.map((cg: any, idx: number) => ({
+        name: cg.name || `Group ${String.fromCharCode(65 + idx)}`,
+        teamIds: Array.isArray(cg.teamIds) ? cg.teamIds : [],
+      }));
+    } else {
+      // Auto-distribute approved teams across targetNumGroups
+      const shuffledTeams = [...approvedTeams].sort(() => Math.random() - 0.5);
+      for (let i = 0; i < targetNumGroups; i++) {
+        groupAllocations.push({
+          name: `Group ${String.fromCharCode(65 + i)}`,
+          teamIds: [],
         });
-        
-        // Update local state for match generation
-        targetGroup.teams.push({ teamId: shuffledUnassigned[i].id } as any);
       }
+      for (let i = 0; i < shuffledTeams.length; i++) {
+        const groupIndex = i % targetNumGroups;
+        groupAllocations[groupIndex].teamIds.push(shuffledTeams[i].id);
+      }
+    }
+
+    // Compute preview totals
+    let totalPreviewMatches = 0;
+    for (const g of groupAllocations) {
+      const count = g.teamIds.length;
+      if (count >= 2) {
+        totalPreviewMatches += Math.floor((count * (count - 1)) / 2);
+      }
+    }
+    const estimatedDays = matchesPerDay > 0 ? Math.ceil(totalPreviewMatches / matchesPerDay) : 0;
+
+    const groupingsPreview = groupAllocations.map(g => ({
+      name: g.name,
+      teams: g.teamIds.map(id => {
+        const teamObj = approvedTeams.find(t => t.id === id);
+        return {
+          id,
+          name: teamObj?.name || "Team",
+          tag: teamObj?.tag || "TAG",
+          logo: teamObj?.logo || null,
+        };
+      })
+    }));
+
+    // Handle preview mode without DB writes
+    if (previewOnly) {
+      return NextResponse.json({
+        success: true,
+        previewOnly: true,
+        preview: {
+          groupings: groupingsPreview,
+          totalMatches: totalPreviewMatches,
+          estimatedDays,
+          seriesBestOf,
+          matchesPerDay,
+          playDays,
+          startDate,
+          numGroups: targetNumGroups,
+        }
+      });
+    }
+
+    // 2b. Database Group Persistence (Full Execution Mode)
+    // Clear old group structures for this tournament to re-create clean allocations
+    await prisma.tournamentGroup.deleteMany({
+      where: { tournamentId }
+    });
+
+    const groups = [];
+    for (const gAlloc of groupAllocations) {
+      const createdGroup = await prisma.tournamentGroup.create({
+        data: {
+          tournamentId,
+          name: gAlloc.name,
+          teams: {
+            create: gAlloc.teamIds.map(teamId => ({ teamId }))
+          }
+        },
+        include: { teams: true }
+      });
+      groups.push(createdGroup);
     }
 
     // 3. Generate Round Robin Matches PER GROUP
@@ -134,16 +197,25 @@ export async function POST(
       groupMatchPools.push({ groupName: group.name, matches: groupMatches });
     }
 
-    // Flatten all matches into a master schedule list
-    const allMatchesMaster: { groupName: string; teamAId: string; teamBId: string | null; round: number; isResting: boolean }[] = [];
+    // Flatten all matches into a master schedule list: active games first, TBD/resting matches pushed to last days
+    const activeMatches: { groupName: string; teamAId: string; teamBId: string | null; round: number; isResting: boolean }[] = [];
+    const restingMatches: { groupName: string; teamAId: string; teamBId: string | null; round: number; isResting: boolean }[] = [];
     const maxRounds = Math.max(...groupMatchPools.map(p => Math.max(...p.matches.map(m => m.round), 0)), 0);
 
     for (let r = 1; r <= maxRounds; r++) {
       for (const pool of groupMatchPools) {
         const roundMatches = pool.matches.filter(m => m.round === r);
-        roundMatches.forEach(m => allMatchesMaster.push({ ...m, groupName: pool.groupName }));
+        roundMatches.forEach(m => {
+          if (m.isResting || !m.teamBId) {
+            restingMatches.push({ ...m, groupName: pool.groupName });
+          } else {
+            activeMatches.push({ ...m, groupName: pool.groupName });
+          }
+        });
       }
     }
+
+    const allMatchesMaster = [...activeMatches, ...restingMatches];
 
     // 4. Scheduling Logic
     const matchesToCreate = [];
@@ -199,7 +271,7 @@ export async function POST(
           playDay: playDayCount,
           lobby,
           scheduledTime,
-          bestOf: body.bestOf || 3,
+          bestOf: seriesBestOf,
           stage: `Group Stage - ${matchData.groupName} - Match ${currentMatchIndex + 1}`
         });
 
@@ -208,6 +280,19 @@ export async function POST(
       currentDay.setDate(currentDay.getDate() + 1);
       playDayCount++;
     }
+
+    // Update Tournament parameters in DB
+    await prisma.tournament.update({
+      where: { id: tournamentId },
+      data: {
+        date: new Date(startDate),
+        playDaysPerWeek: playDays,
+        matchesPerDay,
+        defaultBestOf: seriesBestOf,
+        ...(numGroups ? { numGroups } : {}),
+        ...(pointSystem ? { pointSystem } : {}),
+      },
+    });
 
     // 5. Initialize Standings Index (Clean slate first)
     await prisma.groupStageStanding.deleteMany({

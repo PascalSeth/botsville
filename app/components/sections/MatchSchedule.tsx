@@ -49,18 +49,26 @@ const useRealtimeMatches = () => {
         const res = await fetch('/api/tournaments?limit=20', { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
-        const statusOrder: Record<string, number> = { LIVE: 0, UPCOMING: 1, COMPLETED: 2 };
+        const statusOrder: Record<string, number> = {
+          LIVE: 0,
+          ONGOING: 0,
+          OPEN: 1,
+          CLOSED: 2,
+          UPCOMING: 3,
+          COMPLETED: 4,
+          CANCELLED: 5,
+        };
         const list = (Array.isArray(data?.tournaments) ? data.tournaments : [])
           .filter((t: TournamentListItem) => (t._count?.matches ?? 0) > 0)
           .sort((a: TournamentListItem, b: TournamentListItem) => {
-            const statusDiff = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+            const statusDiff = (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
             if (statusDiff !== 0) return statusDiff;
             return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
           });
 
         setTournaments(list);
         if (list.length > 0 && !initialSelectionDone.current) {
-          // list[0] is always the highest-priority (LIVE > UPCOMING > COMPLETED)
+          // list[0] is always highest-priority (LIVE / ONGOING > OPEN > UPCOMING > COMPLETED)
           const prioritize = list[0];
           setActiveTournamentId(prioritize.id);
           initialSelectionDone.current = true;
@@ -100,6 +108,22 @@ const useRealtimeMatches = () => {
         flyerType: m.flyerType,
         streamUrl: (m as { streamUrl?: string | null }).streamUrl,
       }));
+
+      // Sort matches within tournament: LIVE first, UPCOMING second, COMPLETED last
+      const matchPriority: Record<string, number> = {
+        LIVE: 0,
+        UPCOMING: 1,
+        COMPLETED: 2,
+        FORFEITED: 3,
+        DISPUTED: 4,
+      };
+      mapped.sort((a, b) => {
+        const pA = matchPriority[a.status] ?? 1;
+        const pB = matchPriority[b.status] ?? 1;
+        if (pA !== pB) return pA - pB;
+        return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+      });
+
       setMatches(mapped);
     } catch (err) { console.error(err); }
   }, [activeTournamentId]);
@@ -542,28 +566,28 @@ export const MatchSchedule = () => {
 
           <div className="flex flex-col items-start lg:items-end gap-3">
             {(() => {
-              const activeTournaments = tournaments.filter(t => t.status === 'LIVE' || t.status === 'UPCOMING');
-              const completedTournaments = tournaments.filter(t => t.status === 'COMPLETED');
+              const activeTournaments = tournaments.filter(t => t.status !== 'COMPLETED' && t.status !== 'CANCELLED');
+              const completedTournaments = tournaments.filter(t => t.status === 'COMPLETED' || t.status === 'CANCELLED');
               const selectedIsCompleted = completedTournaments.some(t => t.id === activeTournamentId);
 
               return (
                 <>
                   {/* Active tournament toggles */}
                   {activeTournaments.length > 0 && (
-                    <div className="flex p-1 bg-white/5 rounded-full border border-white/10">
+                    <div className="flex p-1 bg-white/5 rounded-full border border-white/10 flex-wrap">
                       {activeTournaments.map(t => (
                         <button
                           key={t.id}
                           onClick={() => setActiveTournamentId(t.id)}
                           className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
                             activeTournamentId === t.id
-                              ? t.status === 'LIVE'
+                              ? t.status === 'LIVE' || t.status === 'ONGOING'
                                 ? 'bg-red-500 text-white shadow-[0_0_16px_rgba(239,68,68,0.4)]'
                                 : 'bg-[#e8a000] text-black'
                               : 'text-white/40 hover:text-white'
                           }`}
                         >
-                          {t.status === 'LIVE' && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                          {(t.status === 'LIVE' || t.status === 'ONGOING') && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
                           {t.name}
                         </button>
                       ))}

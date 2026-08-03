@@ -216,10 +216,16 @@ export async function POST(
     const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
     const { id } = await context.params;
     const body = await request.json();
-    const { teamIds, autoApprove, seed } = body;
+    const { teamIds: inputTeamIds, teamId: singleTeamId, autoApprove, seed } = body;
+
+    const teamIds = Array.isArray(inputTeamIds)
+      ? inputTeamIds
+      : singleTeamId
+      ? [singleTeamId]
+      : [];
 
     if (!Array.isArray(teamIds) || teamIds.length === 0) {
-      return apiError("teamIds must be a non-empty array");
+      return apiError("teamIds or teamId must be provided");
     }
 
     const tournament = await prisma.tournament.findUnique({
@@ -264,10 +270,42 @@ export async function POST(
         });
 
         if (existingReg) {
+          // If previous registration was rejected or withdrawn, reinstate/update it
+          if (
+            existingReg.status === RegistrationStatus.REJECTED ||
+            existingReg.status === RegistrationStatus.WITHDRAWN ||
+            existingReg.status === RegistrationStatus.FORFEITED
+          ) {
+            const updatedReg = await prisma.tournamentRegistration.update({
+              where: { id: existingReg.id },
+              data: {
+                status: autoApprove ? RegistrationStatus.APPROVED : RegistrationStatus.PENDING,
+                rejectionReason: null,
+                seed: autoApprove && seed ? seed : undefined,
+              },
+            });
+
+            if (autoApprove) {
+              await prisma.tournament.update({
+                where: { id },
+                data: { filled: { increment: 1 } },
+              });
+            }
+
+            results.push({
+              teamId,
+              success: true,
+              message: autoApprove ? "Team re-registered and approved" : "Team re-registered (pending approval)",
+              registrationId: updatedReg.id,
+              status: updatedReg.status,
+            });
+            continue;
+          }
+
           results.push({
             teamId,
             success: false,
-            message: "Team already registered",
+            message: "Team is already registered for this tournament",
             existingStatus: existingReg.status,
           });
           continue;
@@ -354,6 +392,116 @@ export async function POST(
     return apiError(message, 500);
   }
 }
+
+// DELETE - Remove team registration from tournament (Admin only)
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
+    const { id: tournamentId } = await context.params;
+    const { searchParams } = new URL(request.url);
+
+    let registrationId = searchParams.get("registrationId");
+    let teamId = searchParams.get("teamId");
+
+    if (!registrationId && !teamId) {
+      try {
+        const body = await request.json();
+        registrationId = body.registrationId;
+        teamId = body.teamId;
+      } catch {
+        // Body reading failed or empty
+      }
+    }
+
+    if (!registrationId && !teamId) {
+      return apiError("registrationId or teamId is required");
+    }
+
+    const where: Prisma.TournamentRegistrationWhereInput = { tournamentId };
+    if (registrationId) {
+      where.id = registrationId;
+    } else if (teamId) {
+      where.teamId = teamId;
+    }
+
+    const registration = await prisma.tournamentRegistration.findFirst({
+      where,
+      include: {
+        tournament: true,
+        team: {
+          select: {
+            id: true,
+            name: true,
+            captainId: true,
+          },
+        },
+      },
+    });
+
+    if (!registration) {
+      return apiError("Registration not found for this tournament", 404);
+    }
+
+    // Delete the registration record
+    await prisma.tournamentRegistration.delete({
+      where: { id: registration.id },
+    });
+
+    // If approved, decrement tournament filled count if > 0
+    if (registration.status === RegistrationStatus.APPROVED && registration.tournament.filled > 0) {
+      await prisma.tournament.update({
+        where: { id: tournamentId },
+        data: {
+          filled: { decrement: 1 },
+        },
+      });
+    }
+
+    // Remove from waitlist if any
+    await prisma.waitlist.deleteMany({
+      where: {
+        tournamentId,
+        teamId: registration.teamId,
+      },
+    });
+
+    // Notify team captain
+    if (registration.team.captainId) {
+      await prisma.notification.create({
+        data: {
+          userId: registration.team.captainId,
+          type: "TOURNAMENT_REGISTRATION_REJECTED",
+          title: "Removed from Tournament",
+          message: `Your team ${registration.team.name} was removed from ${registration.tournament.name} by an admin.`,
+          linkUrl: `/tournaments/${tournamentId}`,
+        },
+      });
+    }
+
+    // Create audit log
+    await createAuditLog(
+      admin.id,
+      "DELETE_REGISTRATION",
+      "TournamentRegistration",
+      registration.id,
+      JSON.stringify({ teamId: registration.teamId, tournamentId })
+    );
+
+    return apiSuccess({
+      message: `Team ${registration.team.name} removed from tournament`,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to remove registration";
+    if (message === "Unauthorized") return apiError("Unauthorized", 401);
+    if (message.includes("Forbidden")) return apiError(message, 403);
+    console.error("Delete registration error:", error);
+    return apiError(message, 500);
+  }
+}
+
 
 
 

@@ -283,5 +283,65 @@ export async function POST(
   }
 }
 
+// DELETE - Clear all matches for a tournament (Admin only)
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const admin = await requireAdmin(AdminRoleType.TOURNAMENT_ADMIN);
+    const { id: tournamentId } = await context.params;
+
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, name: true },
+    });
+
+    if (!tournament) {
+      return apiError("Tournament not found", 404);
+    }
+
+    const matchCount = await prisma.match.count({
+      where: { tournamentId },
+    });
+
+    // Delete all matches and group standings for this tournament
+    const [deletedMatches, deletedStandings] = await prisma.$transaction([
+      prisma.match.deleteMany({ where: { tournamentId } }),
+      prisma.groupStageStanding.deleteMany({ where: { tournamentId } }),
+    ]);
+
+    // Reset tournament phase if it was set
+    await prisma.tournament.update({
+      where: { id: tournamentId },
+      data: { phase: null },
+    });
+
+    await createAuditLog(
+      admin.id,
+      "CLEAR_TOURNAMENT_MATCHES",
+      "Tournament",
+      tournamentId,
+      JSON.stringify({
+        matchesCleared: deletedMatches.count,
+        standingsCleared: deletedStandings.count,
+      })
+    );
+
+    return apiSuccess({
+      message: `Successfully cleared ${deletedMatches.count} matches and reset tournament schedule.`,
+      matchesCleared: deletedMatches.count,
+      previousMatchCount: matchCount,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to clear matches";
+    if (message === "Unauthorized") return apiError("Unauthorized", 401);
+    if (message.includes("Forbidden")) return apiError(message, 403);
+    console.error("Clear matches error:", error);
+    return apiError(message, 500);
+  }
+}
+
+
 
 

@@ -4,6 +4,7 @@ import { useRoleGuard, useRole } from "../lib/useRole";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { dashboardFetch } from "../lib/api";
+import { Download, Loader2, Shield } from "lucide-react";
 
 type Team = {
   id: string;
@@ -11,6 +12,7 @@ type Team = {
   tag: string;
   region: string;
   status: string;
+  logo?: string | null;
   captain?: { id: string; ign: string } | null;
   _count?: { players: number };
   rank?: number;
@@ -30,6 +32,7 @@ export default function DashboardTeamsPage() {
   const [mergeSource, setMergeSource] = useState("");
   const [mergeTarget, setMergeTarget] = useState("");
   const [isMerging, setIsMerging] = useState(false);
+  const [downloadingLogos, setDownloadingLogos] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,6 +57,34 @@ export default function DashboardTeamsPage() {
     }, 0);
     return () => clearTimeout(t);
   }, [load]);
+
+  const handleDownloadLogos = async () => {
+    setDownloadingLogos(true);
+    try {
+      const url = status
+        ? `/api/admin/teams/logos-zip?status=${encodeURIComponent(status)}`
+        : `/api/admin/teams/logos-zip`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to download team logos");
+        return;
+      }
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `team-logos${status ? `-${status.toLowerCase()}` : ""}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      setError(err.message || "Failed to download team logos");
+    } finally {
+      setDownloadingLogos(false);
+    }
+  };
 
   const handleMerge = async () => {
     if (!mergeSource || !mergeTarget) return;
@@ -83,7 +114,7 @@ export default function DashboardTeamsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-black text-2xl tracking-tight text-white uppercase tracking-[0.08em]">
             Teams
@@ -92,16 +123,36 @@ export default function DashboardTeamsPage() {
             View and manage teams, status, and suspensions.
           </p>
         </div>
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50"
-        >
-          <option value="">All statuses</option>
-          <option value="ACTIVE">ACTIVE</option>
-          <option value="INACTIVE">INACTIVE</option>
-          <option value="SUSPENDED">SUSPENDED</option>
-        </select>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleDownloadLogos}
+            disabled={downloadingLogos}
+            className="flex items-center gap-2 px-3 py-2 bg-[#e8a000]/10 border border-[#e8a000]/30 text-[#e8a000] text-xs font-bold uppercase tracking-wider rounded hover:bg-[#e8a000]/20 disabled:opacity-50 transition-colors"
+            title="Download all team logos as a ZIP archive"
+          >
+            {downloadingLogos ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Downloading ZIP...</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Team Logos</span>
+              </>
+            )}
+          </button>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="bg-[#0d0d14] border border-white/10 text-white px-3 py-2 text-sm outline-none focus:border-[#e8a000]/50 rounded"
+          >
+            <option value="">All statuses</option>
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="INACTIVE">INACTIVE</option>
+            <option value="SUSPENDED">SUSPENDED</option>
+          </select>
+        </div>
       </div>
 
       {error && (
@@ -171,8 +222,15 @@ export default function DashboardTeamsPage() {
                 {teams.map((t) => (
                   <tr key={t.id} className="border-b border-white/5 hover:bg-white/[0.02]">
                     <td className="p-3">
-                      <Link href={`/dashboard/teams/${t.id}`} className="text-white font-semibold hover:text-[#e8a000] transition-colors">
-                        {t.name}
+                      <Link href={`/dashboard/teams/${t.id}`} className="text-white font-semibold hover:text-[#e8a000] transition-colors flex items-center gap-2.5">
+                        {t.logo ? (
+                          <img src={t.logo} alt={t.name} className="w-6 h-6 rounded object-cover border border-white/10 bg-black/40 shrink-0" />
+                        ) : (
+                          <div className="w-6 h-6 rounded border border-white/10 bg-white/5 flex items-center justify-center shrink-0">
+                            <Shield className="w-3.5 h-3.5 text-[#666]" />
+                          </div>
+                        )}
+                        <span>{t.name}</span>
                       </Link>
                     </td>
                     <td className="p-3 text-[#e8a000] font-mono text-sm">{t.tag}</td>
