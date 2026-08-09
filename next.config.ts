@@ -5,12 +5,13 @@ const nextConfig: NextConfig = {
   assetPrefix: process.env.NODE_ENV === 'production' ? undefined : undefined,
   
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
         hostname: 'images.unsplash.com',
       },
-         {
+      {
         protocol: 'https',
         hostname: 'dhsfknqqldrfztywhmsq.supabase.co',
       },
