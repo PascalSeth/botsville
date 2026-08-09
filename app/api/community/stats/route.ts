@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
           upcomingMatch: upcomingMatch
             ? {
                 teamA: upcomingMatch.teamA.name || upcomingMatch.teamA.tag,
-                teamB: upcomingMatch.teamB.name || upcomingMatch.teamB.tag,
+                teamB: upcomingMatch.teamB ? (upcomingMatch.teamB.name || upcomingMatch.teamB.tag) : "RESTING",
                 scheduledTime: upcomingMatch.scheduledTime,
               }
             : null,
