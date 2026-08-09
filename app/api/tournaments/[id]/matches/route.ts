@@ -7,8 +7,8 @@ import {
   createAuditLog,
 } from "@/lib/api-utils";
 import { MatchStatus, AdminRoleType } from "@/app/generated/prisma/enums";
-
 import { prisma } from "@/lib/prisma";
+import { cacheResult, invalidatePattern } from "@/lib/redis";
 
 // GET - List tournament matches
 export async function GET(
@@ -21,71 +21,79 @@ export async function GET(
     const status = searchParams.get("status");
     const stage = searchParams.get("stage");
 
-    const where: Prisma.MatchWhereInput = { tournamentId: id };
-    if (status && Object.values(MatchStatus).includes(status as MatchStatus)) {
-      where.status = status as MatchStatus;
-    }
-    if (stage) {
-      where.stage = { contains: stage };
-    }
+    const cacheKey = `tournament:matches:${id}:${status || "all"}:${stage || "all"}`;
 
-    const matches = await prisma.match.findMany({
-      where,
-      include: {
-        teamA: {
-          select: {
-            id: true,
-            name: true,
-            tag: true,
-            logo: true,
+    const matches = await cacheResult(
+      cacheKey,
+      async () => {
+        const where: Prisma.MatchWhereInput = { tournamentId: id };
+        if (status && Object.values(MatchStatus).includes(status as MatchStatus)) {
+          where.status = status as MatchStatus;
+        }
+        if (stage) {
+          where.stage = { contains: stage };
+        }
+
+        return prisma.match.findMany({
+          where,
+          include: {
+            teamA: {
+              select: {
+                id: true,
+                name: true,
+                tag: true,
+                logo: true,
+              },
+            },
+            teamB: {
+              select: {
+                id: true,
+                name: true,
+                tag: true,
+                logo: true,
+              },
+            },
+            winner: {
+              select: {
+                id: true,
+                name: true,
+                tag: true,
+              },
+            },
+            challengeRequest: {
+              select: {
+                id: true,
+                status: true,
+                challengerTeamId: true,
+                challengedTeamId: true,
+              },
+            },
+            performances: {
+              select: {
+                id: true,
+                gameNumber: true,
+                kills: true,
+                deaths: true,
+                assists: true,
+              },
+            },
+            gameResults: {
+              select: {
+                gameNumber: true,
+                winnerTeamId: true,
+              },
+            },
+            _count: {
+              select: {
+                screenshots: true,
+              },
+            },
           },
-        },
-        teamB: {
-          select: {
-            id: true,
-            name: true,
-            tag: true,
-            logo: true,
-          },
-        },
-        winner: {
-          select: {
-            id: true,
-            name: true,
-            tag: true,
-          },
-        },
-        challengeRequest: {
-          select: {
-            id: true,
-            status: true,
-            challengerTeamId: true,
-            challengedTeamId: true,
-          },
-        },
-        performances: {
-          select: {
-            id: true,
-            gameNumber: true,
-            kills: true,
-            deaths: true,
-            assists: true,
-          },
-        },
-        gameResults: {
-          select: {
-            gameNumber: true,
-            winnerTeamId: true,
-          },
-        },
-        _count: {
-          select: {
-            screenshots: true,
-          },
-        },
+          orderBy: { scheduledTime: "asc" },
+        });
       },
-      orderBy: { scheduledTime: "asc" },
-    });
+      { ttl: 15 }
+    );
 
     return apiSuccess(matches);
   } catch (error: unknown) {
@@ -267,6 +275,8 @@ export async function POST(
       JSON.stringify({ teamAId, teamBId, scheduledTime })
     );
 
+    await invalidatePattern(`tournament:matches:${id}:*`);
+
     return apiSuccess(
       {
         message: "Match created successfully",
@@ -316,6 +326,8 @@ export async function DELETE(
       where: { id: tournamentId },
       data: { phase: null },
     });
+
+    await invalidatePattern(`tournament:matches:${tournamentId}:*`);
 
     await createAuditLog(
       admin.id,

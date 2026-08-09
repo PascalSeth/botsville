@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { getCurrentUser, apiError, apiSuccess } from "@/lib/api-utils";
 import { GameRole, SeasonStatus } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { cacheResult } from "@/lib/redis";
 
 // GET — nominees grouped by role with vote counts for a given (or active) season
 export async function GET(request: NextRequest) {
@@ -9,97 +10,102 @@ export async function GET(request: NextRequest) {
     const user = await getCurrentUser();
     const { searchParams } = new URL(request.url);
 
-    let seasonId = searchParams.get("seasonId");
+    const seasonIdParam = searchParams.get("seasonId");
     const roleFilter = searchParams.get("role");
 
-    // If no seasonId, use the current ACTIVE season; fall back to most recent season
-    if (!seasonId) {
-      const active = await prisma.season.findFirst({
-        where: { status: SeasonStatus.ACTIVE },
-        select: { id: true, name: true, status: true },
-      });
-      if (active) {
-        seasonId = active.id;
-      } else {
-        // No active season — try most recent completed
-        const recent = await prisma.season.findFirst({
-          orderBy: { updatedAt: 'desc' },
-          select: { id: true, name: true, status: true },
-        });
-        if (recent) seasonId = recent.id;
-        // If still null, we'll continue with no season and show players with 0 votes
-      }
-    }
+    const cacheKey = `awards:nominees:${seasonIdParam || "active"}:${roleFilter || "all"}`;
 
-    // Look up season if we have an ID
-    let season: { id: string; name: string; status: string } | null = null;
-    if (seasonId) {
-      season = await prisma.season.findUnique({
-        where: { id: seasonId },
-        select: { id: true, name: true, status: true },
-      });
-    }
+    const { season, players, voteCountMap } = await cacheResult(
+      cacheKey,
+      async () => {
+        let seasonId = seasonIdParam;
+        if (!seasonId) {
+          const active = await prisma.season.findFirst({
+            where: { status: SeasonStatus.ACTIVE },
+            select: { id: true, name: true, status: true },
+          });
+          if (active) {
+            seasonId = active.id;
+          } else {
+            const recent = await prisma.season.findFirst({
+              orderBy: { updatedAt: 'desc' },
+              select: { id: true, name: true, status: true },
+            });
+            if (recent) seasonId = recent.id;
+          }
+        }
 
-    // Fetch all non-deleted players that belong to an active, non-deleted team
-    const playerWhere: Record<string, unknown> = {
-      deletedAt: null,
-      team: {
-        deletedAt: null,
-        status: "ACTIVE",
-      },
-    };
-    if (roleFilter && Object.values(GameRole).includes(roleFilter as GameRole)) {
-      playerWhere.role = roleFilter as GameRole;
-    }
+        let seasonObj: { id: string; name: string; status: string } | null = null;
+        if (seasonId) {
+          seasonObj = await prisma.season.findUnique({
+            where: { id: seasonId },
+            select: { id: true, name: true, status: true },
+          });
+        }
 
-    const players = await prisma.player.findMany({
-      where: playerWhere,
-      select: {
-        id: true,
-        ign: true,
-        realName: true,
-        role: true,
-        secondaryRole: true,
-        signatureHero: true,
-        photo: true,
-        kda: true,
-        winRate: true,
-        mvpCount: true,
-        matchesPlayed: true,
-        team: {
+        const playerWhere: Record<string, unknown> = {
+          deletedAt: null,
+          team: {
+            deletedAt: null,
+            status: "ACTIVE",
+          },
+        };
+        if (roleFilter && Object.values(GameRole).includes(roleFilter as GameRole)) {
+          playerWhere.role = roleFilter as GameRole;
+        }
+
+        const fetchedPlayers = await prisma.player.findMany({
+          where: playerWhere,
           select: {
             id: true,
-            name: true,
-            tag: true,
-            logo: true,
-            color: true,
+            ign: true,
+            realName: true,
+            role: true,
+            secondaryRole: true,
+            signatureHero: true,
+            photo: true,
+            kda: true,
+            winRate: true,
+            mvpCount: true,
+            matchesPlayed: true,
+            team: {
+              select: {
+                id: true,
+                name: true,
+                tag: true,
+                logo: true,
+                color: true,
+              },
+            },
           },
-        },
-      },
-      orderBy: { ign: "asc" },
-    });
-
-    // Fetch vote counts and user votes only when a season exists
-    const voteCountMap: Record<string, number> = {};
-    const userVotes: Record<string, string> = {};
-
-    if (seasonId && season) {
-      const voteCounts = await prisma.roleVote.groupBy({
-        by: ["playerId", "role"],
-        where: { seasonId },
-        _count: { id: true },
-      });
-      for (const vc of voteCounts) {
-        voteCountMap[`${vc.playerId}:${vc.role}`] = vc._count.id;
-      }
-
-      if (user) {
-        const myVotes = await prisma.roleVote.findMany({
-          where: { userId: user.id, seasonId },
-          select: { role: true, playerId: true },
+          orderBy: { ign: "asc" },
         });
-        for (const v of myVotes) userVotes[v.role] = v.playerId;
-      }
+
+        const vMap: Record<string, number> = {};
+        if (seasonId && seasonObj) {
+          const voteCounts = await prisma.roleVote.groupBy({
+            by: ["playerId", "role"],
+            where: { seasonId },
+            _count: { id: true },
+          });
+          for (const vc of voteCounts) {
+            vMap[`${vc.playerId}:${vc.role}`] = vc._count.id;
+          }
+        }
+
+        return { season: seasonObj, players: fetchedPlayers, voteCountMap: vMap };
+      },
+      { ttl: 60 }
+    );
+
+    // Fetch personal user votes dynamically if authenticated
+    const userVotes: Record<string, string> = {};
+    if (user && season?.id) {
+      const myVotes = await prisma.roleVote.findMany({
+        where: { userId: user.id, seasonId: season.id },
+        select: { role: true, playerId: true },
+      });
+      for (const v of myVotes) userVotes[v.role] = v.playerId;
     }
 
     // Group players by role

@@ -3,6 +3,7 @@ import type { Prisma } from "@/app/generated/prisma/client";
 import {
   requireAdmin,
   requireActiveUser,
+  getCurrentUser,
   apiError,
   apiSuccess,
   createAuditLog,
@@ -23,13 +24,7 @@ export async function GET(request: NextRequest) {
     const where: Prisma.FanArtWhereInput = {};
     
     // Public can only see approved art
-    let user = null;
-    try {
-      const { requireActiveUser } = await import("@/lib/api-utils");
-      user = await requireActiveUser();
-    } catch {
-      // Not authenticated - public access
-    }
+    const user = await getCurrentUser();
     
     if (!user || !user.role) {
       where.approved = true;

@@ -371,7 +371,7 @@ export const TriviaCinematicStage = ({
         )}
         {/* Dark Vignette & Scanline Overlay */}
         <div className="absolute inset-0 bg-linear-to-t from-[#050508] via-[#050508]/80 to-transparent" />
-        <div className="absolute inset-0 bg-[url('/scanlines.png')] opacity-[0.03] mix-blend-overlay pointer-events-none" />
+        <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(0,0,0,0.4)_2px,rgba(0,0,0,0.4)_4px)] opacity-[0.15] pointer-events-none" />
       </div>
 
       {/* Giant Background Number */}

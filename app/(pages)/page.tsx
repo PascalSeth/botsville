@@ -24,6 +24,7 @@ import {
   MobileScrimAndAwards,
 } from '../components/sections/ScrimVaultAwards'
 import { CommunityHighlights } from '../components/sections/CommunityHighlights'
+import { WhatsAppCommunitySection } from '../components/sections/WhatsAppCommunitySection'
 
 function Home() {
   return (
@@ -34,7 +35,8 @@ function Home() {
       {/* MPL Next Level Roadmap Updates */}
       <RoadmapUpdates />
 
-      {/* Self-switching: MobileNewsSection lg:hidden / DesktopNewsSection hidden lg:block */}
+      {/* Official WhatsApp Community Hub */}
+      <WhatsAppCommunitySection />
 
       {/* Self-switching: MobileMatchCard lg:hidden / DesktopMatchRow hidden lg:block */}
       <MatchSchedule />
