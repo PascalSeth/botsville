@@ -100,14 +100,24 @@ export const Footer = () => {
           ))}
         </div>
 
+        {/* Disclaimer Notice */}
+        <div className="border-t border-white/[0.04] pt-6 pb-6">
+          <div className="rounded-xl bg-white/[0.02] border border-white/[0.05] p-4 text-center sm:text-left flex flex-col sm:flex-row items-center sm:items-start gap-3">
+            <div className="w-2 h-2 rounded-full bg-amber-400/40 shrink-0 mt-1 sm:block hidden" />
+            <p className="text-[#555] text-[11px] leading-relaxed">
+              <strong className="text-zinc-400 font-semibold">Disclaimer &amp; Copyright Notice:</strong> Mobile Legends: Bang Bang (MLBB), including all hero names, character portraits, game assets, icons, artwork, logos, and related trademarks are the exclusive property of <span className="text-zinc-300 font-medium">Shanghai Moonton Technology Co., Ltd. (MOONTON Games)</span>. Botsville is an independent, non-profit community platform organized by and for Ghanaian esports enthusiasts. Botsville does not claim ownership over any Moonton intellectual property and is not officially affiliated with, authorized, maintained, sponsored, or endorsed by Moonton.
+            </p>
+          </div>
+        </div>
+
         {/* Bottom bar */}
         <div className="border-t border-white/[0.04] pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-[#333] text-[11px] tracking-wide">
-            &copy; {new Date().getFullYear()} Botsville MLBB Community. All rights reserved.
+          <p className="text-[#444] text-[11px] tracking-wide">
+            &copy; {new Date().getFullYear()} Botsville Esports Community. All rights reserved.
           </p>
           <div className="flex items-center gap-4">
-            {['Privacy Policy', 'Terms of Use'].map((l) => (
-              <a key={l} href="#" className="text-[#333] hover:text-[#e8a000] text-[11px] tracking-wide transition-colors">
+            {['Privacy Policy', 'Terms of Use', 'Fair Use Notice'].map((l) => (
+              <a key={l} href="#" className="text-[#444] hover:text-[#e8a000] text-[11px] tracking-wide transition-colors">
                 {l}
               </a>
             ))}
