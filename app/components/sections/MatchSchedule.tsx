@@ -484,7 +484,67 @@ export const MatchSchedule = () => {
     });
   }, [matches, activeStage]);
 
-  const days = useMemo(() => Array.from(new Set(matchesInStage.map(m => m.playDay || 0))).sort((a, b) => a - b), [matchesInStage]);
+  const days = useMemo<number[]>(
+    () => Array.from(new Set(matchesInStage.map((m) => m.playDay || 0))).sort((a, b) => a - b),
+    [matchesInStage]
+  );
+
+  const dayScrollRef = useRef<HTMLDivElement>(null);
+
+  const formatDayDate = (value?: string) => {
+    if (!value) return '';
+    const d = new Date(value);
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  const daysInfo = useMemo<{
+    day: number;
+    dayMatches: ScheduleMatch[];
+    isLive: boolean;
+    isToday: boolean;
+    hasUpcoming: boolean;
+    isCompleted: boolean;
+    earliestUpcomingTime: number;
+    firstScheduledAt?: string;
+    dateLabel: string;
+  }[]>(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    return days.map((day: number) => {
+      const dayMatches = matchesInStage.filter((m) => (m.playDay || 0) === day);
+      const isLive = dayMatches.some((m) => m.status === 'LIVE');
+      const isToday = dayMatches.some((m) => {
+        if (!m.scheduledAt) return false;
+        return (
+          new Date(m.scheduledAt).toISOString().slice(0, 10) === todayStr ||
+          new Date(m.scheduledAt).toDateString() === new Date().toDateString()
+        );
+      });
+      const hasUpcoming = dayMatches.some((m) => m.status === 'UPCOMING');
+      const isCompleted =
+        dayMatches.length > 0 &&
+        dayMatches.every((m) => m.status === 'COMPLETED' || m.status === 'FORFEITED');
+
+      const upcomingMatchTimes = dayMatches
+        .filter((m) => m.status === 'UPCOMING')
+        .map((m) => new Date(m.scheduledAt).getTime())
+        .sort((a: number, b: number) => a - b);
+
+      const firstScheduledAt = dayMatches[0]?.scheduledAt;
+
+      return {
+        day,
+        dayMatches,
+        isLive,
+        isToday,
+        hasUpcoming,
+        isCompleted,
+        earliestUpcomingTime: upcomingMatchTimes[0] ?? Infinity,
+        firstScheduledAt,
+        dateLabel: formatDayDate(firstScheduledAt),
+      };
+    });
+  }, [days, matchesInStage]);
 
   useEffect(() => {
     if (parsedStages.length > 0 && !parsedStages.includes(activeStage)) {
@@ -501,23 +561,54 @@ export const MatchSchedule = () => {
   }, [parsedStages, matches, activeStage]);
 
   useEffect(() => {
-    if (days.length === 0) return;
+    if (days.length === 0 || daysInfo.length === 0) return;
 
-    // Smart Day Selection: Priority: Live > Today > First Upcoming > Day 1
-    const today = new Date().toDateString();
-    const liveMatch = matchesInStage.find(m => m.status === 'LIVE');
-    const todayMatch = matchesInStage.find(m => m.scheduledAt && new Date(m.scheduledAt).toDateString() === today);
-    const upcomingMatch = matchesInStage.find(m => m.status === 'UPCOMING');
+    // Smart Prioritization:
+    // 1. LIVE match day
+    const liveDay = daysInfo.find(d => d.isLive)?.day;
+    if (liveDay !== undefined) {
+      setActiveDay(liveDay);
+      return;
+    }
 
-    let smartDay = activeDay;
-    if (liveMatch?.playDay) smartDay = liveMatch.playDay;
-    else if (todayMatch?.playDay) smartDay = todayMatch.playDay;
-    else if (upcomingMatch?.playDay) smartDay = upcomingMatch.playDay;
-    else if (!days.includes(activeDay)) smartDay = days[0];
+    // 2. TODAY's match day
+    const todayDay = daysInfo.find(d => d.isToday)?.day;
+    if (todayDay !== undefined) {
+      setActiveDay(todayDay);
+      return;
+    }
 
-    setActiveDay(smartDay);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchesInStage, days]); // Trigger on matches load
+    // 3. Nearest UPCOMING matches day (closest to now)
+    const upcomingDays = daysInfo
+      .filter(d => d.hasUpcoming && d.earliestUpcomingTime !== Infinity)
+      .sort((a, b) => a.earliestUpcomingTime - b.earliestUpcomingTime);
+
+    if (upcomingDays.length > 0) {
+      setActiveDay(upcomingDays[0].day);
+      return;
+    }
+
+    // 4. If all finished, show the latest completed day (most recent results)
+    const completedDays = daysInfo.filter(d => d.isCompleted);
+    if (completedDays.length === daysInfo.length && completedDays.length > 0) {
+      setActiveDay(completedDays[completedDays.length - 1].day);
+      return;
+    }
+
+    // 5. Fallback
+    if (!days.includes(activeDay)) {
+      setActiveDay(days[0]);
+    }
+  }, [daysInfo, days, activeStage]);
+
+  useEffect(() => {
+    if (dayScrollRef.current) {
+      const activeBtn = dayScrollRef.current.querySelector(`[data-day="${activeDay}"]`);
+      if (activeBtn) {
+        activeBtn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
+    }
+  }, [activeDay]);
 
   const filteredMatches = matchesInStage.filter(m => {
     // For playoff matches that have no playDay, skip day filtering entirely
@@ -683,17 +774,53 @@ export const MatchSchedule = () => {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 px-2">
 
             {/* Days Horizontal Scroll */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full md:max-w-[60%]">
-              {days.map(day => (
-                <button
-                  key={day}
-                  onClick={() => setActiveDay(day)}
-                  className={`flex flex-col items-center min-w-[70px] py-2 rounded-xl transition-all ${activeDay === day ? 'bg-[#e8a000] text-black shadow-[0_0_20px_rgba(232,160,0,0.3)]' : 'hover:bg-white/5 text-white/40'}`}
-                >
-                  <span className="text-[8px] font-black uppercase tracking-widest">Day</span>
-                  <span className="text-lg font-black">{day < 10 ? `0${day}` : day}</span>
-                </button>
-              ))}
+            <div ref={dayScrollRef} className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full md:max-w-[65%] py-1">
+              {daysInfo.map(({ day, isLive, isToday, dateLabel }) => {
+                const isSelected = activeDay === day;
+                return (
+                  <button
+                    key={day}
+                    data-day={day}
+                    onClick={() => setActiveDay(day)}
+                    className={`relative flex flex-col items-center min-w-[72px] py-1.5 px-2 rounded-xl transition-all shrink-0 ${
+                      isSelected
+                        ? 'bg-[#e8a000] text-black shadow-[0_0_20px_rgba(232,160,0,0.3)] scale-[1.02]'
+                        : isLive
+                        ? 'bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20'
+                        : isToday
+                        ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/20'
+                        : 'bg-white/[0.03] hover:bg-white/[0.08] text-white/50 border border-white/5'
+                    }`}
+                  >
+                    {/* Top Tiny Badge */}
+                    <div className="flex items-center gap-1 mb-0.5">
+                      {isLive ? (
+                        <span className="flex items-center gap-0.5 text-[8px] font-black uppercase text-red-400">
+                          <span className="w-1 h-1 rounded-full bg-red-500 animate-ping" /> LIVE
+                        </span>
+                      ) : isToday ? (
+                        <span className={`text-[8px] font-black uppercase tracking-wider ${isSelected ? 'text-black font-black' : 'text-[#e8a000]'}`}>
+                          TODAY
+                        </span>
+                      ) : (
+                        <span className={`text-[8px] font-black uppercase tracking-widest ${isSelected ? 'text-black/70' : 'text-white/30'}`}>
+                          DAY
+                        </span>
+                      )}
+                    </div>
+
+                    <span className="text-base font-black leading-none">
+                      {day < 10 ? `0${day}` : day}
+                    </span>
+
+                    {dateLabel && (
+                      <span className={`text-[9px] font-mono mt-1 font-bold ${isSelected ? 'text-black/80 font-black' : 'text-white/40'}`}>
+                        {dateLabel}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Status Switcher */}
