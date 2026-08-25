@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
             : null,
         };
       },
-      { ttl: 30 }
+      { ttl: 15 }
     );
 
     return apiSuccess(stats);

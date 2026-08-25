@@ -225,7 +225,7 @@ const FeaturedCard = ({ article }: { article: NewsArticle }) => (
           <Zap size={11} className="text-amber-400" />
           <span className="text-amber-400 text-[9px] font-bold tracking-[0.2em] uppercase">Featured</span>
         </div>
-        <h3 className="text-white font-black text-[22px] leading-[1.15] tracking-tight uppercase mb-2 group-hover:text-amber-50 transition-colors duration-300 max-w-xl">
+        <h3 className="text-white font-black text-[18px] leading-[1.2] tracking-tight uppercase mb-2 group-hover:text-amber-50 transition-colors duration-300 max-w-xl">
           {article.title}
         </h3>
         {article.subtitle && (
@@ -552,7 +552,7 @@ const MobileSection = ({ news, fanArts, topTeam, loading }: ReturnType<typeof us
   const rest = useMemo(() => news.filter(n => n !== featured), [news, featured]);
 
   return (
-    <div className="lg:hidden py-8 px-4 sm:px-6">
+    <div className="lg:hidden py-6 px-4 sm:px-6">
       {/* News */}
       <SectionHeader title="Esports News" href="/news" />
       {loading ? (
@@ -629,9 +629,9 @@ const DesktopSection = ({ news, fanArts, topTeam, loading }: ReturnType<typeof u
   const nonFeatured = useMemo(() => news.filter(n => n !== featured), [news, featured]);
 
   return (
-    <div className="hidden lg:block py-14">
+    <div className="hidden lg:block py-10">
       <div className="max-w-6xl mx-auto px-6 lg:px-8">
-        <div className="grid grid-cols-[1fr_288px] gap-10">
+        <div className="grid grid-cols-[1fr_256px] gap-8">
 
           {/* Left: News */}
           <div>

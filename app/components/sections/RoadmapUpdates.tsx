@@ -139,7 +139,7 @@ export const RoadmapUpdates = () => {
   }, [activeTab, displayPlayers.length, manualInteractionCount]);
 
   return (
-    <section className="relative bg-[#05060b] overflow-hidden py-16 border-t border-cyan-500/10">
+    <section className="relative bg-[#05060b] overflow-hidden py-10 border-t border-cyan-500/10">
       {/* Visual Backlight Ambient Vignettes */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">
         <div className="absolute top-[20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-cyan-500/[0.03] blur-[150px]" />
@@ -154,18 +154,18 @@ export const RoadmapUpdates = () => {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10">
         
         {/* Section Header */}
-        <div className="text-center mb-12 relative">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-cyan-950/30 border border-cyan-500/25 rounded font-mono text-[9px] text-cyan-400 tracking-[0.2em] uppercase mb-3">
+        <div className="text-center mb-8 relative">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-cyan-950/30 border border-cyan-500/25 rounded font-mono text-[9px] text-cyan-400 tracking-[0.2em] uppercase mb-2">
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
             MPL ROADMAP EXPANSION
           </div>
           <h2 
-            className="text-white font-black text-3xl md:text-4xl tracking-wider uppercase mb-3"
+            className="text-white font-black text-2xl md:text-3xl tracking-wider uppercase mb-2"
             style={{ fontFamily: '"Anton", "Barlow Condensed", sans-serif', letterSpacing: '0.06em' }}
           >
             THE NEXT LEVEL IS HERE
           </h2>
-          <p className="text-zinc-400 text-xs md:text-sm max-w-xl mx-auto leading-relaxed">
+          <p className="text-zinc-400 text-xs max-w-xl mx-auto leading-relaxed">
             We are bringing the professional MPL esports experience straight to your screens. Check out the massive new upgrades dropping soon.
           </p>
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-12 bg-cyan-500/[0.04] blur-2xl pointer-events-none" />

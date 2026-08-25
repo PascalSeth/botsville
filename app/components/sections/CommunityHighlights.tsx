@@ -353,7 +353,7 @@ export const TriviaCinematicStage = ({
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-      className="col-span-12 lg:col-span-7 relative rounded-[2rem] overflow-hidden shadow-2xl group border border-white/10 flex flex-col min-h-[550px] bg-[#050508]"
+      className="col-span-12 lg:col-span-7 relative rounded-xl overflow-hidden shadow-xl group border border-white/[0.08] flex flex-col min-h-[360px] lg:min-h-[440px] bg-[#050508]"
     >
       {/* Immersive Background */}
       <div className="absolute inset-0 z-0">
@@ -382,27 +382,27 @@ export const TriviaCinematicStage = ({
       )}
 
       {/* HUD Header */}
-      <div className="relative z-10 flex items-start justify-between p-6 lg:p-10 pb-0">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md shadow-[0_0_30px_rgba(232,160,0,0.15)]">
-              <Crosshair size={24} className="text-[#e8a000]" />
+      <div className="relative z-10 flex items-start justify-between p-4 lg:p-8 pb-0">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md">
+              <Crosshair size={18} className="text-[#e8a000]" />
             </div>
             <div>
-              <h2 className="text-white font-black uppercase tracking-[0.2em] text-sm">Daily Mission</h2>
-              <p className="text-[#e8a000] font-bold text-xs mt-0.5 tracking-wider">+{todayXp} XP EARNED</p>
+              <h2 className="text-white font-black uppercase tracking-[0.15em] text-xs">Daily Mission</h2>
+              <p className="text-[#e8a000] font-bold text-[10px] mt-0.5 tracking-wider">+{todayXp} XP EARNED</p>
             </div>
           </div>
-          {/* Futuristic Stage Indicators */}
-          <div className="flex gap-1.5 mt-3">
+          {/* Stage Indicators */}
+          <div className="flex gap-1 mt-1">
             {Array.from({ length: dailyLimit }).map((_, i) => (
               <div
                 key={i}
-                className={`h-1.5 rounded-full transition-all duration-700 ease-out ${i < dailyAnswered
-                    ? 'w-8 bg-[#e8a000] shadow-[0_0_10px_#e8a000]'
+                className={`h-1 rounded-full transition-all duration-700 ease-out ${i < dailyAnswered
+                    ? 'w-6 bg-[#e8a000] shadow-[0_0_8px_#e8a000]'
                     : i === currentIndex && !allCompleted
-                      ? 'w-8 bg-white/50 animate-pulse'
-                      : 'w-3 bg-white/10'
+                      ? 'w-6 bg-white/50 animate-pulse'
+                      : 'w-2 bg-white/10'
                   }`}
               />
             ))}
@@ -410,9 +410,9 @@ export const TriviaCinematicStage = ({
         </div>
 
         {trivia && !allCompleted && (
-          <div className={`px-4 py-2 rounded-xl border backdrop-blur-md flex items-center gap-2 ${categoryConfig.bg}`}>
-            <span className="text-lg">{categoryConfig.emoji}</span>
-            <span className={`text-xs font-black tracking-widest uppercase ${categoryConfig.color}`}>
+          <div className={`px-2.5 py-1.5 rounded-lg border backdrop-blur-md flex items-center gap-1.5 ${categoryConfig.bg}`}>
+            <span className="text-sm">{categoryConfig.emoji}</span>
+            <span className={`text-[10px] font-black tracking-widest uppercase ${categoryConfig.color}`}>
               {categoryConfig.label}
             </span>
           </div>
@@ -420,7 +420,7 @@ export const TriviaCinematicStage = ({
       </div>
 
       {/* Main Mission Content */}
-      <div className="relative z-10 flex-1 flex flex-col justify-end p-6 lg:p-10 pt-10">
+      <div className="relative z-10 flex-1 flex flex-col justify-end p-4 lg:p-8 pt-5">
         <AnimatePresence mode="wait">
           {allCompleted ? (
             /* MISSION COMPLETE STATE */
@@ -428,17 +428,17 @@ export const TriviaCinematicStage = ({
               key="completed"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="w-full text-center py-10 bg-white/5 border border-white/10 backdrop-blur-xl rounded-3xl relative overflow-hidden"
+              className="w-full text-center py-6 bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl relative overflow-hidden"
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(232,160,0,0.2),transparent_70%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(232,160,0,0.15),transparent_70%)]" />
               <div className="relative z-10">
-                <Trophy size={48} className="mx-auto text-[#e8a000] drop-shadow-[0_0_20px_rgba(232,160,0,0.5)] mb-4" />
-                <h3 className="text-4xl lg:text-5xl font-black text-white tracking-tighter uppercase mb-2">Mission <br />Accomplished</h3>
-                <p className="text-white/50 text-sm lg:text-base mb-8 max-w-sm mx-auto">All intelligence gathered. Return tomorrow for new coordinates.</p>
+                <Trophy size={32} className="mx-auto text-[#e8a000] drop-shadow-[0_0_15px_rgba(232,160,0,0.4)] mb-3" />
+                <h3 className="text-2xl lg:text-3xl font-black text-white tracking-tighter uppercase mb-1.5">Mission <br />Accomplished</h3>
+                <p className="text-white/50 text-xs mb-5 max-w-xs mx-auto">All intelligence gathered. Return tomorrow for new coordinates.</p>
 
-                <div className="inline-flex flex-col items-center justify-center p-6 rounded-2xl bg-[#0a0a0f] border border-white/10 shadow-2xl">
-                  <span className="text-xs uppercase font-bold text-white/40 tracking-[0.2em] mb-2">Total XP Secured</span>
-                  <span className="text-5xl font-black text-transparent bg-clip-text bg-linear-to-b from-[#e8a000] to-orange-500">
+                <div className="inline-flex flex-col items-center justify-center p-4 rounded-xl bg-[#0a0a0f] border border-white/10 shadow-xl">
+                  <span className="text-[10px] uppercase font-bold text-white/40 tracking-[0.18em] mb-1">Total XP Secured</span>
+                  <span className="text-3xl font-black text-transparent bg-clip-text bg-linear-to-b from-[#e8a000] to-orange-500">
                     +{todayXp}
                   </span>
                 </div>
@@ -451,7 +451,7 @@ export const TriviaCinematicStage = ({
               animate={{ opacity: 1, filter: 'blur(0px)', x: 0 }}
               exit={{ opacity: 0, x: -30 }}
               transition={{ duration: 0.4 }}
-              className="flex flex-col gap-8 w-full max-w-2xl"
+              className="flex flex-col gap-4 w-full max-w-2xl"
             >
               {/* Question Text */}
               <div className="relative">
@@ -459,11 +459,11 @@ export const TriviaCinematicStage = ({
                 <div className="absolute -left-6 top-2 h-1/3 w-1 bg-[#e8a000] rounded-full shadow-[0_0_10px_#e8a000]" />
 
                 {isEmojiGuess ? (
-                  <h3 className="text-5xl lg:text-6xl tracking-widest drop-shadow-2xl">{trivia.teaser}</h3>
+                  <h3 className="text-4xl lg:text-5xl tracking-widest drop-shadow-2xl">{trivia.teaser}</h3>
                 ) : (
                   <>
-                    {trivia.title && <h3 className="text-2xl lg:text-3xl font-black text-white tracking-tight leading-tight mb-3 drop-shadow-lg">{trivia.title}</h3>}
-                    <p className="text-white/70 text-base lg:text-lg leading-relaxed font-medium">{trivia.teaser}</p>
+                    {trivia.title && <h3 className="text-lg lg:text-2xl font-black text-white tracking-tight leading-tight mb-2 drop-shadow-lg">{trivia.title}</h3>}
+                    <p className="text-white/70 text-sm lg:text-base leading-relaxed font-medium">{trivia.teaser}</p>
                   </>
                 )}
                 {error && <p className="text-sm text-red-400 mt-4 font-bold tracking-wide flex items-center gap-2"><X size={16} /> {error}</p>}
@@ -471,83 +471,82 @@ export const TriviaCinematicStage = ({
 
               {/* Interaction Area */}
               {!hasAnswered ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {choices.map((choice, idx) => (
                     <motion.button
                       key={idx}
-                      whileHover={{ scale: 1.02, x: 5 }}
+                      whileHover={{ scale: 1.01, x: 3 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => onAnswer(choice)}
                       disabled={answerLoading}
-                      className="group relative flex items-center p-4 lg:p-5 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md overflow-hidden transition-all hover:bg-white/10 hover:border-[#e8a000]/50 hover:shadow-[0_0_30px_rgba(232,160,0,0.15)] disabled:opacity-50 text-left"
+                      className="group relative flex items-center p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md overflow-hidden transition-all hover:bg-white/10 hover:border-[#e8a000]/50 hover:shadow-[0_0_20px_rgba(232,160,0,0.12)] disabled:opacity-50 text-left"
                     >
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-transparent group-hover:bg-[#e8a000] transition-colors" />
-                      <div className="w-8 h-8 shrink-0 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center mr-4 font-black text-xs text-white/40 group-hover:text-[#e8a000] group-hover:border-[#e8a000]/30 transition-all">
+                      <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-transparent group-hover:bg-[#e8a000] transition-colors" />
+                      <div className="w-7 h-7 shrink-0 rounded-md bg-black/40 border border-white/10 flex items-center justify-center mr-3 font-black text-[11px] text-white/40 group-hover:text-[#e8a000] group-hover:border-[#e8a000]/30 transition-all">
                         {ALPHABET[idx]}
                       </div>
-                      <span className="text-sm lg:text-base font-bold text-white/80 group-hover:text-white transition-colors">{choice}</span>
+                      <span className="text-xs lg:text-sm font-bold text-white/80 group-hover:text-white transition-colors">{choice}</span>
                     </motion.button>
                   ))}
                 </div>
               ) : (
                 /* Cinematic Results State */
-                <div className="space-y-6">
+                <div className="space-y-3">
                   <motion.div
-                    initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                    initial={{ scale: 0.95, opacity: 0, y: 12 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
-                    className={`relative overflow-hidden rounded-3xl p-6 lg:p-8 border flex flex-col justify-center shadow-2xl ${isCorrect ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'
+                    className={`relative overflow-hidden rounded-xl p-4 border flex flex-col justify-center shadow-lg ${isCorrect ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'
                       }`}
                   >
-                    <div className={`absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_100%_0%,${isCorrect ? '#10b981' : '#ef4444'},transparent_60%)]`} />
+                    <div className={`absolute inset-0 opacity-15 bg-[radial-gradient(circle_at_100%_0%,${isCorrect ? '#10b981' : '#ef4444'},transparent_60%)]`} />
 
-                    <div className="relative z-10 flex items-start gap-5">
-                      <div className={`w-14 h-14 shrink-0 rounded-2xl flex items-center justify-center shadow-2xl ${isCorrect ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
-                        {isCorrect ? <Flame size={28} className="animate-pulse" /> : <X size={28} strokeWidth={3} />}
+                    <div className="relative z-10 flex items-start gap-3">
+                      <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center ${isCorrect ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
+                        {isCorrect ? <Flame size={20} className="animate-pulse" /> : <X size={20} strokeWidth={3} />}
                       </div>
                       <div>
-                        <h4 className={`text-2xl lg:text-3xl font-black tracking-tighter uppercase mb-1 ${isCorrect ? 'text-emerald-400 drop-shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'text-red-400 drop-shadow-[0_0_10px_rgba(239,68,68,0.5)]'}`}>
+                        <h4 className={`text-lg lg:text-xl font-black tracking-tighter uppercase mb-0.5 ${isCorrect ? 'text-emerald-400' : 'text-red-400'}`}>
                           {isCorrect ? 'Target Hit!' : 'Target Missed!'}
                         </h4>
-                        <p className="text-white/70 font-medium text-sm lg:text-base">
+                        <p className="text-white/70 font-medium text-xs lg:text-sm">
                           {isCorrect ? (
-                            <span className="flex items-center gap-1.5">You secured <strong className="text-emerald-300">+{xpAwarded} XP</strong></span>
+                            <span className="flex items-center gap-1">You secured <strong className="text-emerald-300">+{xpAwarded} XP</strong></span>
                           ) : (
-                            <span>The correct intel was <strong className="text-white">{correctAnswer}</strong></span>
+                            <span>Correct: <strong className="text-white">{correctAnswer}</strong></span>
                           )}
                         </p>
                       </div>
                     </div>
 
                     {reveal && (
-                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="mt-6 pt-5 border-t border-white/10 flex gap-3">
-                        <Sparkles size={18} className="text-white/40 shrink-0" />
-                        <p className="text-white/60 text-sm leading-relaxed">{reveal}</p>
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="mt-3 pt-3 border-t border-white/10 flex gap-2">
+                        <Sparkles size={14} className="text-white/40 shrink-0 mt-0.5" />
+                        <p className="text-white/60 text-xs leading-relaxed">{reveal}</p>
                       </motion.div>
                     )}
                   </motion.div>
 
-                  {/* High-tech Action Bar */}
                   {countdown !== null && currentIndex < totalTrivias - 1 && (
-                    <div className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-                      <div className="flex items-center gap-4">
-                        <div className="relative w-10 h-10 flex items-center justify-center">
-                          <svg className="absolute inset-0 w-10 h-10 -rotate-90">
-                            <circle cx="20" cy="20" r="18" stroke="currentColor" strokeWidth="3" fill="none" className="text-white/10" />
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md">
+                      <div className="flex items-center gap-3">
+                        <div className="relative w-8 h-8 flex items-center justify-center">
+                          <svg className="absolute inset-0 w-8 h-8 -rotate-90">
+                            <circle cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="2.5" fill="none" className="text-white/10" />
                             <circle
-                              cx="20" cy="20" r="18" stroke="currentColor" strokeWidth="3" fill="none"
-                              strokeDasharray={113} strokeDashoffset={113 - (countdown / 10) * 113}
+                              cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="2.5" fill="none"
+                              strokeDasharray={88} strokeDashoffset={88 - (countdown / 10) * 88}
                               className="text-[#e8a000] transition-all duration-1000 ease-linear"
                             />
                           </svg>
-                          <span className="text-xs font-black text-white absolute">{countdown}</span>
+                          <span className="text-[10px] font-black text-white absolute">{countdown}</span>
                         </div>
-                        <span className="text-xs font-bold text-white/50 uppercase tracking-[0.2em]">Next Sequence</span>
+                        <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">Next</span>
                       </div>
                       <button
                         onClick={onSkip}
-                        className="group flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-white bg-white/10 hover:bg-white/20 px-5 py-3 rounded-xl transition-all active:scale-95"
+                        className="group flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-white bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition-all active:scale-95"
                       >
-                        Override <ChevronRight size={16} className="text-[#e8a000] group-hover:translate-x-1 transition-transform" />
+                        Skip <ChevronRight size={12} className="text-[#e8a000] group-hover:translate-x-0.5 transition-transform" />
                       </button>
                     </div>
                   )}
@@ -555,9 +554,9 @@ export const TriviaCinematicStage = ({
               )}
             </motion.div>
           ) : (
-            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center h-full py-20 text-center">
-              <Brain size={48} className="text-white/10 mb-4" />
-              <p className="text-white/40 text-lg font-bold tracking-wide uppercase">No Active Missions</p>
+            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center h-full py-12 text-center">
+              <Brain size={32} className="text-white/10 mb-3" />
+              <p className="text-white/40 text-sm font-bold tracking-wide uppercase">No Active Missions</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -577,113 +576,113 @@ export const MissionControlSidebar = ({ clip, polls, streamers }: { clip: ClipPo
     className="col-span-12 lg:col-span-5 flex flex-col gap-4 lg:gap-6"
   >
     {/* Top Widget: Featured Clip (Media Player Vibe) */}
-    <div className="relative rounded-[2rem] bg-white/5 border border-white/10 p-6 lg:p-8 overflow-hidden group hover:bg-white/[0.07] transition-all flex flex-col min-h-[250px]">
-      <div className="absolute -top-24 -right-24 w-48 h-48 bg-purple-500/20 rounded-full blur-[60px] pointer-events-none" />
+    <div className="relative rounded-xl bg-white/[0.04] border border-white/[0.08] p-4 overflow-hidden group hover:bg-white/[0.06] transition-all flex flex-col">
+      <div className="absolute -top-16 -right-16 w-36 h-36 bg-purple-500/15 rounded-full blur-[50px] pointer-events-none" />
 
-      <div className="flex items-center justify-between mb-6 relative z-10">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
-            <Film size={18} />
+      <div className="flex items-center justify-between mb-4 relative z-10">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400">
+            <Film size={14} />
           </div>
-          <span className="text-xs font-black tracking-[0.2em] uppercase text-white/50">Top intel clip</span>
+          <span className="text-[11px] font-black tracking-[0.15em] uppercase text-white/50">Top intel clip</span>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/20">
-          <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">Rec</span>
+        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20">
+          <div className="w-1 h-1 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider">Rec</span>
         </div>
       </div>
 
       <div className="relative z-10 flex-1 flex flex-col justify-center">
         {clip ? (
           <>
-            <h3 className="text-xl font-black text-white tracking-tight leading-tight mb-2 group-hover:text-purple-300 transition-colors">
+            <h3 className="text-sm font-black text-white tracking-tight leading-tight mb-1.5 group-hover:text-purple-300 transition-colors">
               {clip.title || 'Classified Footage'}
             </h3>
-            {clip.author?.ign && <p className="text-xs text-white/40 font-bold uppercase tracking-widest mb-4">By {clip.author.ign}</p>}
-            <p className="text-sm text-white/60 leading-relaxed line-clamp-2">{clip.content}</p>
+            {clip.author?.ign && <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest mb-2">By {clip.author.ign}</p>}
+            <p className="text-xs text-white/60 leading-relaxed line-clamp-2">{clip.content}</p>
           </>
         ) : (
-          <div className="text-center py-4">
-            <PlayCircle size={32} className="mx-auto text-white/20 mb-3" />
-            <h3 className="text-white/40 font-bold text-base">No Broadcasts</h3>
+          <div className="text-center py-3">
+            <PlayCircle size={24} className="mx-auto text-white/20 mb-2" />
+            <h3 className="text-white/40 font-bold text-xs">No Broadcasts</h3>
           </div>
         )}
       </div>
 
       <Link
         href="/community"
-        className="mt-6 flex items-center justify-between w-full p-4 rounded-xl bg-black/40 border border-white/5 hover:border-purple-500/30 hover:bg-purple-500/10 transition-all text-xs font-bold text-white uppercase tracking-widest relative z-10"
+        className="mt-4 flex items-center justify-between w-full p-3 rounded-lg bg-black/40 border border-white/5 hover:border-purple-500/30 hover:bg-purple-500/10 transition-all text-[11px] font-bold text-white uppercase tracking-widest relative z-10"
       >
-        Access Database <ChevronRight size={16} className="text-purple-400" />
+        Access Database <ChevronRight size={13} className="text-purple-400" />
       </Link>
     </div>
 
     {/* Bottom Widget: Live Hub (Streamers & Polls) */}
-    <div className="relative rounded-[2rem] bg-white/5 border border-white/10 p-6 lg:p-8 flex-1 flex flex-col overflow-hidden group hover:bg-white/[0.07] transition-all">
-      <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-500/20 rounded-full blur-[60px] pointer-events-none" />
+    <div className="relative rounded-xl bg-white/[0.04] border border-white/[0.08] p-4 flex-1 flex flex-col overflow-hidden group hover:bg-white/[0.06] transition-all">
+      <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-blue-500/15 rounded-full blur-[50px] pointer-events-none" />
 
       {/* Poll Section */}
-      <div className="relative z-10 mb-8">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
-            <BarChart3 size={18} />
+      <div className="relative z-10 mb-4">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
+            <BarChart3 size={14} />
           </div>
-          <span className="text-xs font-black tracking-[0.2em] uppercase text-white/50">Active Directive</span>
+          <span className="text-[11px] font-black tracking-[0.15em] uppercase text-white/50">Active Directive</span>
         </div>
-        <p className="text-base font-bold text-white/90 leading-snug mb-5">
+        <p className="text-sm font-bold text-white/90 leading-snug mb-3">
           {polls[0]?.question || 'Awaiting new community directives.'}
         </p>
         {polls[0] && (
           <Link
             href="/polls"
-            className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] px-5 py-3 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:text-white hover:bg-blue-500 hover:shadow-[0_0_20px_rgba(59,130,246,0.4)] transition-all"
+            className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:text-white hover:bg-blue-500 hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all"
           >
             Submit Vote
           </Link>
         )}
       </div>
 
-      <div className="w-full h-px bg-linear-to-r from-transparent via-white/10 to-transparent mb-6" />
+      <div className="w-full h-px bg-linear-to-r from-transparent via-white/10 to-transparent mb-4" />
 
       {/* Streamers Section */}
       <div className="relative z-10 flex-1">
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
-              <Radio size={18} />
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+              <Radio size={14} />
             </div>
-            <span className="text-xs font-black tracking-[0.2em] uppercase text-white/50">Live Operatives</span>
+            <span className="text-[11px] font-black tracking-[0.15em] uppercase text-white/50">Live Operatives</span>
           </div>
         </div>
 
         {streamers.length > 0 ? (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {streamers.slice(0, 3).map((s) => (
               <a
                 key={s.id}
                 href={s.profileUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center justify-between gap-4 p-3 rounded-2xl bg-black/40 border border-white/5 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all group/streamer"
+                className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-black/40 border border-white/5 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all group/streamer"
               >
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-linear-to-br from-white/10 to-transparent border border-white/10 flex items-center justify-center text-sm font-black text-white/80 uppercase shadow-inner group-hover/streamer:border-emerald-500/50 group-hover/streamer:text-emerald-400 transition-all">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-linear-to-br from-white/10 to-transparent border border-white/10 flex items-center justify-center text-xs font-black text-white/80 uppercase shadow-inner group-hover/streamer:border-emerald-500/50 group-hover/streamer:text-emerald-400 transition-all">
                     {s.name.charAt(0)}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-white font-bold text-sm truncate group-hover/streamer:text-emerald-300 transition-colors">
+                    <p className="text-white font-bold text-xs truncate group-hover/streamer:text-emerald-300 transition-colors">
                       {s.name}
                     </p>
-                    <p className="text-white/40 text-[10px] font-bold tracking-widest uppercase mt-0.5">{s.platform}</p>
+                    <p className="text-white/40 text-[9px] font-bold tracking-widest uppercase mt-0.5">{s.platform}</p>
                   </div>
                 </div>
-                <ExternalLink size={16} className="text-white/20 group-hover/streamer:text-emerald-400 shrink-0 transition-colors" />
+                <ExternalLink size={13} className="text-white/20 group-hover/streamer:text-emerald-400 shrink-0 transition-colors" />
               </a>
             ))}
           </div>
         ) : (
-          <div className="p-4 rounded-2xl bg-black/40 border border-white/5 text-center">
-            <p className="text-white/30 text-xs font-bold uppercase tracking-wider">No operatives currently deployed.</p>
+          <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-center">
+            <p className="text-white/30 text-[11px] font-bold uppercase tracking-wider">No operatives deployed.</p>
           </div>
         )}
       </div>
@@ -712,7 +711,7 @@ export function CommunityHighlights() {
   const inView = useInView(sectionRef, { once: true, margin: '-100px' })
 
   return (
-    <section ref={sectionRef} className="relative bg-[#020203] overflow-hidden py-16 lg:py-24">
+    <section ref={sectionRef} className="relative bg-[#020203] overflow-hidden py-10 lg:py-16">
       {/* ── Environment Design (Background) ── */}
       <div className="absolute inset-0 pointer-events-none">
         {/* Deep ambient glows */}
@@ -735,21 +734,21 @@ export function CommunityHighlights() {
           transition={{ duration: 0.6, ease: 'easeOut' }}
         >
           <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-px w-8 bg-[#e8a000]" />
-              <span className="text-[#e8a000] text-xs font-black tracking-[0.3em] uppercase">Comms Link Active</span>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="h-px w-6 bg-[#e8a000]" />
+              <span className="text-[#e8a000] text-[10px] font-black tracking-[0.25em] uppercase">Comms Link Active</span>
             </div>
-            <h2 className="text-white font-black text-4xl sm:text-5xl lg:text-6xl tracking-tighter uppercase">
+            <h2 className="text-white font-black text-2xl sm:text-3xl lg:text-4xl tracking-tighter uppercase">
               Community <span className="text-transparent bg-clip-text bg-linear-to-r from-white/40 to-white/10">Hub</span>
             </h2>
           </div>
           <Link
             href="/community"
-            className="group flex items-center gap-3 text-white bg-white/5 hover:bg-white/10 border border-white/10 px-6 py-4 rounded-2xl transition-all hover:scale-105 active:scale-95"
+            className="group flex items-center gap-2 text-white bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2.5 rounded-xl transition-all hover:scale-105 active:scale-95"
           >
-            <span className="text-xs font-black uppercase tracking-[0.2em]">Enter Hub</span>
-            <div className="w-8 h-8 rounded-full bg-[#e8a000]/20 flex items-center justify-center group-hover:bg-[#e8a000] group-hover:text-black transition-colors">
-              <ChevronRight size={16} />
+            <span className="text-[11px] font-black uppercase tracking-[0.15em]">Enter Hub</span>
+            <div className="w-6 h-6 rounded-full bg-[#e8a000]/20 flex items-center justify-center group-hover:bg-[#e8a000] group-hover:text-black transition-colors">
+              <ChevronRight size={13} />
             </div>
           </Link>
         </motion.div>

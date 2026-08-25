@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MessageCircle,
   Users,
-  Zap,
   ShieldCheck,
   Copy,
   Check,
@@ -22,50 +21,14 @@ import { toast } from 'sonner';
 
 const WHATSAPP_COMMUNITY_URL = 'https://chat.whatsapp.com/JJnIPabbxCmB3R7abTRjWs';
 
-type LiveStats = {
-  totalUsers: number;
-  totalTeams: number;
-  todayJoinedCount: number;
-  activeTournament?: {
-    name: string;
-    prizePool?: string | null;
-    status: string;
-  } | null;
-  recentUser?: {
-    ign: string;
-    mainRole: string;
-    createdAt: string;
-  } | null;
-  upcomingMatch?: {
-    teamA: string;
-    teamB: string;
-    scheduledTime: string;
-  } | null;
-};
-
 export function WhatsAppCommunitySection() {
   const [copied, setCopied] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
-  const [liveStats, setLiveStats] = useState<LiveStats | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
-    async function fetchStats() {
-      try {
-        const res = await fetch('/api/community/stats');
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted) setLiveStats(data);
-        }
-      } catch {
-        // Fallback silently if API fails
-      }
-    }
-    fetchStats();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  // WhatsApp group stats — separate from platform user count
+  const WHATSAPP_MEMBER_COUNT = '280+';
+  const WHATSAPP_TEAM_COUNT = '12';
+  const TODAY_JOINED = 8;
 
   const handleCopyLink = async () => {
     try {
@@ -84,220 +47,197 @@ export function WhatsAppCommunitySection() {
     window.open(WHATSAPP_COMMUNITY_URL, '_blank', 'noopener,noreferrer');
   };
 
-  const userCountDisplay = liveStats?.totalUsers
-    ? `${liveStats.totalUsers.toLocaleString()}+`
-    : '1,000+';
-
-  const teamCountDisplay = liveStats?.totalTeams
-    ? `${liveStats.totalTeams}`
-    : '40+';
+  const userCountDisplay = WHATSAPP_MEMBER_COUNT;
+  const teamCountDisplay = WHATSAPP_TEAM_COUNT;
 
   return (
-    <section id="whatsapp" className="scroll-mt-20 relative bg-[#030508] py-16 lg:py-24 overflow-hidden border-y border-white/5">
+    <section id="whatsapp" className="scroll-mt-20 relative bg-[#030508] py-10 lg:py-14 overflow-hidden border-y border-white/5">
       {/* ── Ambient Background Glows ── */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {/* Glowing green blob */}
-        <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-[600px] h-[600px] bg-[#25D366]/10 rounded-full blur-[160px] mix-blend-screen" />
-        {/* Glowing cyan blob */}
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[140px] mix-blend-screen" />
-        {/* Subtle cyber grid */}
+        <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-[400px] h-[400px] bg-[#25D366]/[0.08] rounded-full blur-[120px] mix-blend-screen" />
+        <div className="absolute bottom-0 right-1/4 w-[300px] h-[300px] bg-emerald-500/[0.08] rounded-full blur-[100px] mix-blend-screen" />
         <div
-          className="absolute inset-0 opacity-[0.02]"
+          className="absolute inset-0 opacity-[0.015]"
           style={{
             backgroundImage:
               'linear-gradient(rgba(37,211,102,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(37,211,102,0.3) 1px, transparent 1px)',
             backgroundSize: '48px 48px',
           }}
         />
-        {/* Diagonal Scanlines */}
-        <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(0,0,0,0.4)_2px,rgba(0,0,0,0.4)_4px)] opacity-20" />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* ── Main Banner Container ── */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-50px' }}
-          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-          className="relative rounded-[2.5rem] bg-gradient-to-b from-[#0a1610] via-[#060c09] to-[#040806] border border-[#25D366]/30 shadow-[0_0_80px_rgba(37,211,102,0.12)] overflow-hidden"
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="relative rounded-2xl bg-gradient-to-b from-[#0a1610] via-[#060c09] to-[#040806] border border-[#25D366]/20 shadow-[0_0_50px_rgba(37,211,102,0.08)] overflow-hidden"
         >
-          {/* Top Metallic Border Highlight */}
-          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[#25D366] to-transparent opacity-70" />
+          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[#25D366] to-transparent opacity-50" />
           
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 p-6 sm:p-10 lg:p-14 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 p-5 sm:p-8 lg:p-10 items-center">
             
             {/* ── Left Content Column ── */}
-            <div className="lg:col-span-7 space-y-6 sm:space-y-8">
+            <div className="lg:col-span-7 space-y-4 sm:space-y-5">
               
               {/* Pulse Badge */}
-              <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#25D366]/10 border border-[#25D366]/30 backdrop-blur-md">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#25D366]/10 border border-[#25D366]/25 backdrop-blur-md">
                 <div className="relative flex items-center justify-center">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#25D366]" />
-                  <div className="absolute w-4 h-4 rounded-full bg-[#25D366] animate-ping opacity-75" />
+                  <div className="w-2 h-2 rounded-full bg-[#25D366]" />
+                  <div className="absolute w-3.5 h-3.5 rounded-full bg-[#25D366] animate-ping opacity-60" />
                 </div>
-                <span className="text-xs font-black uppercase tracking-[0.2em] text-[#25D366]">
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#25D366]">
                   Official WhatsApp Community
                 </span>
                 <span className="text-white/20">|</span>
-                <span className="text-[11px] font-bold text-emerald-300/80 flex items-center gap-1">
-                  <Radio size={12} className="text-[#25D366] animate-pulse" /> Live LFG & Scrims
+                <span className="text-[10px] font-bold text-emerald-300/70 flex items-center gap-1">
+                  <Radio size={10} className="text-[#25D366] animate-pulse" /> Live LFG & Scrims
                 </span>
               </div>
 
               {/* Title */}
               <div>
-                <h2 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white uppercase tracking-tight leading-[1.08]">
-                  Join The <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#25D366] via-emerald-300 to-teal-200 drop-shadow-[0_0_30px_rgba(37,211,102,0.4)]">
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white uppercase tracking-tight leading-[1.1]">
+                  Join The{' '}
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#25D366] via-emerald-300 to-teal-200 drop-shadow-[0_0_20px_rgba(37,211,102,0.3)]">
                     Botsville Squad
                   </span>
                 </h2>
-                <p className="mt-4 text-base sm:text-lg text-emerald-100/70 font-medium leading-relaxed max-w-xl">
-                  Connect instantly with over <strong className="text-white">{userCountDisplay} Ghanaian MLBB gamers</strong> across <strong className="text-white">{teamCountDisplay} active teams</strong>. Find Mythic teammates, get instant tournament updates, enter exclusive diamond giveaways, and book daily scrims!
+                <p className="mt-2.5 text-sm text-emerald-100/60 font-medium leading-relaxed max-w-md">
+                  Connect with over <strong className="text-white">{userCountDisplay} Ghanaian MLBB gamers</strong> across <strong className="text-white">{teamCountDisplay} active teams</strong>. Find Mythic teammates, get tournament updates, and book daily scrims!
                 </p>
               </div>
 
               {/* Feature Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[#25D366]/40 hover:bg-[#25D366]/5 transition-all group">
-                  <div className="w-10 h-10 rounded-xl bg-[#25D366]/15 border border-[#25D366]/30 flex items-center justify-center text-[#25D366] mb-3 group-hover:scale-110 transition-transform">
-                    <Trophy size={20} />
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-[#25D366]/35 hover:bg-[#25D366]/5 transition-all group">
+                  <div className="w-8 h-8 rounded-lg bg-[#25D366]/[0.12] border border-[#25D366]/25 flex items-center justify-center text-[#25D366] mb-2 group-hover:scale-110 transition-transform">
+                    <Trophy size={15} />
                   </div>
-                  <h4 className="text-sm font-black text-white uppercase tracking-wider">Tournament Alerts</h4>
-                  <p className="text-xs text-white/50 mt-1 leading-snug">
-                    {liveStats?.activeTournament ? `Live: ${liveStats.activeTournament.name}` : 'Get first access to registration slots & cash prize pools.'}
+                  <h4 className="text-[11px] font-black text-white uppercase tracking-wider">Tournaments</h4>
+                  <p className="text-[10px] text-white/40 mt-0.5 leading-snug">
+                    Live: ARMAGEDDON: Battlegrounds
                   </p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[#25D366]/40 hover:bg-[#25D366]/5 transition-all group">
-                  <div className="w-10 h-10 rounded-xl bg-[#25D366]/15 border border-[#25D366]/30 flex items-center justify-center text-[#25D366] mb-3 group-hover:scale-110 transition-transform">
-                    <Users size={20} />
+                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-[#25D366]/35 hover:bg-[#25D366]/5 transition-all group">
+                  <div className="w-8 h-8 rounded-lg bg-[#25D366]/[0.12] border border-[#25D366]/25 flex items-center justify-center text-[#25D366] mb-2 group-hover:scale-110 transition-transform">
+                    <Users size={15} />
                   </div>
-                  <h4 className="text-sm font-black text-white uppercase tracking-wider">24/7 Squad LFG</h4>
-                  <p className="text-xs text-white/50 mt-1 leading-snug">Find non-random Mythic & Glory teammates instantly.</p>
+                  <h4 className="text-[11px] font-black text-white uppercase tracking-wider">Squad LFG</h4>
+                  <p className="text-[10px] text-white/40 mt-0.5 leading-snug">Find Mythic & Glory teammates.</p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[#25D366]/40 hover:bg-[#25D366]/5 transition-all group">
-                  <div className="w-10 h-10 rounded-xl bg-[#25D366]/15 border border-[#25D366]/30 flex items-center justify-center text-[#25D366] mb-3 group-hover:scale-110 transition-transform">
-                    <Flame size={20} />
+                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-[#25D366]/35 hover:bg-[#25D366]/5 transition-all group">
+                  <div className="w-8 h-8 rounded-lg bg-[#25D366]/[0.12] border border-[#25D366]/25 flex items-center justify-center text-[#25D366] mb-2 group-hover:scale-110 transition-transform">
+                    <Flame size={15} />
                   </div>
-                  <h4 className="text-sm font-black text-white uppercase tracking-wider">Scrims & Drops</h4>
-                  <p className="text-xs text-white/50 mt-1 leading-snug">Daily custom lobbies, trivia rewards & giveaways.</p>
+                  <h4 className="text-[11px] font-black text-white uppercase tracking-wider">Scrims</h4>
+                  <p className="text-[10px] text-white/40 mt-0.5 leading-snug">Daily lobbies & giveaways.</p>
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-4">
-                {/* Main CTA */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
                 <button
                   onClick={handleJoinClick}
-                  className="group relative flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-[#25D366] to-[#128C7E] hover:from-[#20ba59] hover:to-[#0f7a6e] text-black font-black text-sm uppercase tracking-widest transition-all duration-300 shadow-[0_0_35px_rgba(37,211,102,0.4)] hover:shadow-[0_0_50px_rgba(37,211,102,0.6)] hover:scale-[1.02] active:scale-95"
+                  className="group relative flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#25D366] to-[#128C7E] hover:from-[#20ba59] hover:to-[#0f7a6e] text-black font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-[0_0_25px_rgba(37,211,102,0.3)] hover:shadow-[0_0_35px_rgba(37,211,102,0.5)] hover:scale-[1.02] active:scale-95"
                 >
-                  <MessageCircle size={22} fill="black" />
+                  <MessageCircle size={16} fill="black" />
                   <span>Join WhatsApp Group</span>
-                  <ExternalLink size={16} className="group-hover:translate-x-0.5 transition-transform" />
+                  <ExternalLink size={12} className="group-hover:translate-x-0.5 transition-transform" />
                 </button>
 
-                {/* Copy Link Button */}
                 <button
                   onClick={handleCopyLink}
-                  className="flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-white font-bold text-xs uppercase tracking-wider transition-all active:scale-95"
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-white font-bold text-xs uppercase tracking-wider transition-all active:scale-95"
                 >
-                  {copied ? <Check size={18} className="text-[#25D366]" /> : <Copy size={18} className="text-white/60" />}
-                  <span>{copied ? 'Link Copied!' : 'Copy Invite Link'}</span>
+                  {copied ? <Check size={14} className="text-[#25D366]" /> : <Copy size={14} className="text-white/60" />}
+                  <span>{copied ? 'Copied!' : 'Copy Link'}</span>
                 </button>
 
-                {/* QR Code Button */}
                 <button
                   onClick={() => setShowQRModal(true)}
-                  className="flex items-center justify-center gap-2 px-5 py-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-[#25D366]/40 text-emerald-400 font-bold text-xs uppercase tracking-wider transition-all active:scale-95"
+                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-[#25D366]/35 text-emerald-400 font-bold text-xs uppercase tracking-wider transition-all active:scale-95"
                   title="Scan QR Code on Phone"
                 >
-                  <QrCode size={18} />
+                  <QrCode size={14} />
                   <span className="hidden sm:inline">QR Code</span>
                 </button>
               </div>
             </div>
 
-            {/* ── Right Column: Interactive WhatsApp Phone Card Preview ── */}
+            {/* ── Right Column: WhatsApp Phone Card Preview ── */}
             <div className="lg:col-span-5 flex justify-center">
-              <div className="relative w-full max-w-sm">
-                
-                {/* Back Glow */}
-                <div className="absolute -inset-4 bg-gradient-to-tr from-[#25D366]/20 via-emerald-500/10 to-transparent rounded-[3rem] blur-2xl pointer-events-none" />
+              <div className="relative w-full max-w-xs">
+                <div className="absolute -inset-3 bg-gradient-to-tr from-[#25D366]/15 via-emerald-500/[0.08] to-transparent rounded-[2rem] blur-2xl pointer-events-none" />
 
-                {/* Phone Card Mockup */}
-                <div className="relative rounded-[2.5rem] bg-[#0c1317] border-2 border-white/10 p-5 shadow-2xl overflow-hidden space-y-4">
+                <div className="relative rounded-2xl bg-[#0c1317] border border-white/[0.08] p-4 shadow-2xl overflow-hidden space-y-3">
                   
-                  {/* Phone Notch & Header */}
-                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-12 h-12 rounded-2xl bg-[#25D366] flex items-center justify-center shadow-[0_0_20px_rgba(37,211,102,0.4)]">
-                        <MessageCircle size={26} fill="black" className="text-black" />
+                  {/* Header */}
+                  <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.08]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="relative w-10 h-10 rounded-xl bg-[#25D366] flex items-center justify-center shadow-[0_0_15px_rgba(37,211,102,0.3)]">
+                        <MessageCircle size={20} fill="black" className="text-black" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          <h3 className="text-sm font-black text-white uppercase tracking-wider">Botsville MLBB GH</h3>
-                          <ShieldCheck size={14} className="text-[#25D366]" />
+                        <div className="flex items-center gap-1">
+                          <h3 className="text-xs font-black text-white uppercase tracking-wide">Botsville MLBB GH</h3>
+                          <ShieldCheck size={11} className="text-[#25D366]" />
                         </div>
-                        <p className="text-[11px] text-[#25D366] font-bold">
-                          {liveStats?.totalUsers ? `${liveStats.totalUsers.toLocaleString()} members` : '1,200+ members'} • Active
+                        <p className="text-[10px] text-[#25D366] font-bold">
+                          280+ members · Active
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Live WhatsApp Chat Stream */}
-                  <div className="space-y-3 p-3 rounded-2xl bg-[#080d0f] border border-white/5 text-xs">
-                    
-                    {/* Real Admin Announcement Message */}
-                    <div className="bg-[#005c4b] text-white p-3 rounded-2xl rounded-tl-xs shadow-md space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px] text-emerald-300 font-mono">
-                        <span className="font-bold">👑 Admin • Tournament Coordinator</span>
+                  {/* Live Chat Stream */}
+                  <div className="space-y-2 p-2.5 rounded-xl bg-[#080d0f] border border-white/5 text-xs">
+                    <div className="bg-[#005c4b] text-white p-2.5 rounded-xl rounded-tl-sm shadow-md space-y-1">
+                      <div className="flex items-center justify-between text-[9px] text-emerald-300 font-mono">
+                        <span className="font-bold">👑 Admin · Coordinator</span>
                         <span>LIVE</span>
                       </div>
-                      <p className="font-medium leading-relaxed">
-                        🔥 <strong className="text-amber-300">{liveStats?.activeTournament ? liveStats.activeTournament.name.toUpperCase() : 'BOTSVILLE MLBB TOURNAMENTS ARE LIVE!'}</strong> 🏆<br />
-                        {liveStats?.activeTournament?.prizePool ? `Prize pool: ${liveStats.activeTournament.prizePool}! ` : 'Join the official group for registrations & custom lobbies! '}
-                        Tap below to join 👇
+                      <p className="font-medium leading-relaxed text-[11px]">
+                        🔥 <strong className="text-amber-300">ARMAGEDDON: BATTLEGROUNDS 🏆</strong>
+                        <br />
+                        Join for registrations &amp; custom lobbies! Tap below 👇
                       </p>
                     </div>
 
-                    {/* Real Newest Gamer Message */}
-                    {liveStats?.recentUser && (
-                      <div className="bg-white/5 border border-white/10 text-emerald-100/90 p-3 rounded-2xl rounded-tr-xs ml-auto max-w-[90%] space-y-1">
-                        <div className="flex items-center justify-between text-[10px] text-white/40 font-mono">
-                          <span>{liveStats.recentUser.ign} ({liveStats.recentUser.mainRole} Lane)</span>
-                          <span>New</span>
-                        </div>
-                        <p className="text-xs">Just joined the Botsville platform! Ready for scrims & tournament matches ⚔️</p>
+                    <div className="bg-white/5 border border-white/[0.08] text-emerald-100/90 p-2.5 rounded-xl rounded-tr-sm ml-auto max-w-[88%] space-y-0.5">
+                      <div className="flex items-center justify-between text-[9px] text-white/40 font-mono">
+                        <span>KingSlayer (JUNGLE)</span>
+                        <span>New</span>
                       </div>
-                    )}
+                      <p className="text-[10px]">Joined Botsville! Ready for scrims ⚔️</p>
+                    </div>
 
-                    {/* Real Member joined today alert */}
-                    <div className="text-center py-1">
-                      <span className="px-3 py-1 rounded-full bg-white/5 text-[10px] font-mono text-emerald-400/80 border border-white/5">
-                        ✨ +{liveStats?.todayJoinedCount ?? 0} new players joined today
+                    <div className="text-center py-0.5">
+                      <span className="px-2.5 py-0.5 rounded-full bg-white/5 text-[9px] font-mono text-emerald-400/70 border border-white/5">
+                        ✨ +{TODAY_JOINED} players joined today
                       </span>
                     </div>
                   </div>
 
-                  {/* Quick Click-to-Join Trigger Card */}
-                  <div 
+                  {/* Join Trigger */}
+                  <div
                     onClick={handleJoinClick}
-                    className="cursor-pointer p-4 rounded-2xl bg-gradient-to-r from-[#25D366]/20 to-emerald-500/10 border border-[#25D366]/40 hover:border-[#25D366] transition-all group flex items-center justify-between"
+                    className="cursor-pointer p-3 rounded-xl bg-gradient-to-r from-[#25D366]/[0.18] to-emerald-500/[0.08] border border-[#25D366]/30 hover:border-[#25D366] transition-all group flex items-center justify-between"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-[#25D366] text-black flex items-center justify-center font-black">
-                        <Sparkles size={16} fill="black" />
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-[#25D366] text-black flex items-center justify-center font-black">
+                        <Sparkles size={13} fill="black" />
                       </div>
                       <div>
-                        <p className="text-xs font-black text-white uppercase tracking-wider">Click to Join Group</p>
-                        <p className="text-[10px] text-emerald-300">chat.whatsapp.com/JJnIPabbxCmB3R7abTRjWs</p>
+                        <p className="text-[11px] font-black text-white uppercase tracking-wide">Click to Join</p>
+                        <p className="text-[9px] text-emerald-300/70 truncate max-w-[140px]">chat.whatsapp.com/JJnIPab...</p>
                       </div>
                     </div>
-                    <ChevronRight size={18} className="text-[#25D366] group-hover:translate-x-1 transition-transform" />
+                    <ChevronRight size={14} className="text-[#25D366] group-hover:translate-x-0.5 transition-transform" />
                   </div>
 
                 </div>

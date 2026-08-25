@@ -93,7 +93,7 @@ const useRealtimeScrims = (category?: string) => {
       try {
         const query = category ? `&category=${category}` : '';
         // Fetch last 12 scrims
-        const response = await fetch(`/api/scrim-vault?limit=12${query}`, { cache: 'no-store' });
+        const response = await fetch(`/api/scrim-vault?limit=50${query}`, { cache: 'no-store' });
         if (!response.ok) return;
         const data = await response.json();
         const videos: ScrimVaultApiItem[] = Array.isArray(data?.videos) ? data.videos : [];
@@ -399,11 +399,22 @@ const AwardSlide = ({
 // ─── Desktop Exported Sections ────────────────────────────────
 export const ScrimVault = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [page, setPage] = useState(1);
   const scrims = useRealtimeScrims(selectedCategory);
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
 
+  const PAGE_SIZE = 6;
+  const totalPages = Math.max(1, Math.ceil(scrims.length / PAGE_SIZE));
+  const paged = scrims.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Reset to page 1 when category or data changes
+  const handleCategoryChange = (cat: string) => {
+    setSelectedCategory(cat);
+    setPage(1);
+  };
+
   return (
-    <section className="hidden lg:block bg-[#0d0d12] py-8">
+    <section className="hidden lg:block bg-[#0d0d12] py-6">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between mb-6">
           <SectionLabel>Scrim Vault</SectionLabel>
@@ -416,7 +427,7 @@ export const ScrimVault = () => {
             ].map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => setSelectedCategory(tab.key)}
+                onClick={() => handleCategoryChange(tab.key)}
                 className={`px-3 py-1 text-[10px] font-black uppercase tracking-wider transition-all duration-300 rounded ${
                   selectedCategory === tab.key
                     ? 'bg-[#e8a000] text-black shadow-[0_0_10px_rgba(232,160,0,0.2)]'
@@ -434,11 +445,50 @@ export const ScrimVault = () => {
             No videos available in this category.
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3">
-            {scrims.slice(0, 6).map(s => (
-              <DesktopScrimCard key={s.id} scrim={s} onPlay={(url) => setActiveVideoUrl(url)} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              {paged.map(s => (
+                <DesktopScrimCard key={s.id} scrim={s} onPlay={(url) => setActiveVideoUrl(url)} />
+              ))}
+            </div>
+
+            {/* Pagination bar */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-5 pt-4 border-t border-white/[0.06]">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded border border-white/10 text-white/50 hover:text-white hover:border-white/20 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
+                >
+                  <ChevronRight size={11} className="rotate-180" /> Prev
+                </button>
+
+                <div className="flex items-center gap-1.5">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
+                    <button
+                      key={n}
+                      onClick={() => setPage(n)}
+                      className={`w-6 h-6 text-[10px] font-black rounded transition-all ${
+                        n === page
+                          ? 'bg-[#e8a000] text-black shadow-[0_0_8px_rgba(232,160,0,0.3)]'
+                          : 'bg-white/5 border border-white/10 text-white/40 hover:text-white hover:border-white/20'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded border border-white/10 text-white/50 hover:text-white hover:border-white/20 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
+                >
+                  Next <ChevronRight size={11} />
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -475,19 +525,19 @@ export const BestRoleAwards = () => {
   const nominees = grouped[activeRoleKey] ?? [];
 
   return (
-    <section className="hidden lg:block bg-[#08080d] py-16 border-t border-white/10 relative overflow-hidden">
+    <section className="hidden lg:block bg-[#08080d] py-10 border-t border-white/10 relative overflow-hidden">
       {/* Background Decor Ambient */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-[#e8a000]/5 blur-[140px] pointer-events-none rounded-full" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Header Title */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="w-8 h-[2px] bg-[#e8a000]" />
               <span className="text-[#e8a000] text-[10px] font-black uppercase tracking-[0.4em]">Hall of Fame</span>
             </div>
-            <h2 className="text-4xl lg:text-5xl font-black uppercase tracking-tighter text-white">
+            <h2 className="text-2xl lg:text-3xl font-black uppercase tracking-tighter text-white">
               Best Role <span className="text-[#e8a000]">Awards</span>
             </h2>
           </div>
@@ -720,10 +770,22 @@ const MobileAwardsSlider = ({ grouped, season }: { grouped: AwardGrouped; season
 
 export const MobileScrimAndAwards = () => {
   const [activeCategory, setActiveCategory] = useState<string>('');
+  const [page, setPage] = useState(1);
   const scrims = useRealtimeScrims(activeCategory);
   const { season, grouped, loading } = useRoleNominees();
   const [videoOpen, setVideoOpen] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
+  const PAGE_SIZE = 4;
+  const featured = scrims.find(s => s.featured) || scrims[0];
+  const nonFeatured = scrims.filter(s => s.id !== featured?.id);
+  const totalPages = Math.max(1, Math.ceil(nonFeatured.length / PAGE_SIZE));
+  const pagedRest = nonFeatured.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const handleCategoryChange = (cat: string) => {
+    setActiveCategory(cat);
+    setPage(1);
+  };
 
   const openVideo = (url: string | null) => {
     if (!url) return;
@@ -735,9 +797,6 @@ export const MobileScrimAndAwards = () => {
     setVideoOpen(false);
     setVideoUrl(null);
   };
-
-  const featured = scrims.find(s => s.featured) || scrims[0];
-  const rest = scrims.filter(s => s.id !== featured?.id).slice(0, 3);
 
   return (
     <section className="lg:hidden bg-[#0d0d12] py-6">
@@ -753,7 +812,7 @@ export const MobileScrimAndAwards = () => {
             ].map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => setActiveCategory(tab.key)}
+                onClick={() => handleCategoryChange(tab.key)}
                 className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider transition-all duration-300 rounded whitespace-nowrap ${
                   activeCategory === tab.key
                     ? 'bg-[#e8a000] text-black shadow-[0_0_8px_rgba(232,160,0,0.2)]'
@@ -772,10 +831,38 @@ export const MobileScrimAndAwards = () => {
           </div>
         ) : (
           <>
-            <MobileFeaturedScrim scrim={featured} onPlay={openVideo} />
+            {/* Only show featured on page 1 */}
+            {page === 1 && <MobileFeaturedScrim scrim={featured} onPlay={openVideo} />}
+
             <div className="flex flex-col gap-3">
-              {rest.map((s, i) => <MobileScrimRow key={s.id} scrim={s} index={i} onPlay={openVideo} />)}
+              {pagedRest.map((s, i) => <MobileScrimRow key={s.id} scrim={s} index={i} onPlay={openVideo} />)}
             </div>
+
+            {/* Mobile Pagination */}
+            {(totalPages > 1 || page > 1) && (
+              <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/[0.06]">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded border border-white/10 text-white/50 hover:text-white hover:border-white/20 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
+                >
+                  <ChevronRight size={10} className="rotate-180" /> Prev
+                </button>
+
+                <span className="text-[10px] font-mono text-white/30">
+                  {page} / {totalPages}
+                  <span className="ml-1.5 text-[#e8a000]/60">· {scrims.length} videos</span>
+                </span>
+
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded border border-white/10 text-white/50 hover:text-white hover:border-white/20 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
+                >
+                  Next <ChevronRight size={10} />
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

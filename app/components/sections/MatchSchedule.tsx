@@ -545,21 +545,21 @@ export const MatchSchedule = () => {
   };
 
   return (
-    <section className="relative bg-[#050508] min-h-screen text-white py-12 lg:py-24 overflow-hidden">
+    <section className="relative bg-[#050508] text-white py-10 lg:py-16 overflow-hidden">
       {/* Background Decor */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[500px] bg-[#e8a000]/5 blur-[120px] rounded-full pointer-events-none" />
 
       <div className="max-w-6xl mx-auto px-4 relative z-10">
 
         {/* Header Section */}
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-16">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-8">
           <div>
-            <div className="flex items-center gap-3 mb-4">
-              <span className="w-12 h-[2px] bg-[#e8a000]" />
-              <span className="text-[#e8a000] text-[10px] font-black uppercase tracking-[0.5em]">Battle Log</span>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-8 h-[2px] bg-[#e8a000]" />
+              <span className="text-[#e8a000] text-[10px] font-black uppercase tracking-[0.4em]">Battle Log</span>
             </div>
-            <h2 className="text-5xl lg:text-7xl font-black uppercase tracking-tighter leading-[0.8]">
-              Tournament <br />
+            <h2 className="text-3xl lg:text-4xl font-black uppercase tracking-tighter leading-none">
+              Tournament{' '}
               <span className="text-outline-white text-transparent">Timeline</span>
             </h2>
           </div>
