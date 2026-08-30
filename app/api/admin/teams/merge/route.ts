@@ -55,12 +55,17 @@ export async function POST(req: NextRequest) {
       }
 
       // 2. Mark source team as INACTIVE (soft-delete behavior to preserve history)
+      const mergedSuffix = Date.now().toString(36);
+      const randomSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
       await tx.team.update({
         where: { id: sourceTeamId },
         data: {
           status: 'INACTIVE',
           isRecruiting: false,
-          deletedAt: new Date()
+          deletedAt: new Date(),
+          name: `${sourceTeam.name.trim()} [merged-${mergedSuffix}]`,
+          tag: `M${randomSuffix}`,
+          teamCode: null,
         }
       });
       

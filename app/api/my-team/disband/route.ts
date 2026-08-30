@@ -15,18 +15,24 @@ export async function DELETE(_request: NextRequest) {
         captainId: user.id,
         deletedAt: null,
       },
-      select: { id: true },
+      select: { id: true, name: true, tag: true },
     });
 
     if (!team) {
       return apiError("Team not found", 404);
     }
 
+    const disbandedSuffix = Date.now().toString(36);
+    const randomSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+
     await prisma.team.update({
       where: { id: team.id },
       data: {
         deletedAt: new Date(),
         status: TeamStatus.INACTIVE,
+        name: `${team.name.trim()} [disbanded-${disbandedSuffix}]`,
+        tag: `D${randomSuffix}`,
+        teamCode: null,
       },
     });
 

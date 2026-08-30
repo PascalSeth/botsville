@@ -20,7 +20,7 @@ export async function DELETE(
 
     const team = await prisma.team.findUnique({
       where: { id },
-      select: { id: true, name: true, deletedAt: true },
+      select: { id: true, name: true, tag: true, deletedAt: true },
     });
 
     if (!team) {
@@ -44,11 +44,17 @@ export async function DELETE(
       return apiSuccess({ message: "Team disbanded successfully" });
     }
 
+    const disbandedSuffix = Date.now().toString(36);
+    const randomSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+
     await prisma.team.update({
       where: { id },
       data: {
         deletedAt: new Date(),
         status: TeamStatus.INACTIVE,
+        name: `${team.name.trim()} [disbanded-${disbandedSuffix}]`,
+        tag: `D${randomSuffix}`,
+        teamCode: null,
       },
     });
 

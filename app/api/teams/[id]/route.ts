@@ -187,30 +187,44 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     const nameHistory: { oldName?: string; oldTag?: string } = {};
 
-    if (name !== undefined && name !== team.name) {
-      // Check if name is unique
-      const nameExists = await prisma.team.findUnique({
-        where: { name },
-      });
-      if (nameExists) {
-        return apiError("Team name already taken");
+    if (name !== undefined) {
+      const trimmedName = typeof name === "string" ? name.trim() : "";
+      if (trimmedName && trimmedName !== team.name) {
+        if (trimmedName.length < 3 || trimmedName.length > 50) {
+          return apiError("Team name must be 3-50 characters");
+        }
+        // Check if name is unique among active teams
+        const nameExists = await prisma.team.findFirst({
+          where: {
+            name: { equals: trimmedName, mode: "insensitive" },
+            id: { not: team.id },
+            deletedAt: null,
+          },
+        });
+        if (nameExists) {
+          return apiError("Team name already taken");
+        }
+        nameHistory.oldName = team.name;
+        updateData.name = trimmedName;
       }
-      nameHistory.oldName = team.name;
-      updateData.name = name;
     }
 
     if (tag !== undefined) {
-      const tagUpper = tag.toUpperCase();
-      if (tagUpper !== team.tag) {
-        // Check if tag is unique
-        const tagExists = await prisma.team.findUnique({
-          where: { tag: tagUpper },
+      const tagUpper = typeof tag === "string" ? tag.trim().toUpperCase() : "";
+      if (tagUpper && tagUpper !== team.tag) {
+        if (!isValidTeamTag(tagUpper)) {
+          return apiError("Team tag must be 3-5 uppercase alphanumeric characters");
+        }
+        // Check if tag is unique among active teams
+        const tagExists = await prisma.team.findFirst({
+          where: {
+            tag: { equals: tagUpper, mode: "insensitive" },
+            id: { not: team.id },
+            deletedAt: null,
+          },
         });
         if (tagExists) {
           return apiError("Team tag already taken");
-        }
-        if (!isValidTeamTag(tagUpper)) {
-          return apiError("Team tag must be 3-5 uppercase alphanumeric characters");
         }
         nameHistory.oldTag = team.tag;
         updateData.tag = tagUpper;

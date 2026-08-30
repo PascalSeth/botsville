@@ -174,17 +174,19 @@ export async function POST(request: NextRequest) {
     const user = await requireActiveUser();
     const body = await request.json();
     const { name, tag, region, color, logo, banner, isRecruiting } = body;
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    const trimmedTag = typeof tag === "string" ? tag.trim().toUpperCase() : "";
 
     // Validation
-    if (!name || !tag || !region) {
+    if (!trimmedName || !trimmedTag || !region) {
       return apiError("Name, tag, and region are required");
     }
 
-    if (name.length < 3 || name.length > 50) {
+    if (trimmedName.length < 3 || trimmedName.length > 50) {
       return apiError("Team name must be 3-50 characters");
     }
 
-    if (!isValidTeamTag(tag)) {
+    if (!isValidTeamTag(trimmedTag)) {
       return apiError("Team tag must be 3-5 uppercase alphanumeric characters");
     }
 
@@ -233,18 +235,23 @@ export async function POST(request: NextRequest) {
       return apiError(`You are already a player on ${existingPlayer.team.name}`);
     }
 
-    // Check if team name or tag already exists
-    const nameExists = await prisma.team.findUnique({
-      where: { name },
+    // Check if team name or tag already exists among active teams
+    const nameExists = await prisma.team.findFirst({
+      where: {
+        name: { equals: trimmedName, mode: "insensitive" },
+        deletedAt: null,
+      },
     });
 
     if (nameExists) {
       return apiError("Team name already taken");
     }
 
-    const tagUpper = tag.toUpperCase();
-    const tagExists = await prisma.team.findUnique({
-      where: { tag: tagUpper },
+    const tagExists = await prisma.team.findFirst({
+      where: {
+        tag: { equals: trimmedTag, mode: "insensitive" },
+        deletedAt: null,
+      },
     });
 
     if (tagExists) {
@@ -263,8 +270,8 @@ export async function POST(request: NextRequest) {
     const team = await prisma.$transaction(async (tx) => {
       const created = await tx.team.create({
         data: {
-          name,
-          tag: tagUpper,
+          name: trimmedName,
+          tag: trimmedTag,
           teamCode,
           region,
           color: color || null,
