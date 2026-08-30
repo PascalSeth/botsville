@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { UserCheck, UserPlus, Shield, Check, X, Loader2, Sparkles, Send, Users, Star, Trophy } from 'lucide-react';
+import { UserCheck, UserPlus, Shield, Check, X, Loader2, Sparkles, Send, Users, Star, Trophy, Copy, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface TeamInvite {
@@ -28,6 +28,7 @@ interface TeamRecruitmentViewProps {
   onAcceptInvite: (inviteId: string) => void;
   onDeclineInvite: (inviteId: string) => void;
   loadingInvites: boolean;
+  teamCode?: string | null;
 }
 
 const ROLES = [
@@ -46,8 +47,10 @@ export default function TeamRecruitmentView({
   onAcceptInvite,
   onDeclineInvite,
   loadingInvites,
+  teamCode,
 }: TeamRecruitmentViewProps) {
   const [selectedVacancies, setSelectedVacancies] = useState<string[]>(['JUNGLE', 'ROAM']);
+  const [copiedRecruitCode, setCopiedRecruitCode] = useState(false);
 
   const toggleRoleVacancy = (roleKey: string) => {
     setSelectedVacancies((prev) =>
@@ -58,6 +61,39 @@ export default function TeamRecruitmentView({
 
   return (
     <div className="space-y-8">
+      {/* Quick Direct Invite Banner */}
+      {teamCode && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-[#0f0f17] border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+              <Share2 size={18} />
+            </div>
+            <div>
+              <p className="text-white text-xs font-black uppercase tracking-wide">Direct Squad Access Code</p>
+              <p className="text-zinc-400 text-[11px] mt-0.5">
+                New recruits can enter this code during signup on Botsville to automatically join your squad roster.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 bg-black/60 border border-amber-500/30 px-4 py-2 rounded-xl shrink-0 self-start sm:self-auto">
+            <span className="text-zinc-400 text-[10px] uppercase font-bold">Code:</span>
+            <span className="text-amber-400 font-mono font-black text-sm tracking-widest">{teamCode}</span>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(teamCode);
+                setCopiedRecruitCode(true);
+                toast.success('Team Code copied! Share with new recruits.');
+                setTimeout(() => setCopiedRecruitCode(false), 2000);
+              }}
+              className="p-1 rounded hover:bg-white/10 text-zinc-300 transition-colors ml-1"
+              title="Copy Team Code"
+            >
+              {copiedRecruitCode ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Captain Recruitment Control Banner */}
       <div className="p-6 rounded-3xl bg-gradient-to-r from-[#12121a] via-[#0d0d15] to-[#07070c] border border-white/10 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-2">

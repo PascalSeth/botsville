@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, Shield, Save, Loader2, MapPin, Tag, UploadCloud, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Camera, Shield, Save, Loader2, MapPin, Tag, UploadCloud, Image as ImageIcon, Trash2, Copy, Check, Key } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Team {
@@ -34,6 +34,7 @@ export default function TeamSettingsView({
   const [region, setRegion] = useState(team.region || 'Accra');
   const [logoUrl, setLogoUrl] = useState(team.logo || '');
   const [bannerUrl, setBannerUrl] = useState(team.banner || '');
+  const [copiedCode, setCopiedCode] = useState(false);
   
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -135,6 +136,38 @@ export default function TeamSettingsView({
           <p className="text-zinc-400 text-xs mt-1">
             Update your squad name, clan tag, region, logo, and banner image.
           </p>
+        </div>
+
+        {/* ── Permanent Team Code Display ── */}
+        <div className="p-4 rounded-2xl bg-black/40 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <p className="text-white text-xs font-black uppercase tracking-wide flex items-center gap-1.5">
+              <Key size={14} className="text-amber-400" /> Permanent Team Code
+            </p>
+            <p className="text-zinc-400 text-[11px] mt-0.5">
+              Share this 6-character code with new recruits so they can enter it when signing up to automatically join your squad.
+            </p>
+          </div>
+          {team.teamCode ? (
+            <div className="flex items-center gap-2 bg-black/60 border border-amber-500/40 px-3.5 py-2 rounded-xl shrink-0 self-start sm:self-auto">
+              <span className="text-amber-400 font-mono font-black text-sm tracking-widest">{team.teamCode}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(team.teamCode || '');
+                  setCopiedCode(true);
+                  toast.success('Team Code copied to clipboard!');
+                  setTimeout(() => setCopiedCode(false), 2000);
+                }}
+                className="p-1 rounded hover:bg-white/10 text-zinc-300 transition-colors"
+                title="Copy Team Code"
+              >
+                {copiedCode ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+              </button>
+            </div>
+          ) : (
+            <span className="text-zinc-500 text-xs font-mono">Not Assigned</span>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">

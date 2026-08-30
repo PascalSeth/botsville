@@ -84,6 +84,7 @@ export default function MyTeamPage() {
   const [activeTab, setActiveTab] = useState<'roster' | 'recruitment' | 'challenges' | 'settings'>('roster');
 
   const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [copiedHeaderCode, setCopiedHeaderCode] = useState(false);
   const [generatingCode, setGeneratingCode] = useState(false);
   const [challenges, setChallenges] = useState<MatchChallenge[]>([]);
   const [loadingChallenges, setLoadingChallenges] = useState(false);
@@ -540,8 +541,26 @@ export default function MyTeamPage() {
               </div>
             </div>
 
-            {/* Quick Status Pill */}
-            <div className="flex items-center gap-3">
+            {/* Quick Status Pill & Team Code */}
+            <div className="flex flex-wrap items-center gap-3">
+              {team.teamCode && (
+                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-black/60 border border-amber-500/30 text-xs shadow-lg backdrop-blur-md">
+                  <span className="text-zinc-400 text-[10px] font-bold uppercase tracking-wider">Team Code:</span>
+                  <span className="text-amber-400 font-mono font-black tracking-widest text-sm">{team.teamCode}</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(team.teamCode || '');
+                      setCopiedHeaderCode(true);
+                      toast.success('Team Code copied! Share with new players to join during signup.');
+                      setTimeout(() => setCopiedHeaderCode(false), 2000);
+                    }}
+                    className="p-1 rounded hover:bg-white/10 text-zinc-300 transition-colors"
+                    title="Copy Team Code to share with new recruits"
+                  >
+                    {copiedHeaderCode ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  </button>
+                </div>
+              )}
               {isCaptain && (
                 <span className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
                   <Crown size={14} /> Team Captain
@@ -619,7 +638,7 @@ export default function MyTeamPage() {
                 onEditPlayer={handleEditPlayer}
                 onInvitePlayer={handleInvitePlayer}
                 onGenerateTeamCode={generateInviteCode}
-                teamCode={inviteCode}
+                teamCode={team.teamCode || inviteCode}
                 generatingCode={generatingCode}
                 invites={invites}
                 onCancelInvite={handleCancelInvite}
@@ -635,6 +654,7 @@ export default function MyTeamPage() {
                 onAcceptInvite={handleAcceptInvite}
                 onDeclineInvite={handleDeclineInvite}
                 loadingInvites={loadingInvites}
+                teamCode={team.teamCode}
               />
             )}
 

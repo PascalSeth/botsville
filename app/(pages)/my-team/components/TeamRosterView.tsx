@@ -194,11 +194,13 @@ export default function TeamRosterView({
   const starters = team.players.filter((p) => !p.isSubstitute);
   const substitutes = team.players.filter((p) => p.isSubstitute);
 
+  const displayCode = team.teamCode || teamCode;
+
   const handleCopyCode = () => {
-    if (!teamCode) return;
-    navigator.clipboard.writeText(teamCode);
+    if (!displayCode) return;
+    navigator.clipboard.writeText(displayCode);
     setCopiedCode(true);
-    toast.success('Team Invite Code copied to clipboard!');
+    toast.success('Team Code copied! Share with new players during signup.');
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
@@ -218,7 +220,7 @@ export default function TeamRosterView({
           </div>
         </div>
 
-        {/* Action Buttons: Leave Squad & Team Invite Code */}
+        {/* Action Buttons: Leave Squad & Team Code */}
         <div className="flex flex-wrap items-center gap-3">
           {currentUserPlayer && (
             <button
@@ -229,30 +231,29 @@ export default function TeamRosterView({
             </button>
           )}
 
-          {isCaptain && (
-            <div className="flex items-center gap-2">
-              {teamCode ? (
-                <div className="flex items-center gap-2 bg-black/60 border border-white/10 px-3.5 py-2 rounded-xl text-xs font-mono">
-                  <span className="text-zinc-400 text-[10px] font-sans uppercase font-bold">Invite Code:</span>
-                  <span className="text-amber-400 font-black tracking-widest">{teamCode}</span>
-                  <button
-                    onClick={handleCopyCode}
-                    className="p-1 rounded hover:bg-white/10 text-zinc-300 transition-colors"
-                  >
-                    {copiedCode ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                  </button>
-                </div>
-              ) : (
+          <div className="flex items-center gap-2">
+            {displayCode ? (
+              <div className="flex items-center gap-2 bg-black/60 border border-amber-500/30 px-3.5 py-2 rounded-xl text-xs font-mono">
+                <span className="text-zinc-400 text-[10px] font-sans uppercase font-bold">Team Code:</span>
+                <span className="text-amber-400 font-black tracking-widest text-sm">{displayCode}</span>
                 <button
-                  onClick={onGenerateTeamCode}
-                  disabled={generatingCode}
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider transition-all disabled:opacity-50"
+                  onClick={handleCopyCode}
+                  className="p-1 rounded hover:bg-white/10 text-zinc-300 transition-colors"
+                  title="Copy Team Code to share with new recruits"
                 >
-                  {generatingCode ? 'Generating...' : 'Get Invite Code'}
+                  {copiedCode ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
                 </button>
-              )}
-            </div>
-          )}
+              </div>
+            ) : isCaptain ? (
+              <button
+                onClick={onGenerateTeamCode}
+                disabled={generatingCode}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider transition-all disabled:opacity-50"
+              >
+                {generatingCode ? 'Generating...' : 'Get Team Code'}
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 

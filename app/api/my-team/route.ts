@@ -1,4 +1,4 @@
-import { requireActiveUser, apiError, apiSuccess } from "@/lib/api-utils";
+import { requireActiveUser, apiError, apiSuccess, generateUniqueTeamCode } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
 
 // GET - Get current user's team with full details
@@ -38,8 +38,17 @@ export async function GET() {
     });
 
     if (captainOf) {
+      let teamCode = captainOf.teamCode;
+      if (!teamCode) {
+        teamCode = await generateUniqueTeamCode();
+        await prisma.team.update({
+          where: { id: captainOf.id },
+          data: { teamCode },
+        });
+      }
       return apiSuccess({
         ...captainOf,
+        teamCode,
         isCaptain: true,
       });
     }
@@ -85,8 +94,17 @@ export async function GET() {
         await prisma.player.delete({ where: { id: playerRecord.id } });
         return apiSuccess(null);
       }
+      let teamCode = playerRecord.team.teamCode;
+      if (!teamCode) {
+        teamCode = await generateUniqueTeamCode();
+        await prisma.team.update({
+          where: { id: playerRecord.team.id },
+          data: { teamCode },
+        });
+      }
       return apiSuccess({
         ...playerRecord.team,
+        teamCode,
         isCaptain: playerRecord.team.captainId === user.id,
       });
     }

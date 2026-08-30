@@ -6,6 +6,7 @@ import {
   isValidTeamTag,
   isValidHexColor,
   isValidRegion,
+  generateUniqueTeamCode,
 } from "@/lib/api-utils";
 import { TeamStatus, MainRole, GameRole } from "@/app/generated/prisma/enums";
 import { cacheResult, invalidatePattern } from "@/lib/redis";
@@ -23,26 +24,6 @@ const ROLE_TO_GAME_ROLE: Record<MainRole, GameRole> = {
   GOLD: GameRole.GOLD,
   ROAM: GameRole.ROAM,
 };
-
-const TEAM_CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-function createTeamCode(length = 6): string {
-  let code = "";
-  for (let index = 0; index < length; index += 1) {
-    const charIndex = Math.floor(Math.random() * TEAM_CODE_CHARS.length);
-    code += TEAM_CODE_CHARS[charIndex];
-  }
-  return code;
-}
-
-async function generateUniqueTeamCode(): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const teamCode = createTeamCode(6);
-    const existing = await prisma.team.findUnique({ where: { teamCode } });
-    if (!existing) return teamCode;
-  }
-  throw new Error("Failed to generate unique team code");
-}
 
 // GET - List all teams
 export async function GET(request: NextRequest) {
