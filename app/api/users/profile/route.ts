@@ -182,6 +182,13 @@ export async function PUT(request: NextRequest) {
       },
     });
 
+    if (photo !== undefined) {
+      await prisma.player.updateMany({
+        where: { userId: user.id, deletedAt: null },
+        data: { photo: photo || null },
+      }).catch((err) => console.error("Sync player photo error:", err));
+    }
+
     await deleteFromCache(`user-session:${user.id}`);
 
     return apiSuccess(updated);

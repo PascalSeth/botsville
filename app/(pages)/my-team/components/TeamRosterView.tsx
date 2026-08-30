@@ -568,22 +568,22 @@ export default function TeamRosterView({
                     )}
                   </h5>
 
-                  {/* Controls for Captain — shown on every card including own */}
-                  {isCaptain && editingPlayerId !== player.id && (
+                  {/* Controls for Captain or Self */}
+                  {(isCaptain || isSelf) && editingPlayerId !== player.id && (
                     <div className="flex gap-1 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                       <button
                         onClick={() => {
                           setEditingPlayerId(player.id);
                           setEditRole(player.role);
                           setEditIsSub(player.isSubstitute);
-                          setEditPhotoUrl(player.photo || '');
+                          setEditPhotoUrl(player.photo || player.user?.photo || '');
                         }}
                         className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20 transition-all"
                       >
                         Edit
                       </button>
                       {/* Only show Remove for other players, not self */}
-                      {!isSelf && (
+                      {isCaptain && !isSelf && (
                         <button
                           onClick={() => setPlayerToRemove(player)}
                           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
@@ -596,10 +596,10 @@ export default function TeamRosterView({
                   )}
 
                   {/* Non-captain member's leave button */}
-                  {isSelf && !isCaptain && (
+                  {isSelf && !isCaptain && editingPlayerId !== player.id && (
                     <button
                       onClick={() => setShowLeaveModal(true)}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all mt-1"
                     >
                       <LogOut size={12} /> Leave Squad
                     </button>
@@ -762,20 +762,21 @@ export default function TeamRosterView({
                     )}
                   </h5>
 
-                  {isCaptain && editingPlayerId !== player.id && (
+                  {/* Controls for Captain or Self */}
+                  {(isCaptain || isSelf) && editingPlayerId !== player.id && (
                     <div className="flex gap-1 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                       <button
                         onClick={() => {
                           setEditingPlayerId(player.id);
                           setEditRole(player.role);
                           setEditIsSub(player.isSubstitute);
-                          setEditPhotoUrl(player.photo || '');
+                          setEditPhotoUrl(player.photo || player.user?.photo || '');
                         }}
                         className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20 transition-all"
                       >
                         Edit
                       </button>
-                      {!isSelf && (
+                      {isCaptain && !isSelf && (
                         <button
                           onClick={() => setPlayerToRemove(player)}
                           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
@@ -787,10 +788,10 @@ export default function TeamRosterView({
                     </div>
                   )}
 
-                  {isSelf && !isCaptain && (
+                  {isSelf && !isCaptain && editingPlayerId !== player.id && (
                     <button
                       onClick={() => setShowLeaveModal(true)}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all mt-1"
                     >
                       <LogOut size={12} /> Leave Squad
                     </button>

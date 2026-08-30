@@ -982,18 +982,19 @@ export default function RegisterTeamPage() {
     setForm(f => {
       const players = [...f.players];
       const userPhoto = (session.user as any).photo || null;
+      const currentImage = players[0].image && players[0].image !== userPhoto ? players[0].image : userPhoto;
       players[0] = {
         ...players[0],
         userId: session.user.id,
         inGameName: session.user.ign,
-        role: mappedRole as Role | '',
+        role: players[0].role || (mappedRole as Role | ''),
         userPhoto: userPhoto,
-        image: userPhoto || players[0].image,
+        image: currentImage,
         isVerified: true,
       };
       return { ...f, players };
     });
-  }, [session]);
+  }, [session?.user?.id, session?.user?.ign]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -1008,42 +1009,53 @@ export default function RegisterTeamPage() {
     }
 
     let cancelled = false;
-    (async () => {
-      try {
-        const resp = await fetch('/api/my-team');
-        if (!resp.ok) {
-          if (!cancelled) setHasTeam(false);
-          return;
-        }
-        const data = await resp.json();
-        const present = Boolean(data && (data.id || data.team || data.teamId || (Array.isArray(data.players) && data.players.length > 0)));
-        if (!cancelled) setHasTeam(present);
-      } catch {
-        if (!cancelled) setHasTeam(false);
-      }
-    })();
 
-    return () => { cancelled = true; };
+    // Check if user already belongs to an active team
+    fetch('/api/my-team')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (cancelled) return;
+        const belongsToTeam = Boolean(
+          data && (data.id || data.team || data.teamId || (Array.isArray(data.players) && data.players.length > 0))
+        );
+        setHasTeam(belongsToTeam);
+      })
+      .catch(() => {
+        if (!cancelled) setHasTeam(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [status]);
 
   const updatePlayer = (index: number, player: Player) => {
-    const players = [...form.players];
-    players[index] = player;
-    setForm(f => ({ ...f, players }));
+    setForm(f => {
+      const players = [...f.players];
+      players[index] = player;
+      return { ...f, players };
+    });
   };
 
   const addPlayer = () => {
     if (form.players.length >= 9) return;
-    setForm(f => ({ ...f, players: [...f.players, emptyPlayer()] }));
+    setForm(f => ({
+      ...f,
+      players: [...f.players, emptyPlayer()],
+    }));
   };
 
   const removePlayer = (index: number) => {
-    setForm(f => ({ ...f, players: f.players.filter((_, i) => i !== index) }));
+    if (form.players.length <= 5) return;
+    setForm(f => {
+      const players = f.players.filter((_, i) => i !== index);
+      return { ...f, players };
+    });
   };
 
   // Submit team registration to API
   const handleSubmit = async () => {
-    if (status !== 'authenticated') {
+    if (!session) {
       setShowAuthModal(true);
       return;
     }
@@ -1102,6 +1114,9 @@ export default function RegisterTeamPage() {
       );
 
       // Step 2: Create the team
+      const captainPhoto = playersWithUrls[0]?.imageUrl || form.players[0]?.userPhoto || undefined;
+      const captainRole = form.players[0]?.role ? form.players[0].role.toUpperCase() : undefined;
+
       const teamResponse = await fetch('/api/teams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1111,6 +1126,8 @@ export default function RegisterTeamPage() {
           region: form.region,
           logo: logoUrl,
           banner: bannerUrl,
+          captainPhoto,
+          captainRole,
         }),
       });
 

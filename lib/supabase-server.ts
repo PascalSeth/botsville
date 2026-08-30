@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-
 function getSupabaseAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
   if (!supabaseUrl) {
     throw new Error('NEXT_PUBLIC_SUPABASE_URL is not configured');
   }
@@ -26,6 +26,11 @@ export async function serverUploadBase64Image(
   path: string,
   base64Data: string
 ): Promise<{ url: string | null; error: Error | null }> {
+  // If it's already a valid HTTP URL, return it directly
+  if (base64Data.startsWith('http://') || base64Data.startsWith('https://')) {
+    return { url: base64Data, error: null };
+  }
+
   // Locate base64 marker
   const commaIndex = base64Data.indexOf(';base64,');
   if (commaIndex === -1) {
@@ -36,20 +41,16 @@ export async function serverUploadBase64Image(
   const base64 = base64Data.slice(commaIndex + 8); // Skip ";base64,"
 
   // Support both image/* and video/* MIME types
-  const prefixMatch = prefix.match(/^data:(image|video)\/(\w+)$/);
+  const prefixMatch = prefix.match(/^data:(image|video)\/([a-zA-Z0-9.+_-]+)/);
   if (!prefixMatch) {
     return { url: null, error: new Error('Invalid base64 image/video mime type') };
   }
 
-  const mimeType = prefixMatch[1];
-  const extension = prefixMatch[2] || 'png';
+  const mimeCategory = prefixMatch[1]; // image or video
+  const subType = prefixMatch[2].toLowerCase(); // jpeg, png, webp, svg+xml, etc.
+  const extension = subType === 'jpeg' ? 'jpg' : subType.split('+')[0];
 
-  const byteCharacters = atob(base64);
-  const byteArray = new Uint8Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteArray[i] = byteCharacters.charCodeAt(i);
-  }
-  const blob = new Blob([byteArray], { type: `${mimeType}/${extension}` });
+  const buffer = Buffer.from(base64, 'base64');
   const fullPath = `${path}.${extension}`;
 
   try {
@@ -57,8 +58,9 @@ export async function serverUploadBase64Image(
 
     const { data, error } = await supabaseAdmin.storage
       .from(bucket)
-      .upload(fullPath, blob, {
+      .upload(fullPath, buffer, {
         upsert: true,
+        contentType: `${mimeCategory}/${subType}`,
         cacheControl: '3600',
       });
 
@@ -72,3 +74,4 @@ export async function serverUploadBase64Image(
     return { url: null, error: error as Error };
   }
 }
+

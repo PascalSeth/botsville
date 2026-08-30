@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireActiveUser();
     const body = await request.json();
-    const { name, tag, region, color, logo, banner, isRecruiting } = body;
+    const { name, tag, region, color, logo, banner, isRecruiting, captainPhoto, captainRole } = body;
     const trimmedName = typeof name === "string" ? name.trim() : "";
     const trimmedTag = typeof tag === "string" ? tag.trim().toUpperCase() : "";
 
@@ -247,6 +247,15 @@ export async function POST(request: NextRequest) {
       select: { mainRole: true, ign: true, photo: true },
     });
 
+    let captainGameRole: GameRole = GameRole.MID;
+    if (captainRole && Object.values(GameRole).includes(captainRole as GameRole)) {
+      captainGameRole = captainRole as GameRole;
+    } else if (captainRecord?.mainRole && ROLE_TO_GAME_ROLE[captainRecord.mainRole]) {
+      captainGameRole = ROLE_TO_GAME_ROLE[captainRecord.mainRole];
+    }
+
+    const finalCaptainPhoto = (typeof captainPhoto === "string" && captainPhoto.trim()) ? captainPhoto.trim() : (captainRecord?.photo || null);
+
     // Create team + captain player record atomically
     const team = await prisma.$transaction(async (tx) => {
       const created = await tx.team.create({
@@ -273,37 +282,42 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Auto-create or restore a player record for the captain using their mainRole
-      if (captainRecord?.mainRole) {
-        const gameRole = ROLE_TO_GAME_ROLE[captainRecord.mainRole];
-        const existingPlayerRecord = await tx.player.findFirst({
-          where: { userId: user.id },
+      // Update captain user photo if newly provided
+      if (finalCaptainPhoto && finalCaptainPhoto !== captainRecord?.photo) {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { photo: finalCaptainPhoto },
         });
+      }
 
-        if (existingPlayerRecord) {
-          await tx.player.update({
-            where: { id: existingPlayerRecord.id },
-            data: {
-              teamId: created.id,
-              ign: captainRecord.ign,
-              role: gameRole,
-              photo: captainRecord.photo || null,
-              isSubstitute: false,
-              deletedAt: null, // restore it!
-            },
-          });
-        } else {
-          await tx.player.create({
-            data: {
-              teamId: created.id,
-              userId: user.id,
-              ign: captainRecord.ign,
-              role: gameRole,
-              photo: captainRecord.photo || null,
-              isSubstitute: false,
-            },
-          });
-        }
+      // Auto-create or restore a player record for the captain
+      const existingPlayerRecord = await tx.player.findFirst({
+        where: { userId: user.id },
+      });
+
+      if (existingPlayerRecord) {
+        await tx.player.update({
+          where: { id: existingPlayerRecord.id },
+          data: {
+            teamId: created.id,
+            ign: captainRecord?.ign || user.name || "Captain",
+            role: captainGameRole,
+            photo: finalCaptainPhoto,
+            isSubstitute: false,
+            deletedAt: null, // restore it!
+          },
+        });
+      } else {
+        await tx.player.create({
+          data: {
+            teamId: created.id,
+            userId: user.id,
+            ign: captainRecord?.ign || user.name || "Captain",
+            role: captainGameRole,
+            photo: finalCaptainPhoto,
+            isSubstitute: false,
+          },
+        });
       }
 
       return created;

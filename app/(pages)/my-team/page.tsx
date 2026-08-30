@@ -378,29 +378,8 @@ export default function MyTeamPage() {
     fetchChallenges();
   };
 
-  // ── Respond to Challenge ──────────────────────────────────
-  const handleRespondChallenge = async (challengeId: string, action: 'accept' | 'reject') => {
-    const res = await fetch(`/api/matches/challenges/${challengeId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
-    });
-    if (!res.ok) throw new Error('Failed to respond to challenge');
-    fetchChallenges();
-  };
-
-  // ── Update Squad Settings ─────────────────────────────────
-  const handleUpdateTeamSettings = async (updates: Partial<Team>) => {
-    if (!team) return;
-    const res = await fetch(`/api/teams/${team.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    setTeam((prev) => (prev ? { ...prev, ...updates } : prev));
-  };
-
   const [uploadingHeaderBanner, setUploadingHeaderBanner] = useState(false);
+  const [uploadingHeaderLogo, setUploadingHeaderLogo] = useState(false);
 
   const handleHeaderBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -431,6 +410,57 @@ export default function MyTeamPage() {
     }
   };
 
+  const handleHeaderLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !team) return;
+    setUploadingHeaderLogo(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const imageDataUrl = reader.result as string;
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: imageDataUrl, type: 'teams', bucket: 'images' }),
+        });
+        const data = await res.json();
+        if (res.ok && data.url) {
+          await handleUpdateTeamSettings({ logo: data.url });
+          toast.success('Squad logo updated!');
+        } else {
+          toast.error(data.error || 'Upload failed');
+        }
+        setUploadingHeaderLogo(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      toast.error('Upload failed');
+      setUploadingHeaderLogo(false);
+    }
+  };
+
+  // ── Respond to Challenge ──────────────────────────────────
+  const handleRespondChallenge = async (challengeId: string, action: 'accept' | 'reject') => {
+    const res = await fetch(`/api/matches/challenges/${challengeId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    if (!res.ok) throw new Error('Failed to respond to challenge');
+    fetchChallenges();
+  };
+
+  // ── Update Squad Settings ─────────────────────────────────
+  const handleUpdateTeamSettings = async (updates: Partial<Team>) => {
+    if (!team) return;
+    const res = await fetch(`/api/teams/${team.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    setTeam((prev) => (prev ? { ...prev, ...updates } : prev));
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#07070c] flex flex-col items-center justify-center pt-28 md:pt-36 text-center">
@@ -450,29 +480,26 @@ export default function MyTeamPage() {
           </div>
 
           <div className="space-y-3">
-            <span className="px-3.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest">
-              No Active Squad Found
-            </span>
-            <h1 className="text-4xl sm:text-5xl font-black uppercase tracking-tight text-white">
-              Join or Register Your Squad
+            <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
+              You Are Not in a Squad
             </h1>
             <p className="text-zinc-400 text-sm max-w-lg mx-auto leading-relaxed">
-              Compete in official tournaments, challenge rival teams in scrims, and climb the Ghana MLBB Squad Leaderboard!
+              Assemble your roster, register your clan tag, and compete in the national Botsville tournaments.
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+          <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
             <Link
               href="/register-team"
-              className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-amber-500/20"
+              className="px-8 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider text-xs shadow-xl shadow-amber-500/20 transition-all flex items-center gap-2"
             >
-              Register New Squad
+              <Users size={16} /> Register New Squad
             </Link>
             <Link
               href="/teams"
-              className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs font-black uppercase tracking-wider transition-all"
+              className="px-8 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-wider text-xs border border-white/10 transition-all flex items-center gap-2"
             >
-              Browse Squad Finder
+              <Swords size={16} /> Explore Active Teams
             </Link>
           </div>
         </div>
@@ -483,24 +510,26 @@ export default function MyTeamPage() {
   const isCaptain = Boolean(team.isCaptain);
 
   return (
-    <div className="min-h-screen bg-[#07070c] text-white pt-24 lg:pt-32 pb-20">
-      {/* ── Squad Header Banner ───────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
-        <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#0c0c14] shadow-2xl">
-          {/* Banner Image / Gradient */}
-          <div className="h-44 sm:h-52 w-full relative bg-gradient-to-r from-amber-950/40 via-purple-950/30 to-[#0c0c14] group">
-            {team.banner && (
-              <Image src={team.banner} alt={team.name} fill className="object-cover opacity-30" />
+    <div className="min-h-screen bg-[#07070c] text-white pt-24 pb-20">
+      {/* ── Squad Header Backdrop & Hero ───────────────────────── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-6">
+        <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#0d0d14] shadow-2xl">
+          {/* Cover Banner Backdrop */}
+          <div className="relative h-48 sm:h-64 w-full bg-gradient-to-r from-amber-950/40 via-zinc-900 to-black overflow-hidden group">
+            {team.banner ? (
+              <Image src={team.banner} alt={team.name} fill className="object-cover opacity-60" priority />
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-transparent to-amber-500/5" />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c14] via-[#0c0c14]/60 to-transparent" />
-            
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d14] via-[#0d0d14]/40 to-transparent" />
+
             {/* Captain Banner File Upload Button Overlay */}
             {isCaptain && (
-              <label className="absolute top-4 right-4 z-20 px-3.5 py-2 rounded-xl bg-black/60 hover:bg-black/80 border border-white/20 text-white text-xs font-bold uppercase tracking-wider cursor-pointer transition-all backdrop-blur-md flex items-center gap-2 shadow-xl group-hover:scale-105">
+              <label className="absolute top-4 right-4 z-20 px-3.5 py-2 rounded-xl bg-black/60 hover:bg-black/80 border border-white/15 text-white text-xs font-bold uppercase tracking-wider cursor-pointer backdrop-blur-md transition-all flex items-center gap-2">
                 {uploadingHeaderBanner ? (
                   <><Loader2 size={14} className="animate-spin text-amber-400" /> Uploading Banner...</>
                 ) : (
-                  <><Camera size={14} className="text-amber-400" /> Change Banner File</>
+                  <><Camera size={14} className="text-amber-400" /> Change Banner</>
                 )}
                 <input
                   type="file"
@@ -517,13 +546,32 @@ export default function MyTeamPage() {
           <div className="p-6 sm:p-8 -mt-16 sm:-mt-20 relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
             <div className="flex items-end gap-5">
               {/* Logo Avatar */}
-              <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden bg-zinc-900 border-2 border-white/20 shadow-2xl shrink-0">
+              <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden bg-zinc-900 border-2 border-white/20 shadow-2xl shrink-0 group">
                 {team.logo ? (
                   <Image src={team.logo} alt={team.name} fill className="object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-[#101018] text-amber-400 font-black text-2xl">
                     {team.tag}
                   </div>
+                )}
+                {isCaptain && (
+                  <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 cursor-pointer text-white">
+                    {uploadingHeaderLogo ? (
+                      <Loader2 size={18} className="animate-spin text-amber-400" />
+                    ) : (
+                      <>
+                        <Camera size={18} className="text-amber-400" />
+                        <span className="text-[9px] font-black uppercase">Change</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleHeaderLogoUpload}
+                      disabled={uploadingHeaderLogo}
+                    />
+                  </label>
                 )}
               </div>
 

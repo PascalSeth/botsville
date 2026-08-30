@@ -90,7 +90,15 @@ export async function PUT(
     }
 
     if (signatureHero !== undefined) updateData.signatureHero = signatureHero || null;
-    if (photo !== undefined) updateData.photo = photo || null;
+    if (photo !== undefined) {
+      updateData.photo = photo || null;
+      if (player.userId) {
+        await prisma.user.update({
+          where: { id: player.userId },
+          data: { photo: photo || null },
+        }).catch((err) => console.error("Sync user photo error:", err));
+      }
+    }
     if (realName !== undefined) updateData.realName = realName || null;
 
     // Handle isSubstitute toggle with validation
