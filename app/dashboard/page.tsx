@@ -15,9 +15,9 @@ export default async function DashboardOverviewPage() {
   const session = await auth();
   const [teamsCount, usersCount, tournamentsCount, activeSeason, recentNews] =
     await Promise.all([
-      prisma.team.count(),
+      prisma.team.count({ where: { deletedAt: null } }),
       prisma.user.count({ where: { deletedAt: null } }),
-      prisma.tournament.count(),
+      prisma.tournament.count({ where: { deletedAt: null } }),
       prisma.season.findFirst({
         where: { status: "ACTIVE" },
         select: { name: true, id: true },
