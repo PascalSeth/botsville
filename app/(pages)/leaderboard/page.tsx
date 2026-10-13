@@ -11,6 +11,7 @@ import {
   Loader2, Calendar, ChevronLeft, ChevronRight,
   ChevronDown, ChevronUp, Medal, Brain, ArrowRight
 } from 'lucide-react';
+import { optimizeImageUrl } from '@/lib/image-utils';
 
 // ── MLBB Role meta ─────────────────────────────────────────
 const ROLE_META: Record<string, { color: string; icon: React.ReactNode }> = {
@@ -224,7 +225,7 @@ export default function LeaderboardPage() {
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-12 h-12 md:w-16 md:h-16 rounded-full border-2 border-slate-400 p-1 relative">
                     {seasonStandings[1].team.logo ? (
-                      <img src={seasonStandings[1].team.logo} alt="" className="w-full h-full rounded-full object-cover" />
+                      <img src={optimizeImageUrl(seasonStandings[1].team.logo, { width: 120, quality: 80 })} alt="" className="w-full h-full rounded-full object-cover" />
                     ) : (
                       <div className="w-full h-full rounded-full bg-white/5 flex items-center justify-center text-[10px] font-black text-[#888]">{seasonStandings[1].team.tag?.slice(0,2)}</div>
                     )}
@@ -239,7 +240,7 @@ export default function LeaderboardPage() {
                   <Crown size={20} className="text-[#e8a000] animate-bounce" />
                   <div className="w-16 h-16 md:w-24 md:h-24 rounded-full border-4 border-[#e8a000] p-1.5 relative shadow-[0_0_30px_rgba(232,160,0,0.3)]">
                     {seasonStandings[0].team.logo ? (
-                      <img src={seasonStandings[0].team.logo} alt="" className="w-full h-full rounded-full object-cover" />
+                      <img src={optimizeImageUrl(seasonStandings[0].team.logo, { width: 160, quality: 80 })} alt="" className="w-full h-full rounded-full object-cover" />
                     ) : (
                       <div className="w-full h-full rounded-full bg-[#e8a000]/10 flex items-center justify-center text-sm font-black text-[#e8a000]">{seasonStandings[0].team.tag?.slice(0,2)}</div>
                     )}
@@ -253,7 +254,7 @@ export default function LeaderboardPage() {
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-12 h-12 md:w-16 md:h-16 rounded-full border-2 border-amber-700 p-1 relative">
                     {seasonStandings[2].team.logo ? (
-                      <img src={seasonStandings[2].team.logo} alt="" className="w-full h-full rounded-full object-cover" />
+                      <img src={optimizeImageUrl(seasonStandings[2].team.logo, { width: 120, quality: 80 })} alt="" className="w-full h-full rounded-full object-cover" />
                     ) : (
                       <div className="w-full h-full rounded-full bg-white/5 flex items-center justify-center text-[10px] font-black text-amber-700">{seasonStandings[2].team.tag?.slice(0,2)}</div>
                     )}
@@ -367,7 +368,7 @@ export default function LeaderboardPage() {
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-white/5 p-1 border border-white/10 flex-shrink-0 overflow-hidden flex items-center justify-center">
                           {s.team.logo ? (
-                            <img src={s.team.logo} alt={s.team.tag} className="w-full h-full object-cover rounded" />
+                            <img src={optimizeImageUrl(s.team.logo, { width: 100, quality: 80 })} alt={s.team.tag} className="w-full h-full object-cover rounded" />
                           ) : (
                             <span className="text-[10px] font-black text-[#555]">{s.team.tag?.slice(0,2)}</span>
                           )}

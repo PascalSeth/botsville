@@ -17,6 +17,7 @@ import {
   Globe,
 } from "lucide-react";
 import { dashboardFetch } from "../../lib/api";
+import { fileToCompressedDataUrl } from "@/lib/supabase";
 
 type SeasonOption = {
   id: string;
@@ -81,14 +82,7 @@ const FORMAT_OPTIONS: {
   },
 ];
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (err) => reject(err);
-    reader.readAsDataURL(file);
-  });
-}
+const fileToDataUrl = (file: File) => fileToCompressedDataUrl(file);
 
 async function uploadImageFile(file: File): Promise<string> {
   const dataUrl = await fileToDataUrl(file);

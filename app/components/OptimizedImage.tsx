@@ -1,4 +1,6 @@
-import Image from 'next/image';
+'use client';
+
+import { useState } from 'react';
 import { optimizeImageUrl } from '@/lib/image-utils';
 
 interface OptimizedImageProps {
@@ -13,11 +15,12 @@ interface OptimizedImageProps {
   objectFit?: 'cover' | 'contain' | 'fill' | 'scale-down';
   objectPosition?: string;
   priority?: boolean;
+  fallbackSrc?: string;
 }
 
 /**
- * Wrapper around Next.js Image component that auto-optimizes URLs
- * Significantly reduces cache egress for hero and player images
+ * Optimized image component that routes through wsrv.nl CDN
+ * and handles fallback if origin image is unavailable.
  */
 export function OptimizedImage({
   src,
@@ -27,16 +30,24 @@ export function OptimizedImage({
   quality = 80,
   className,
   style,
-  fill = false,
   objectFit = 'cover',
   objectPosition = 'center',
   priority = false,
+  fallbackSrc = '/heroes/stun.png',
 }: OptimizedImageProps) {
+  const [hasError, setHasError] = useState(false);
+
   if (!src) {
-    return <div className={className} style={style} />;
+    return (
+      <div
+        className={`${className} bg-neutral-900/60`}
+        style={style}
+      />
+    );
   }
 
-  const optimizedSrc = optimizeImageUrl(src, { width, height, quality });
+  const imageToLoad = hasError ? fallbackSrc : src;
+  const optimizedSrc = optimizeImageUrl(imageToLoad, { width, height, quality });
 
   return (
     <img
@@ -49,6 +60,9 @@ export function OptimizedImage({
         objectPosition,
       }}
       loading={priority ? 'eager' : 'lazy'}
+      onError={() => {
+        if (!hasError) setHasError(true);
+      }}
     />
   );
 }
@@ -61,21 +75,30 @@ export function HeroBannerImage({
   alt,
   className,
   style,
+  fallbackSrc = '/stunchou.png',
 }: {
   src: string | null | undefined;
   alt: string;
   className?: string;
   style?: React.CSSProperties;
+  fallbackSrc?: string;
 }) {
+  const [hasError, setHasError] = useState(false);
+
   if (!src) {
-    return <div className={className} style={style} />;
+    return (
+      <div
+        className={`${className} bg-gradient-to-b from-[#0a0d14] to-[#020408]`}
+        style={style}
+      />
+    );
   }
 
-  const optimizedSrc = optimizeImageUrl(src, {
+  const imageToLoad = hasError ? fallbackSrc : src;
+  const optimizedSrc = optimizeImageUrl(imageToLoad, {
     width: 1920,
     height: 1080,
     quality: 75,
-    format: 'webp',
   });
 
   return (
@@ -85,6 +108,9 @@ export function HeroBannerImage({
       className={className}
       style={{ ...style, objectFit: 'cover' }}
       loading="lazy"
+      onError={() => {
+        if (!hasError) setHasError(true);
+      }}
     />
   );
 }
@@ -103,20 +129,24 @@ export function PlayerAvatar({
   className?: string;
   size?: number;
 }) {
-  if (!src) {
+  const [hasError, setHasError] = useState(false);
+
+  if (!src || hasError) {
+    const initial = (alt || 'P').charAt(0).toUpperCase();
     return (
       <div
-        className={`${className} rounded-full bg-gray-700`}
-        style={{ width: size, height: size }}
-      />
+        className={`${className} rounded-full bg-neutral-800 border border-white/10 flex items-center justify-center font-bold text-white/70 select-none`}
+        style={{ width: size, height: size, fontSize: Math.max(12, Math.floor(size * 0.4)) }}
+      >
+        {initial}
+      </div>
     );
   }
 
   const optimizedSrc = optimizeImageUrl(src, {
-    width: size,
-    height: size,
+    width: size * 2, // 2x for retina displays
+    height: size * 2,
     quality: 85,
-    format: 'webp',
   });
 
   return (
@@ -126,6 +156,7 @@ export function PlayerAvatar({
       className={`${className} rounded-full`}
       style={{ width: size, height: size, objectFit: 'cover' }}
       loading="lazy"
+      onError={() => setHasError(true)}
     />
   );
 }

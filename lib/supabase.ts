@@ -23,6 +23,91 @@ export const STORAGE_BUCKETS = {
   VIDEOS: 'videos',
 } as const;
 
+/**
+ * Automatically compress an image in the browser using HTML Canvas before upload
+ * Resizes down to max 1600x1600 and compresses to save bandwidth and storage.
+ */
+export async function compressImageClient(
+  file: File | Blob,
+  maxWidth = 1600,
+  maxHeight = 1600,
+  quality = 0.82
+): Promise<File | Blob> {
+  if (typeof window === 'undefined') return file;
+  if (!file.type || !file.type.startsWith('image/')) return file;
+  // Skip SVGs and GIFs to preserve vector scalability and animations
+  if (file.type.includes('svg') || file.type.includes('gif')) return file;
+  // Skip if already tiny (< 100 KB)
+  if (file.size < 100 * 1024) return file;
+
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(file);
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        canvas.toBlob(
+          (blob) => {
+            if (blob && blob.size < file.size) {
+              if (file instanceof File) {
+                resolve(new File([blob], file.name, { type: blob.type }));
+              } else {
+                resolve(blob);
+              }
+            } else {
+              resolve(file);
+            }
+          },
+          outputType,
+          quality
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      };
+      img.src = url;
+    } catch {
+      resolve(file);
+    }
+  });
+}
+
+/**
+ * Convert a File to a compressed base64 data URL before posting to /api/upload
+ * Greatly speeds up upload and prevents 413 Payload Too Large errors.
+ */
+export async function fileToCompressedDataUrl(
+  file: File,
+  maxWidth = 1600,
+  maxHeight = 1600,
+  quality = 0.82
+): Promise<string> {
+  const compressed = await compressImageClient(file, maxWidth, maxHeight, quality);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(compressed);
+  });
+}
+
 // Helper function to upload an image to Supabase storage
 export async function uploadImage(
   bucket: string,
@@ -31,13 +116,20 @@ export async function uploadImage(
   options?: { upsert?: boolean }
 ): Promise<{ url: string | null; error: Error | null }> {
   try {
-    console.log('[Supabase] Uploading to bucket:', bucket, 'path:', path);
+    const uploadFile = await compressImageClient(file);
+    console.log(
+      '[Supabase] Uploading to bucket:',
+      bucket,
+      'path:',
+      path,
+      `size: ${(uploadFile.size / 1024).toFixed(1)} KB`
+    );
     
     const { data, error } = await supabase.storage
       .from(bucket)
-      .upload(path, file, {
+      .upload(path, uploadFile, {
         upsert: options?.upsert ?? false,
-        cacheControl: '3600',
+        cacheControl: '31536000, immutable',
       });
 
     if (error) {

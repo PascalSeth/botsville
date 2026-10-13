@@ -5,6 +5,7 @@ import { Loader2, UploadCloud, Users, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { fileToCompressedDataUrl } from "@/lib/supabase";
 
 type EventTeam = {
   id: string;
@@ -53,13 +54,7 @@ export default function EventRegistrationPage() {
     loadData();
   }, [loadData]);
 
-  const fileToDataUrl = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  const fileToDataUrl = (file: File) => fileToCompressedDataUrl(file);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

@@ -5,7 +5,8 @@ const nextConfig: NextConfig = {
   assetPrefix: process.env.NODE_ENV === 'production' ? undefined : undefined,
   
   images: {
-    unoptimized: true,
+    loader: 'custom',
+    loaderFile: './lib/image-loader.ts',
     remotePatterns: [
       {
         protocol: 'https',
@@ -14,6 +15,10 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'dhsfknqqldrfztywhmsq.supabase.co',
+      },
+      {
+        protocol: 'https',
+        hostname: 'wsrv.nl',
       },
       {
         protocol: 'https',

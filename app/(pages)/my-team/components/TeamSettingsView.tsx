@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Camera, Shield, Save, Loader2, MapPin, Tag, UploadCloud, Image as ImageIcon, Trash2, Copy, Check, Key } from 'lucide-react';
 import { toast } from 'sonner';
+import { fileToCompressedDataUrl } from '@/lib/supabase';
 
 interface Team {
   id: string;
@@ -40,13 +41,7 @@ export default function TeamSettingsView({
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
 
-  const fileToDataUrl = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  const fileToDataUrl = (file: File) => fileToCompressedDataUrl(file);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { Upload, Image as ImageIcon, Trash2, Calendar, Shield, Swords, Sparkles, Check, AlertCircle } from 'lucide-react';
 
 import { useRoleGuard } from '../lib/useRole';
+import { fileToCompressedDataUrl } from '@/lib/supabase';
 
 interface TeamItem {
   id: string;
@@ -96,19 +97,7 @@ export default function MatchFlyersDashboard() {
     setSuccessMsg('');
   };
 
-  const fileToDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          resolve(reader.result);
-          return;
-        }
-        reject(new Error('Failed to read file'));
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsDataURL(file);
-    });
+  const fileToDataUrl = (file: File): Promise<string> => fileToCompressedDataUrl(file);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];

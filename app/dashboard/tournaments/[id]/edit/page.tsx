@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { dashboardFetch } from "../../../lib/api";
+import { fileToCompressedDataUrl } from "@/lib/supabase";
 
 type Season = { id: string; name: string; status: string };
 
@@ -117,19 +118,7 @@ export default function EditTournamentPage() {
       : 0;
   }, [numGroups, teamsPerGroup, matchesPerTeam]);
 
-  const fileToDataUrl = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          resolve(reader.result);
-          return;
-        }
-        reject(new Error("Failed to read image file"));
-      };
-      reader.onerror = () => reject(new Error("Failed to read image file"));
-      reader.readAsDataURL(file);
-    });
+  const fileToDataUrl = (file: File) => fileToCompressedDataUrl(file);
 
   const uploadImage = async (file: File): Promise<string> => {
     const imageDataUrl = await fileToDataUrl(file);

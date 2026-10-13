@@ -30,6 +30,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { motion, AnimatePresence } from "framer-motion";
+import { optimizeImageUrl } from '@/lib/image-utils';
 
 type Standing = {
   rank: number;
@@ -269,7 +270,7 @@ const RegisterModal = ({ t: tournament, onClose }: { t: Tournament; onClose: () 
         <div className="relative h-48 shrink-0 overflow-hidden bg-gradient-to-br from-gray-900 via-purple-950 to-black">
           {(tournament.banner || tournament.heroImage || tournament.image) && (
             <img
-              src={tournament.banner || tournament.heroImage || tournament.image || ''}
+              src={optimizeImageUrl(tournament.banner || tournament.heroImage || tournament.image, { width: 1200, quality: 75 })}
               alt=""
               className="w-full h-full object-cover brightness-[0.3]"
             />
@@ -636,7 +637,7 @@ export default function PublicTournamentDetailPage() {
       <div className="relative h-[440px] w-full overflow-hidden bg-gradient-to-br from-gray-900 via-purple-950 to-black border-b border-white/10">
         {(tournament.banner || tournament.heroImage || tournament.image) && (
           <img
-            src={tournament.banner || tournament.heroImage || tournament.image || ''}
+            src={optimizeImageUrl(tournament.banner || tournament.heroImage || tournament.image, { width: 1400, quality: 75 })}
             alt=""
             className="w-full h-full object-cover opacity-50 transition-all duration-700"
           />

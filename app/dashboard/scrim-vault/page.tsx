@@ -580,7 +580,7 @@ export default function DashboardScrimVaultPage() {
                             </button>
                           </div>
                         ) : (
-                          <video src={v.videoUrl} controls preload="metadata" className="w-full h-full object-cover" />
+                          <video src={v.videoUrl} controls preload="none" className="w-full h-full object-cover" />
                         )}
                       </div>
                     </td>

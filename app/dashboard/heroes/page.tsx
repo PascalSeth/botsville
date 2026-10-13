@@ -2,6 +2,7 @@
 
 
 import { useRoleGuard } from "../lib/useRole";
+import { fileToCompressedDataUrl } from "@/lib/supabase";
 /* eslint-disable @next/next/no-img-element */
 
 import { FormEvent, useEffect, useState } from "react";
@@ -61,19 +62,7 @@ export default function DashboardHeroesPage() {
     load().catch(() => undefined);
   }, []);
 
-  const fileToDataUrl = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          resolve(reader.result);
-          return;
-        }
-        reject(new Error("Failed to read image file"));
-      };
-      reader.onerror = () => reject(new Error("Failed to read image file"));
-      reader.readAsDataURL(file);
-    });
+  const fileToDataUrl = (file: File) => fileToCompressedDataUrl(file);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

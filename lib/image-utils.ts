@@ -22,16 +22,28 @@ export function optimizeImageUrl(
   }
 
   const width = options?.width || 800;
-  const height = options?.height || 600;
+  const height = options?.height;
   const quality = options?.quality || 80;
-  const format = options?.format || 'auto';
 
-  // If using Supabase Storage, append transform params
+  // If using Supabase Storage, route through wsrv.nl edge CDN
   if (imageUrl.includes('supabase.co')) {
-    return `${imageUrl}?width=${width}&height=${height}&quality=${quality}&format=${format}`;
+    // Skip video formats since wsrv.nl is for images
+    if (/\.(mp4|webm|mov|mkv|avi)(\?.*)?$/i.test(imageUrl)) {
+      return imageUrl;
+    }
+
+    // Strip any existing query params to ensure clean origin URL
+    const cleanUrl = imageUrl.split('?')[0];
+    const encodedOrigin = encodeURIComponent(cleanUrl);
+
+    let wsrvUrl = `https://wsrv.nl/?url=${encodedOrigin}&w=${width}&q=${quality}&output=webp&we=1&maxage=1y`;
+    if (height) {
+      wsrvUrl += `&h=${height}&fit=cover`;
+    }
+    return wsrvUrl;
   }
 
-  // For other URLs, return as-is (can add imgproxy if needed later)
+  // For other URLs, return as-is
   return imageUrl;
 }
 
@@ -97,3 +109,63 @@ export function getResponsiveSrcSet(baseUrl: string | null | undefined): string 
     `${optimizeImageUrl(baseUrl, { width: 1920, quality: 75 })} 1920w`,
   ].join(', ');
 }
+
+/**
+ * Compress an image File or Blob in the browser using HTML5 Canvas.
+ * Reduces 5MB-10MB camera/phone photos to ~50KB-120KB WebP before upload.
+ */
+export async function compressImageFile(
+  file: File | Blob,
+  maxWidth = 1200,
+  maxHeight = 1200,
+  quality = 0.8
+): Promise<{ blob: Blob; base64: string }> {
+  return new Promise((resolve, reject) => {
+    // If not running in browser (e.g. SSR), fallback
+    if (typeof window === 'undefined') {
+      return reject(new Error('compressImageFile can only be called in browser environment'));
+    }
+
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          return reject(new Error('Canvas 2D context not available'));
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const compressedBase64 = canvas.toDataURL('image/webp', quality);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve({ blob, base64: compressedBase64 });
+            } else {
+              reject(new Error('Failed to create Blob from canvas'));
+            }
+          },
+          'image/webp',
+          quality
+        );
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+

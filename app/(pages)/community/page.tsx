@@ -300,7 +300,7 @@ const PostCard = ({ post, onReact, reactionLoadingId, currentUserId, editingPost
       {post.mediaUrl && (
         <div className="mx-5 mb-4 relative rounded-2xl overflow-hidden bg-black ring-1 ring-white/10 shadow-inner group/media">
           {isVideoUrl(post.mediaUrl) ? (
-            <video src={post.mediaUrl} className="w-full h-auto max-h-[500px] object-cover" controls playsInline preload="metadata" />
+            <video src={post.mediaUrl} className="w-full h-auto max-h-[500px] object-cover" controls playsInline preload="none" />
           ) : (
             <Image src={post.mediaUrl} alt="Post media" width={800} height={450} className="w-full h-auto max-h-[500px] object-cover transition-transform duration-700 group-hover/media:scale-105" />
           )}

@@ -382,7 +382,7 @@ const RegisterModal = ({
         <div className="relative h-48 shrink-0 overflow-hidden bg-gradient-to-br from-gray-900 via-[#10101a] to-[#0a0a0f]">
           {(tournament.banner || tournament.heroImage || tournament.image) && (
             <img
-              src={tournament.banner || tournament.heroImage || tournament.image || ""}
+              src={optimizeImageUrl(tournament.banner || tournament.heroImage || tournament.image, { width: 1200, quality: 75 })}
               alt=""
               className="w-full h-full object-cover brightness-[0.3]"
             />
@@ -645,7 +645,7 @@ export default function PublicTournamentsPage() {
               className="relative z-10 w-full max-w-sm"
             >
               <img
-                src={heroArtUrl}
+                src={optimizeImageUrl(heroArtUrl, { width: 800, quality: 80 })}
                 alt="MLBB Hero Artwork"
                 className="w-full h-auto object-contain drop-shadow-[0_20px_40px_rgba(232,160,0,0.35)]"
               />
@@ -666,7 +666,7 @@ export default function PublicTournamentsPage() {
               <div className="lg:col-span-5 relative h-64 lg:h-72 rounded-2xl overflow-hidden border border-white/10">
                 {(featuredTournament.banner || featuredTournament.heroImage || featuredTournament.image) ? (
                   <img
-                    src={featuredTournament.banner || featuredTournament.heroImage || featuredTournament.image || ""}
+                    src={optimizeImageUrl(featuredTournament.banner || featuredTournament.heroImage || featuredTournament.image, { width: 1200, quality: 75 })}
                     alt={featuredTournament.name}
                     className="w-full h-full object-cover brightness-[0.7] group-hover:scale-105 transition-transform duration-500"
                   />
@@ -866,7 +866,7 @@ export default function PublicTournamentsPage() {
                   <div className="relative h-44 bg-gradient-to-br from-gray-900 via-[#10101a] to-[#0a0a0f] overflow-hidden">
                     {(t.banner || t.heroImage || t.image) ? (
                       <img
-                        src={t.banner || t.heroImage || t.image || ""}
+                        src={optimizeImageUrl(t.banner || t.heroImage || t.image, { width: 800, quality: 75 })}
                         alt={t.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80"
                       />

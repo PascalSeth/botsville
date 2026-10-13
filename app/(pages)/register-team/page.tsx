@@ -10,6 +10,7 @@ import {
   Upload, X, Plus, ChevronDown, Shield, Sword, Zap,
   Crosshair, Anchor, CheckCircle, AlertCircle, User, Image as ImageIcon, Loader2, Search
 } from 'lucide-react';
+import { fileToCompressedDataUrl } from '@/lib/supabase';
 
 // ── Types ──────────────────────────────────────────────────
 type Role = 'exp' | 'jungle' | 'mid' | 'gold' | 'roam';
@@ -85,14 +86,8 @@ const emptyPlayer = (): Player => ({
   isVerified: false,
 });
 
-// ── File → base64 ──────────────────────────────────────────
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result as string);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
+// ── File → compressed base64 ──────────────────────────────────────────
+const fileToBase64 = (file: File): Promise<string> => fileToCompressedDataUrl(file);
 
 // ── Image Drop Zone ────────────────────────────────────────
 const ImageDropZone = ({

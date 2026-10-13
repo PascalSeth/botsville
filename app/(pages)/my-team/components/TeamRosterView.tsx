@@ -8,6 +8,7 @@ import {
   Loader2, UploadCloud, LogOut, UserX, AlertTriangle, X, Search, CheckCircle2
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { fileToCompressedDataUrl } from '@/lib/supabase';
 
 interface Player {
   id: string;
@@ -154,13 +155,7 @@ export default function TeamRosterView({
     );
   }, [team.players, currentUserId]);
 
-  const fileToDataUrl = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  const fileToDataUrl = (file: File) => fileToCompressedDataUrl(file);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

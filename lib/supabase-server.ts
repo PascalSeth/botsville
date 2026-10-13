@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { createClient } from '@supabase/supabase-js';
 
 function getSupabaseAdminClient() {
@@ -50,18 +51,49 @@ export async function serverUploadBase64Image(
   const subType = prefixMatch[2].toLowerCase(); // jpeg, png, webp, svg+xml, etc.
   const extension = subType === 'jpeg' ? 'jpg' : subType.split('+')[0];
 
-  const buffer = Buffer.from(base64, 'base64');
+  let uploadBuffer: Buffer<ArrayBufferLike> = Buffer.from(base64, 'base64');
   const fullPath = `${path}.${extension}`;
+
+  // Automatically compress images before writing to Supabase storage
+  if (mimeCategory === 'image' && subType !== 'svg' && subType !== 'gif') {
+    try {
+      const originalBytes = uploadBuffer.length;
+      let pipeline = sharp(uploadBuffer as unknown as Buffer).resize({
+        width: 1600,
+        height: 1600,
+        fit: 'inside',
+        withoutEnlargement: true,
+      });
+
+      if (subType === 'png') {
+        pipeline = pipeline.png({ quality: 80, compressionLevel: 9, palette: true });
+      } else if (subType === 'webp') {
+        pipeline = pipeline.webp({ quality: 80 });
+      } else {
+        pipeline = pipeline.jpeg({ quality: 80, mozjpeg: true });
+      }
+
+      const compressed = await pipeline.toBuffer();
+      if (compressed.length < originalBytes) {
+        console.log(
+          `[ServerUpload] Auto-compressed image: ${(originalBytes / 1024).toFixed(1)} KB -> ${(compressed.length / 1024).toFixed(1)} KB`
+        );
+        uploadBuffer = compressed;
+      }
+    } catch (compressErr) {
+      console.warn('[ServerUpload] Sharp compression skipped, using original:', compressErr);
+    }
+  }
 
   try {
     const supabaseAdmin = getSupabaseAdminClient();
 
     const { data, error } = await supabaseAdmin.storage
       .from(bucket)
-      .upload(fullPath, buffer, {
+      .upload(fullPath, uploadBuffer, {
         upsert: true,
         contentType: `${mimeCategory}/${subType}`,
-        cacheControl: '3600',
+        cacheControl: '31536000, immutable',
       });
 
     if (error) {
