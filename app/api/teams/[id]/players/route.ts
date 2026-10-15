@@ -135,14 +135,21 @@ export async function POST(
           { ign: { equals: ign, mode: "insensitive" } },
         ],
       },
+      include: {
+        team: {
+          select: { id: true, name: true, deletedAt: true },
+        },
+      },
     });
 
     if (existingPlayerRecord) {
-      if (!existingPlayerRecord.deletedAt) {
+      if (existingPlayerRecord.team?.deletedAt) {
+        // Previous team was disbanded — player is free to join new team
+      } else if (!existingPlayerRecord.deletedAt) {
         if (existingPlayerRecord.teamId === id) {
           return apiError("Player is already on your team");
         } else {
-          return apiError(`Player "${targetUser.ign}" is already an active member of another team`);
+          return apiError(`Player "${targetUser.ign}" is already an active member of ${existingPlayerRecord.team?.name || 'another team'}`);
         }
       }
     }

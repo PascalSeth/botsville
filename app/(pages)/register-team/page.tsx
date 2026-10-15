@@ -257,10 +257,10 @@ const RoleSelector = ({
 
 // ── Text Input ─────────────────────────────────────────────
 const FieldInput = ({
-  label, value, onChange, placeholder, maxLength,
+  label, value, onChange, placeholder, maxLength, error,
 }: {
   label: string; value: string; onChange: (v: string) => void;
-  placeholder?: string; maxLength?: number;
+  placeholder?: string; maxLength?: number; error?: string | null;
 }) => (
   <div>
     <p className="text-[#555] text-[9px] tracking-[0.18em] uppercase mb-1.5">{label}</p>
@@ -270,8 +270,15 @@ const FieldInput = ({
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       maxLength={maxLength}
-      className="w-full bg-[#0d0d14] border border-white/[0.08] text-white text-sm font-bold tracking-wide uppercase placeholder-[#333] px-3 py-2.5 outline-none focus:border-[#e8a000]/50 transition-colors duration-200"
+      className={`w-full bg-[#0d0d14] border text-white text-sm font-bold tracking-wide uppercase placeholder-[#333] px-3 py-2.5 outline-none transition-colors duration-200 ${
+        error ? 'border-red-500/60 focus:border-red-500' : 'border-white/[0.08] focus:border-[#e8a000]/50'
+      }`}
     />
+    {error && (
+      <p className="text-red-400 text-[9px] tracking-wider mt-1 flex items-center gap-1">
+        <AlertCircle size={10} /> {error}
+      </p>
+    )}
   </div>
 );
 
@@ -959,6 +966,9 @@ export default function RegisterTeamPage() {
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [tagError, setTagError] = useState<string | null>(null);
+  const [isValidatingIdentity, setIsValidatingIdentity] = useState(false);
   const [form, setForm] = useState<TeamForm>({
     teamName: '',
     tag: '',
@@ -969,6 +979,42 @@ export default function RegisterTeamPage() {
     bannerUrl: null,
     players: ROLES.map(() => emptyPlayer()),
   });
+
+  // Debounced identity validation for team name and tag availability
+  useEffect(() => {
+    if (!form.teamName.trim() && !form.tag.trim()) {
+      setNameError(null);
+      setTagError(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsValidatingIdentity(true);
+      try {
+        const params = new URLSearchParams();
+        if (form.teamName.trim().length >= 3) params.set('name', form.teamName.trim());
+        if (form.tag.trim().length >= 3) params.set('tag', form.tag.trim().toUpperCase());
+
+        if ([...params.keys()].length === 0) {
+          setIsValidatingIdentity(false);
+          return;
+        }
+
+        const res = await fetch(`/api/teams/validate?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          setNameError(form.teamName.trim().length >= 3 ? data.nameMessage : null);
+          setTagError(form.tag.trim().length >= 3 ? data.tagMessage : null);
+        }
+      } catch {
+        // ignore
+      } finally {
+        setIsValidatingIdentity(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [form.teamName, form.tag]);
 
   // Pre-fill slot 0 with captain's own account data
   useEffect(() => {
@@ -1108,9 +1154,14 @@ export default function RegisterTeamPage() {
         })
       );
 
-      // Step 2: Create the team
+      // Step 2: Create team and entire roster in a single atomic transaction
       const captainPhoto = playersWithUrls[0]?.imageUrl || form.players[0]?.userPhoto || undefined;
       const captainRole = form.players[0]?.role ? form.players[0].role.toUpperCase() : undefined;
+
+      const validPlayers = playersWithUrls
+        .slice(1)
+        .map((p, idx) => ({ ...p, isSub: (idx + 1) >= 5 }))
+        .filter(p => p.inGameName && p.userId && (p.isSub || p.role));
 
       const teamResponse = await fetch('/api/teams', {
         method: 'POST',
@@ -1123,6 +1174,13 @@ export default function RegisterTeamPage() {
           banner: bannerUrl,
           captainPhoto,
           captainRole,
+          players: validPlayers.map(p => ({
+            ign: p.inGameName,
+            userId: p.userId,
+            role: p.role ? p.role.toUpperCase() : undefined,
+            photo: p.imageUrl || p.userPhoto || undefined,
+            isSubstitute: p.isSub,
+          })),
         }),
       });
 
@@ -1134,36 +1192,6 @@ export default function RegisterTeamPage() {
           return;
         }
         throw new Error(teamData.error || 'Failed to create team');
-      }
-
-      const teamId = teamData.team.id;
-
-      // Step 3: Add players to the team — skip index 0 (captain auto-added by POST /api/teams)
-      // Indices 1-4 = main players, 5-8 = substitutes
-      const validPlayers = playersWithUrls
-        .slice(1)
-        .map((p, idx) => ({ ...p, isSub: (idx + 1) >= 5 }))
-        .filter(p => p.inGameName && p.userId && (p.isSub || p.role));
-      
-      for (const player of validPlayers) {
-        const playerResponse = await fetch(`/api/teams/${teamId}/players`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ign: player.inGameName,
-            userId: player.userId,
-            role: player.role ? player.role.toUpperCase() : undefined,
-            photo: player.imageUrl || player.userPhoto || undefined,
-            isSubstitute: player.isSub,
-          }),
-        });
-
-        const playerData = await playerResponse.json();
-
-        if (!playerResponse.ok) {
-          console.error(`Failed to add player ${player.inGameName}:`, playerData.error);
-          throw new Error(`Failed to add player ${player.inGameName}: ${playerData.error}`);
-        }
       }
 
       setSubmitted(true);
@@ -1314,6 +1342,7 @@ export default function RegisterTeamPage() {
                         onChange={v => setForm(f => ({ ...f, teamName: v }))}
                         placeholder="Enter team name"
                         maxLength={30}
+                        error={nameError}
                       />
                     </div>
 
@@ -1327,9 +1356,17 @@ export default function RegisterTeamPage() {
                           onChange={e => setForm(f => ({ ...f, tag: e.target.value.toUpperCase() }))}
                           placeholder="ABC"
                           maxLength={5}
-                          className="w-full bg-[#0d0d14] border border-white/[0.08] text-white text-sm font-bold tracking-wide uppercase placeholder-[#333] px-3 py-2.5 outline-none focus:border-[#e8a000]/50 transition-colors duration-200"
+                          className={`w-full bg-[#0d0d14] border text-white text-sm font-bold tracking-wide uppercase placeholder-[#333] px-3 py-2.5 outline-none transition-colors duration-200 ${
+                            tagError ? 'border-red-500/60 focus:border-red-500' : 'border-white/[0.08] focus:border-[#e8a000]/50'
+                          }`}
                         />
-                        <p className="text-[#333] text-[8px] tracking-wider mt-1">3-5 characters</p>
+                        {tagError ? (
+                          <p className="text-red-400 text-[9px] tracking-wider mt-1 flex items-center gap-1">
+                            <AlertCircle size={10} /> {tagError}
+                          </p>
+                        ) : (
+                          <p className="text-[#333] text-[8px] tracking-wider mt-1">3-5 characters</p>
+                        )}
                       </div>
                       <div>
                         <p className="text-[#555] text-[9px] tracking-[0.18em] uppercase mb-1.5">Region</p>
@@ -1370,9 +1407,17 @@ export default function RegisterTeamPage() {
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.97 }}
                       onClick={() => setStep(1)}
-                      disabled={!form.teamName || !form.tag || form.tag.length < 3 || !form.region}
+                      disabled={
+                        !form.teamName ||
+                        !form.tag ||
+                        form.tag.length < 3 ||
+                        !form.region ||
+                        Boolean(nameError) ||
+                        Boolean(tagError) ||
+                        isValidatingIdentity
+                      }
                       className={`w-full py-3 text-[10px] font-black tracking-[0.2em] uppercase transition-all ${
-                        form.teamName && form.tag.length >= 3 && form.region
+                        form.teamName && form.tag.length >= 3 && form.region && !nameError && !tagError && !isValidatingIdentity
                           ? 'bg-[#e8a000] hover:bg-[#ffb800] text-black'
                           : 'bg-[#1a1a22] text-[#333] cursor-not-allowed'
                       }`}

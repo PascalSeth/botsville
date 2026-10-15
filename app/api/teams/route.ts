@@ -207,13 +207,19 @@ export async function POST(request: NextRequest) {
             id: true,
             name: true,
             status: true,
+            deletedAt: true,
           },
         },
       },
     });
 
     if (existingPlayer) {
-      return apiError(`You are already a player on ${existingPlayer.team.name}`);
+      if (existingPlayer.team?.deletedAt) {
+        // Old team was disbanded — auto-delete orphaned player record so captain is free
+        await prisma.player.delete({ where: { id: existingPlayer.id } });
+      } else {
+        return apiError(`You are already a player on ${existingPlayer.team?.name || 'another team'}`);
+      }
     }
 
     // Check if team name or tag already exists among active teams
@@ -344,6 +350,81 @@ export async function POST(request: NextRequest) {
             isSubstitute: false,
           },
         });
+      }
+
+      // If full roster was supplied, atomically create or restore all players in the same transaction
+      if (Array.isArray(body.players) && body.players.length > 0) {
+        for (const p of body.players) {
+          if (!p.userId || !p.ign) continue;
+          if (p.userId === user.id) continue; // Captain already processed above
+
+          const pUser = await tx.user.findUnique({
+            where: { id: p.userId, deletedAt: null },
+            select: { id: true, ign: true },
+          });
+          if (!pUser) {
+            throw new Error(`Player account "${p.ign}" not found.`);
+          }
+
+          let pRole: GameRole = GameRole.EXP;
+          if (p.role && Object.values(GameRole).includes(p.role as GameRole)) {
+            pRole = p.role as GameRole;
+          }
+
+          const existingPRecord = await tx.player.findFirst({
+            where: {
+              OR: [
+                { userId: p.userId },
+                { ign: { equals: p.ign, mode: "insensitive" } },
+              ],
+            },
+            include: { team: { select: { id: true, name: true, deletedAt: true } } },
+          });
+
+          if (existingPRecord) {
+            if (existingPRecord.team?.deletedAt) {
+              // Old team was disbanded — restore player onto new team
+              await tx.player.update({
+                where: { id: existingPRecord.id },
+                data: {
+                  teamId: created.id,
+                  userId: p.userId,
+                  ign: p.ign,
+                  role: pRole,
+                  photo: (typeof p.photo === "string" && p.photo.trim()) ? p.photo.trim() : null,
+                  isSubstitute: Boolean(p.isSubstitute),
+                  deletedAt: null,
+                },
+              });
+            } else if (!existingPRecord.deletedAt && existingPRecord.teamId !== created.id) {
+              throw new Error(`Player "${pUser.ign}" is already an active member of ${existingPRecord.team?.name || 'another team'}.`);
+            } else {
+              await tx.player.update({
+                where: { id: existingPRecord.id },
+                data: {
+                  teamId: created.id,
+                  userId: p.userId,
+                  ign: p.ign,
+                  role: pRole,
+                  photo: (typeof p.photo === "string" && p.photo.trim()) ? p.photo.trim() : null,
+                  isSubstitute: Boolean(p.isSubstitute),
+                  deletedAt: null,
+                },
+              });
+            }
+          } else {
+            await tx.player.create({
+              data: {
+                teamId: created.id,
+                userId: p.userId,
+                ign: p.ign,
+                role: pRole,
+                photo: (typeof p.photo === "string" && p.photo.trim()) ? p.photo.trim() : null,
+                isSubstitute: Boolean(p.isSubstitute),
+              },
+            });
+          }
+        }
       }
 
       return created;

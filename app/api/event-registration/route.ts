@@ -106,10 +106,37 @@ export async function POST(req: Request) {
       
       // Create a new team
       const newTeamNumber = draftTeams.length + 1;
+      const draftName = `Draft Team ${newTeamNumber}`;
+      const draftTag = `DT${newTeamNumber}`;
+
+      // Auto-free any stale soft-deleted teams holding this draft team name or tag
+      const staleDraftTeams = await prisma.team.findMany({
+        where: {
+          deletedAt: { not: null },
+          OR: [
+            { name: { equals: draftName, mode: "insensitive" } },
+            { tag: { equals: draftTag, mode: "insensitive" } },
+          ],
+        },
+      });
+      for (const stale of staleDraftTeams) {
+        const disbandedSuffix = Date.now().toString(36);
+        const randomSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+        await prisma.team.update({
+          where: { id: stale.id },
+          data: {
+            name: `${stale.name.replace(/\[disbanded-.*?\]/, "").trim()} [disbanded-${disbandedSuffix}]`,
+            tag: `D${randomSuffix}`,
+            teamCode: null,
+            status: TeamStatus.INACTIVE,
+          },
+        });
+      }
+
       targetTeam = await prisma.team.create({
         data: {
-          name: `Draft Team ${newTeamNumber}`,
-          tag: `DT${newTeamNumber}`,
+          name: draftName,
+          tag: draftTag,
           region: "EVENT",
           status: TeamStatus.ACTIVE,
           isRecruiting: false,
