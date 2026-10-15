@@ -239,6 +239,32 @@ export async function POST(request: NextRequest) {
       return apiError("Team tag already taken");
     }
 
+    // Auto-free any stale soft-deleted teams still holding this name or tag
+    // so PostgreSQL table-level unique constraints don't fail
+    const staleTeams = await prisma.team.findMany({
+      where: {
+        deletedAt: { not: null },
+        OR: [
+          { name: { equals: trimmedName, mode: "insensitive" } },
+          { tag: { equals: trimmedTag, mode: "insensitive" } },
+        ],
+      },
+    });
+
+    for (const stale of staleTeams) {
+      const disbandedSuffix = Date.now().toString(36);
+      const randomSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+      await prisma.team.update({
+        where: { id: stale.id },
+        data: {
+          name: `${stale.name.replace(/\[disbanded-.*?\]/, "").trim()} [disbanded-${disbandedSuffix}]`,
+          tag: `D${randomSuffix}`,
+          teamCode: null,
+          status: TeamStatus.INACTIVE,
+        },
+      });
+    }
+
     const teamCode = await generateUniqueTeamCode();
 
     // Fetch captain's mainRole to create their player record
@@ -338,6 +364,16 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return apiError("Unauthorized", 401);
+    }
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      const target = (error as any).meta?.target;
+      if (Array.isArray(target) && target.includes("tag")) {
+        return apiError("Team tag is already taken. Please choose another tag.", 409);
+      }
+      if (Array.isArray(target) && target.includes("name")) {
+        return apiError("Team name is already taken. Please choose another name.", 409);
+      }
+      return apiError("A team with this name or tag already exists.", 409);
     }
     console.error("Create team error:", error);
     return apiError(error instanceof Error ? error.message : "Failed to create team", 500);

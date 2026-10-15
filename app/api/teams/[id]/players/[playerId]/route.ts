@@ -5,7 +5,8 @@ import {
   apiSuccess,
   isValidIGN,
 } from "@/lib/api-utils";
-import { GameRole } from "@/app/generated/prisma/enums";
+import { GameRole, TeamStatus } from "@/app/generated/prisma/enums";
+import { invalidatePattern } from "@/lib/redis";
 
 import { prisma } from "@/lib/prisma";
 
@@ -317,12 +318,51 @@ export async function DELETE(
     });
 
     // If no captaincy transfer was required but captain left anyway (no eligible players),
-    // archive the team
+    // properly disband the team so its name, tag, teamCode, players, and invites are fully freed
     if (isCaptainLeaving) {
+      const disbandedSuffix = Date.now().toString(36);
+      const randomSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+
       await prisma.team.update({
         where: { id },
-        data: { deletedAt: new Date() },
+        data: {
+          deletedAt: new Date(),
+          status: TeamStatus.INACTIVE,
+          name: `${player.team.name.replace(/\[disbanded-.*?\]/, "").trim()} [disbanded-${disbandedSuffix}]`,
+          tag: `D${randomSuffix}`,
+          teamCode: null,
+        },
       });
+
+      // Hard-delete all player records for this team so members are fully freed
+      await prisma.player.deleteMany({
+        where: { teamId: id },
+      });
+
+      // Cancel any pending invites/applications so they don't block re-joining
+      await prisma.teamInvite.updateMany({
+        where: { teamId: id, status: 'PENDING' },
+        data: { status: 'DECLINED' },
+      });
+
+      // Cancel any active match challenges involving this team
+      await prisma.matchChallenge.updateMany({
+        where: {
+          OR: [{ challengerTeamId: id }, { challengedTeamId: id }],
+          status: { in: ['PENDING', 'ACCEPTED', 'SCHEDULED'] },
+        },
+        data: { status: 'CANCELLED' },
+      });
+
+      // Deactivate any active invite links
+      await prisma.teamInviteLink.updateMany({
+        where: { teamId: id, active: true },
+        data: { active: false },
+      });
+
+      // Invalidate cached team and leaderboard listings
+      await invalidatePattern("teams:*");
+      await invalidatePattern("leaderboard:*");
     }
 
     return apiSuccess({

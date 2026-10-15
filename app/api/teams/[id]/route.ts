@@ -204,6 +204,24 @@ export async function PUT(
         if (nameExists) {
           return apiError("Team name already taken");
         }
+        const staleNameTeams = await prisma.team.findMany({
+          where: {
+            deletedAt: { not: null },
+            name: { equals: trimmedName, mode: "insensitive" },
+          },
+        });
+        for (const stale of staleNameTeams) {
+          const disbandedSuffix = Date.now().toString(36);
+          const randomSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+          await prisma.team.update({
+            where: { id: stale.id },
+            data: {
+              name: `${stale.name.replace(/\[disbanded-.*?\]/, "").trim()} [disbanded-${disbandedSuffix}]`,
+              tag: `D${randomSuffix}`,
+              teamCode: null,
+            },
+          });
+        }
         nameHistory.oldName = team.name;
         updateData.name = trimmedName;
       }
@@ -225,6 +243,24 @@ export async function PUT(
         });
         if (tagExists) {
           return apiError("Team tag already taken");
+        }
+        const staleTagTeams = await prisma.team.findMany({
+          where: {
+            deletedAt: { not: null },
+            tag: { equals: tagUpper, mode: "insensitive" },
+          },
+        });
+        for (const stale of staleTagTeams) {
+          const disbandedSuffix = Date.now().toString(36);
+          const randomSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+          await prisma.team.update({
+            where: { id: stale.id },
+            data: {
+              name: `${stale.name.replace(/\[disbanded-.*?\]/, "").trim()} [disbanded-${disbandedSuffix}]`,
+              tag: `D${randomSuffix}`,
+              teamCode: null,
+            },
+          });
         }
         nameHistory.oldTag = team.tag;
         updateData.tag = tagUpper;
@@ -312,6 +348,16 @@ export async function PUT(
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return apiError("Unauthorized", 401);
+    }
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      const target = (error as any).meta?.target;
+      if (Array.isArray(target) && target.includes("tag")) {
+        return apiError("Team tag is already taken. Please choose another tag.", 409);
+      }
+      if (Array.isArray(target) && target.includes("name")) {
+        return apiError("Team name is already taken. Please choose another name.", 409);
+      }
+      return apiError("A team with this name or tag already exists.", 409);
     }
     console.error("Update team error:", error);
     const message = error instanceof Error ? error.message : "Failed to update team";
