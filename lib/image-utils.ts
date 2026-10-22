@@ -21,6 +21,11 @@ export function optimizeImageUrl(
     return imageUrl;
   }
 
+  // Skip optimization if already routed through wsrv.nl CDN
+  if (imageUrl.includes('wsrv.nl')) {
+    return imageUrl;
+  }
+
   const width = options?.width || 800;
   const height = options?.height;
   const quality = options?.quality || 80;
@@ -52,9 +57,8 @@ export function optimizeImageUrl(
  */
 export function getHeroImageUrl(imageUrl: string | null | undefined): string {
   return optimizeImageUrl(imageUrl, {
-    width: 1920,
-    height: 1080,
-    quality: 75,
+    width: 1200,
+    quality: 80,
     format: 'webp',
   });
 }

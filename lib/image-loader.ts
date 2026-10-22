@@ -22,6 +22,11 @@ export default function imageLoader({
     return src;
   }
 
+  // Already routed through wsrv.nl CDN
+  if (src.includes('wsrv.nl')) {
+    return src;
+  }
+
   // If image is from Supabase Storage, proxy via wsrv.nl
   if (src.includes('supabase.co')) {
     if (/\.(mp4|webm|mov|mkv|avi)(\?.*)?$/i.test(src)) {

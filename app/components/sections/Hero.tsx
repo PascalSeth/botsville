@@ -58,6 +58,49 @@ const AnimatedNumber = ({ value }: { value: number }) => {
 };
 
 // ─────────────────────────────────────────────────────────────
+// SAFE HERO IMAGE (Fallback handler + responsive sizes)
+// ─────────────────────────────────────────────────────────────
+const SafeHeroImage = ({
+  src,
+  fallbackSrc = '/stunchou.png',
+  alt,
+  fill = false,
+  sizes,
+  className,
+  priority = false,
+}: {
+  src: string;
+  fallbackSrc?: string;
+  alt: string;
+  fill?: boolean;
+  sizes?: string;
+  className?: string;
+  priority?: boolean;
+}) => {
+  const [currentSrc, setCurrentSrc] = useState(src || fallbackSrc);
+
+  useEffect(() => {
+    setCurrentSrc(src || fallbackSrc);
+  }, [src, fallbackSrc]);
+
+  return (
+    <Image
+      src={currentSrc}
+      alt={alt}
+      fill={fill}
+      sizes={sizes}
+      className={className}
+      priority={priority}
+      onError={() => {
+        if (currentSrc !== fallbackSrc) {
+          setCurrentSrc(fallbackSrc);
+        }
+      }}
+    />
+  );
+};
+
+// ─────────────────────────────────────────────────────────────
 // TEAM TICKER
 // ─────────────────────────────────────────────────────────────
 const TeamTicker = () => {
@@ -104,7 +147,14 @@ const TeamTicker = () => {
               {team.rank}
             </span>
             <div className="relative w-5 h-5 rounded-sm overflow-hidden shrink-0">
-              <Image src={getThumbnailUrl(team.logo)} alt={team.name} fill className="object-cover" />
+              <SafeHeroImage
+                src={getThumbnailUrl(team.logo)}
+                fallbackSrc="/mlbb_logo.png"
+                alt={team.name}
+                fill
+                sizes="20px"
+                className="object-cover"
+              />
             </div>
             <span className="text-[10px] font-black uppercase tracking-wide text-white/80 truncate flex-1">{team.name}</span>
             <span className="text-[9px] font-mono shrink-0" style={{ color: team.rank <= 3 ? '#e8a000' : 'rgba(255,255,255,0.3)' }}>
@@ -150,10 +200,12 @@ const HeroDock = ({
               border: isActive ? '2px solid #e8a000' : '2px solid rgba(255,255,255,0.08)',
               boxShadow: isActive ? '0 0 16px rgba(232,160,0,0.5)' : 'none',
             }}>
-            <Image
+            <SafeHeroImage
               src={getThumbnailUrl(hero.imageUrl)}
+              fallbackSrc="/stunchou.png"
               alt={hero.name}
               fill
+              sizes="72px"
               className="object-cover object-top transition-transform duration-500 group-hover:scale-110"
             />
             {/* Gradient overlay */}
@@ -406,8 +458,12 @@ const DesktopHero = ({
                 animate={{ y: [0, -12, 0] }}
                 transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
               >
-                <Image
-                  src={heroImage} alt={heroName} fill
+                <SafeHeroImage
+                  src={heroImage}
+                  fallbackSrc="/stunchou.png"
+                  alt={heroName}
+                  fill
+                  sizes="(max-width: 1280px) 420px, 520px"
                   className="object-contain object-center"
                   priority
                 />
@@ -593,8 +649,12 @@ const MobileHero = ({
               animate={{ y: [0, -6, 0] }}
               transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
             >
-              <Image
-                src={heroImage} alt={heroName} fill
+              <SafeHeroImage
+                src={heroImage}
+                fallbackSrc="/stunchou.png"
+                alt={heroName}
+                fill
+                sizes="180px"
                 className="object-contain object-center"
                 priority
               />
