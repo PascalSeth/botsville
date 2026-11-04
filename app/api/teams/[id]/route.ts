@@ -9,6 +9,7 @@ import {
 } from "@/lib/api-utils";
 
 import { prisma } from "@/lib/prisma";
+import { ensureTeamRosterBalance } from "@/lib/team-roster";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

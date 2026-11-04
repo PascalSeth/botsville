@@ -12,6 +12,7 @@ import { TeamStatus, MainRole, GameRole } from "@/app/generated/prisma/enums";
 import { cacheResult, invalidatePattern } from "@/lib/redis";
 
 import { prisma } from "@/lib/prisma";
+import { ensureTeamRosterBalance } from "@/lib/team-roster";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -429,6 +430,8 @@ export async function POST(request: NextRequest) {
 
       return created;
     });
+
+    await ensureTeamRosterBalance(team.id);
 
     // Invalidate cached team and leaderboard listings
     await invalidatePattern("teams:*");

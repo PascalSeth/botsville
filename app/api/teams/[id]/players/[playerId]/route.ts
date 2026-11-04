@@ -7,6 +7,7 @@ import {
 } from "@/lib/api-utils";
 import { GameRole, TeamStatus } from "@/app/generated/prisma/enums";
 import { invalidatePattern } from "@/lib/redis";
+import { ensureTeamRosterBalance } from "@/lib/team-roster";
 
 import { prisma } from "@/lib/prisma";
 
@@ -131,7 +132,7 @@ export async function PUT(
       }
 
       // Demoting from starter to sub
-      if (!wantsToBeStarter === false && !currentlySubstitute) {
+      if (!wantsToBeStarter && !currentlySubstitute) {
         const currentStartersCount = player.team.players.filter(
           (p) => !p.isSubstitute
         ).length;
@@ -182,7 +183,10 @@ export async function PUT(
       // Perform transfer: update teamId while preserving stats
       const transferred = await prisma.player.update({
         where: { id: playerId },
-        data: { teamId: targetTeam.id },
+        data: {
+          teamId: targetTeam.id,
+          isSubstitute: targetTeam.players.filter((p) => !p.isSubstitute).length >= 5 ? true : player.isSubstitute,
+        },
         include: {
           user: { select: { id: true, ign: true, photo: true } },
           team: { select: { id: true, name: true, tag: true } },
@@ -220,6 +224,11 @@ export async function PUT(
         // ignore
       }
 
+      await invalidatePattern("teams:*");
+
+      await ensureTeamRosterBalance(player.teamId);
+      await ensureTeamRosterBalance(targetTeam.id);
+
       return apiSuccess({ message: "Player transferred successfully", player: transferred });
     }
 
@@ -247,6 +256,8 @@ export async function PUT(
         },
       },
     });
+
+    await invalidatePattern("teams:*");
 
     return apiSuccess({
       message: "Player updated successfully",
@@ -317,6 +328,10 @@ export async function DELETE(
       data: { deletedAt: new Date() },
     });
 
+    if (!isCaptainLeaving) {
+      await ensureTeamRosterBalance(id);
+    }
+
     // If no captaincy transfer was required but captain left anyway (no eligible players),
     // properly disband the team so its name, tag, teamCode, players, and invites are fully freed
     if (isCaptainLeaving) {
@@ -364,6 +379,8 @@ export async function DELETE(
       await invalidatePattern("teams:*");
       await invalidatePattern("leaderboard:*");
     }
+
+    await invalidatePattern("teams:*");
 
     return apiSuccess({
       message: "Player removed successfully",

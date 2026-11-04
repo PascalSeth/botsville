@@ -6,6 +6,7 @@ import {
 } from "@/lib/api-utils";
 import { InviteStatus, GameRole } from "@/app/generated/prisma/enums";
 import { invalidatePattern } from "@/lib/redis";
+import { ensureTeamRosterBalance } from "@/lib/team-roster";
 
 import { prisma } from "@/lib/prisma";
 
@@ -143,8 +144,9 @@ export async function POST(
 
       if (invite.team.players.length >= 20) throw new Error('Team is full (maximum 20 players)');
 
+      const currentStarters = invite.team.players.filter((p) => !p.isSubstitute);
       const roleTaken = invite.team.players.find((p) => p.role === acceptRole && !p.isSubstitute);
-      const isSubstitute = Boolean(roleTaken);
+      const isSubstitute = currentStarters.length >= 5 || Boolean(roleTaken);
 
       if (playerRecord) {
         // Restore and reuse the user's existing player record (preserves stats)
@@ -240,8 +242,9 @@ export async function POST(
 
       if (invite.team.players.length >= 20) return apiError('Team is full (maximum 20 players)');
 
+      const currentStarters = invite.team.players.filter((p) => !p.isSubstitute);
       const roleTaken = invite.team.players.find((p) => p.role === role && !p.isSubstitute);
-      const isSubstitute = Boolean(roleTaken);
+      const isSubstitute = currentStarters.length >= 5 || Boolean(roleTaken);
 
       // Cancel other pending invites for this user
       await prisma.teamInvite.updateMany({
@@ -326,6 +329,7 @@ export async function POST(
         });
       }
 
+      await ensureTeamRosterBalance(invite.teamId);
       return apiSuccess({ message: 'Invite accepted successfully', player, isSubstitute }, 201);
     }
 
@@ -377,6 +381,7 @@ export async function POST(
         await invalidatePattern('teams:*');
         await invalidatePattern('leaderboard:*');
 
+        await ensureTeamRosterBalance(invite.teamId);
         return apiSuccess({ message: 'Application accepted', player, isSubstitute }, 201);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Failed to accept application';

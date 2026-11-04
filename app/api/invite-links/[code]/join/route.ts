@@ -9,6 +9,7 @@ import {
 import { GameRole } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
+import { ensureTeamRosterBalance } from "@/lib/team-roster";
 
 export async function POST(
   request: NextRequest,
@@ -87,14 +88,12 @@ export async function POST(
     }
 
     // Check if role is already taken by a starter
+    const currentStarters = link.team.players.filter((p) => !p.isSubstitute);
     const roleTaken = link.team.players.find(
       (p) => p.role === role && !p.isSubstitute
     );
 
-    let isSubstitute = false;
-    if (roleTaken) {
-      isSubstitute = true;
-    }
+    let isSubstitute = Boolean(roleTaken) || currentStarters.length >= 5;
 
     // Create or restore player
     let player;
@@ -151,6 +150,8 @@ export async function POST(
         linkUrl: `/teams/${link.teamId}`,
       },
     });
+
+    await ensureTeamRosterBalance(link.teamId);
 
     return apiSuccess(
       {

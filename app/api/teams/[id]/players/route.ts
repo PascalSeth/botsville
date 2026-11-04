@@ -9,6 +9,7 @@ import {
 import { GameRole } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
+import { ensureTeamRosterBalance } from "@/lib/team-roster";
 
 // GET - Get team players
 export async function GET(
@@ -155,7 +156,11 @@ export async function POST(
     }
 
     // Check if role slot is already filled by a starter
+    const currentStarters = team.players.filter((p) => !p.isSubstitute);
     if (!isSubstitute) {
+      if (currentStarters.length >= 5) {
+        return apiError("Team already has 5 starters. Add player as a substitute.");
+      }
       const roleTaken = team.players.find(
         (p) => p.role === role && !p.isSubstitute
       );
@@ -249,6 +254,8 @@ export async function POST(
       joinerUserId: player.userId,
       role: player.role,
     });
+
+    await ensureTeamRosterBalance(id);
 
     return apiSuccess(
       {

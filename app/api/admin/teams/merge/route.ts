@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { ensureTeamRosterBalance } from '@/lib/team-roster';
 import { apiError, apiSuccess, requireSuperAdmin } from '@/lib/api-utils';
 
 export async function POST(req: NextRequest) {
@@ -70,6 +71,8 @@ export async function POST(req: NextRequest) {
       });
       
     });
+
+    await ensureTeamRosterBalance(targetTeamId);
 
     return apiSuccess({
       message: `Successfully merged ${sourceTeam.name} into ${targetTeam.name}.`,

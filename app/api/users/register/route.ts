@@ -4,6 +4,7 @@ import { apiError, apiSuccess, isValidEmail, isValidIGN, isValidTeamCode, notify
 import { MainRole, GameRole } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
+import { ensureTeamRosterBalance } from "@/lib/team-roster";
 
 const ROLE_TO_GAME_ROLE: Record<MainRole, GameRole> = {
   EXP: GameRole.EXP,
@@ -163,6 +164,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (teamToJoin) {
+
         // Find if this IGN exists as a placeholder ANYWHERE (including soft-deleted)
         const placeholder = await transaction.player.findFirst({
           where: { 
@@ -170,6 +172,11 @@ export async function POST(request: NextRequest) {
             userId: null, 
           },
         });
+
+        const currentStarters = await transaction.player.count({
+          where: { teamId: teamToJoin.id, isSubstitute: false, deletedAt: null },
+        });
+        const isSub = currentStarters >= 5;
 
         if (placeholder) {
           // Claim the placeholder and move it to the new team
@@ -179,6 +186,7 @@ export async function POST(request: NextRequest) {
               userId: createdUser.id,
               teamId: teamToJoin.id, // Transfer to the new team
               ign: createdUser.ign, // Sync casing with user's preferred IGN
+              isSubstitute: isSub ? true : placeholder.isSubstitute,
               deletedAt: null, // restore it if soft-deleted
             },
           });
@@ -190,7 +198,7 @@ export async function POST(request: NextRequest) {
               teamId: teamToJoin.id,
               ign: createdUser.ign,
               role: ROLE_TO_GAME_ROLE[normalizedMainRole],
-              isSubstitute: false,
+              isSubstitute: isSub,
             },
           });
         }
@@ -213,6 +221,9 @@ export async function POST(request: NextRequest) {
 
     // Fire-and-forget: notify captain + existing members when joining a team
     if (teamToJoin) {
+
+      await ensureTeamRosterBalance(teamToJoin.id);
+
       void notifyTeamMemberJoined({
         teamId: teamToJoin.id,
         joinerIgn: user.ign,
