@@ -29,6 +29,9 @@ export async function PUT(
       realName,
       isSubstitute,
       transferToTeamId,
+      replacePlayerId,
+      swapRoleWithPlayerId,
+      swapRoleIfTaken,
     } = body;
 
     // Get player and team
@@ -49,11 +52,183 @@ export async function PUT(
       return apiError("Player not found", 404);
     }
 
-    // Verify captain or admin
-    if (player.team.captainId !== user.id && !user.role) {
-      // Allow players to update their own basic info
+    // Verify captain or admin for team/lineup operations
+    const isCaptainOrAdmin = player.team.captainId === user.id || Boolean(user.role);
+    if (!isCaptainOrAdmin) {
+      // Allow players to update their own basic profile info only
       if (player.userId !== user.id) {
-        return apiError("Only the team captain can update players", 403);
+        return apiError("Only the team captain can manage team members", 403);
+      }
+      if (isSubstitute !== undefined || replacePlayerId || swapRoleWithPlayerId || transferToTeamId) {
+        return apiError("Only the team captain can change lineup, substitutions, or transfers", 403);
+      }
+    }
+
+    // ── 1. SWAP ROLES BETWEEN TWO PLAYERS ───────────────────────────────────
+    if (swapRoleWithPlayerId) {
+      if (!isCaptainOrAdmin) {
+        return apiError("Only the team captain can swap player roles", 403);
+      }
+
+      const partner = player.team.players.find(
+        (p) => p.id === swapRoleWithPlayerId && !p.deletedAt
+      );
+
+      if (!partner) {
+        return apiError("Target player to swap roles with not found", 404);
+      }
+
+      if (partner.id === player.id) {
+        return apiError("Cannot swap roles with the same player");
+      }
+
+      const roleForPlayer = partner.role;
+      const roleForPartner = player.role;
+
+      await prisma.$transaction([
+        prisma.player.update({
+          where: { id: player.id },
+          data: { role: roleForPlayer },
+        }),
+        prisma.player.update({
+          where: { id: partner.id },
+          data: { role: roleForPartner },
+        }),
+      ]);
+
+      await invalidatePattern("teams:*");
+      await invalidatePattern("leaderboard:*");
+
+      return apiSuccess({
+        message: `Swapped roles: ${player.ign} is now ${roleForPlayer}, and ${partner.ign} is now ${roleForPartner}`,
+      });
+    }
+
+    // ── 2. SUBSTITUTION / REPLACEMENT WORKFLOW ──────────────────────────────
+    if (replacePlayerId) {
+      if (!isCaptainOrAdmin) {
+        return apiError("Only the team captain can perform substitutions", 403);
+      }
+
+      const replacedPlayer = player.team.players.find(
+        (p) => p.id === replacePlayerId && !p.deletedAt
+      );
+
+      if (!replacedPlayer) {
+        return apiError("Player to replace not found on team", 404);
+      }
+
+      if (replacedPlayer.id === player.id) {
+        return apiError("Cannot replace player with themselves");
+      }
+
+      // Case A: player is currently substitute, replacedPlayer is starter (Promoting sub, demoting starter)
+      if (player.isSubstitute && !replacedPlayer.isSubstitute) {
+        const targetRole = (role as GameRole) || replacedPlayer.role;
+        if (!Object.values(GameRole).includes(targetRole)) {
+          return apiError("Invalid target role. Must be EXP, JUNGLE, MID, GOLD, or ROAM");
+        }
+
+        // Check if targetRole is already occupied by ANOTHER starter
+        const otherStarters = player.team.players.filter(
+          (p) => !p.isSubstitute && p.id !== replacedPlayer.id && p.id !== player.id
+        );
+        const conflict = otherStarters.find((p) => p.role === targetRole);
+        if (conflict) {
+          return apiError(
+            `Role ${targetRole} is already held by starter ${conflict.ign}. Please pick another role or replace ${conflict.ign}.`
+          );
+        }
+
+        await prisma.$transaction([
+          prisma.player.update({
+            where: { id: replacedPlayer.id },
+            data: { isSubstitute: true },
+          }),
+          prisma.player.update({
+            where: { id: player.id },
+            data: {
+              isSubstitute: false,
+              role: targetRole,
+              ...(photo !== undefined ? { photo: photo || null } : {}),
+            },
+          }),
+        ]);
+
+        await invalidatePattern("teams:*");
+        await invalidatePattern("leaderboard:*");
+        await ensureTeamRosterBalance(player.teamId);
+
+        return apiSuccess({
+          message: `${player.ign} promoted to Starting Five (${targetRole}). ${replacedPlayer.ign} moved to Reserves.`,
+        });
+      }
+
+      // Case B: player is starter, replacedPlayer is substitute (Subbing out starter, subbing in reserve)
+      if (!player.isSubstitute && replacedPlayer.isSubstitute) {
+        const targetRole = (role as GameRole) || player.role;
+        if (!Object.values(GameRole).includes(targetRole)) {
+          return apiError("Invalid target role. Must be EXP, JUNGLE, MID, GOLD, or ROAM");
+        }
+
+        const otherStarters = player.team.players.filter(
+          (p) => !p.isSubstitute && p.id !== player.id && p.id !== replacedPlayer.id
+        );
+        const conflict = otherStarters.find((p) => p.role === targetRole);
+        if (conflict) {
+          return apiError(
+            `Role ${targetRole} is already held by starter ${conflict.ign}.`
+          );
+        }
+
+        await prisma.$transaction([
+          prisma.player.update({
+            where: { id: player.id },
+            data: {
+              isSubstitute: true,
+              ...(photo !== undefined ? { photo: photo || null } : {}),
+            },
+          }),
+          prisma.player.update({
+            where: { id: replacedPlayer.id },
+            data: {
+              isSubstitute: false,
+              role: targetRole,
+            },
+          }),
+        ]);
+
+        await invalidatePattern("teams:*");
+        await invalidatePattern("leaderboard:*");
+        await ensureTeamRosterBalance(player.teamId);
+
+        return apiSuccess({
+          message: `${replacedPlayer.ign} promoted to Starting Five (${targetRole}). ${player.ign} moved to Reserves.`,
+        });
+      }
+
+      // Case C: Both are starters -> swap their roles
+      if (!player.isSubstitute && !replacedPlayer.isSubstitute) {
+        const roleA = player.role;
+        const roleB = replacedPlayer.role;
+
+        await prisma.$transaction([
+          prisma.player.update({
+            where: { id: player.id },
+            data: { role: roleB },
+          }),
+          prisma.player.update({
+            where: { id: replacedPlayer.id },
+            data: { role: roleA },
+          }),
+        ]);
+
+        await invalidatePattern("teams:*");
+        await invalidatePattern("leaderboard:*");
+
+        return apiSuccess({
+          message: `Swapped roles: ${player.ign} (${roleB}) and ${replacedPlayer.ign} (${roleA})`,
+        });
       }
     }
 
@@ -68,24 +243,39 @@ export async function PUT(
     }
 
     if (role !== undefined) {
-      if (!Object.values(GameRole).includes(role)) {
-        return apiError("Invalid role");
+      const roleUpper = String(role).toUpperCase();
+      if (!Object.values(GameRole).includes(roleUpper as GameRole)) {
+        return apiError("Invalid role. Valid roles: EXP, JUNGLE, MID, GOLD, ROAM");
       }
+      const targetRole = roleUpper as GameRole;
+
       // Check if role is already taken by another starter
-      if (!isSubstitute && role !== player.role) {
+      const willBeStarter = isSubstitute !== undefined ? !Boolean(isSubstitute) : !player.isSubstitute;
+      if (willBeStarter && targetRole !== player.role) {
         const roleTaken = player.team.players.find(
-          (p) => p.id !== playerId && p.role === role && !p.isSubstitute
+          (p) => p.id !== playerId && p.role === targetRole && !p.isSubstitute
         );
         if (roleTaken) {
-          return apiError(
-            `Role ${role} is already filled by another starter`
-          );
+          if (swapRoleIfTaken) {
+            // Atomically swap roles with the starter who currently holds this role
+            await prisma.player.update({
+              where: { id: roleTaken.id },
+              data: { role: player.role },
+            });
+          } else {
+            return apiError(
+              `Role ${targetRole} is already filled by ${roleTaken.ign}. Swap roles or select another role.`
+            );
+          }
         }
       }
-      updateData.role = role;
+      updateData.role = targetRole;
     }
 
     if (secondaryRole !== undefined) {
+      if (secondaryRole && !Object.values(GameRole).includes(secondaryRole as GameRole)) {
+        return apiError("Invalid secondary role");
+      }
       updateData.secondaryRole = secondaryRole
         ? (secondaryRole as GameRole)
         : null;
@@ -107,43 +297,44 @@ export async function PUT(
     if (isSubstitute !== undefined) {
       const wantsToBeStarter = !Boolean(isSubstitute);
       const currentlySubstitute = player.isSubstitute;
-      
-      // Promoting from sub to starter
+
+      // Promoting from sub to starter without specify replacement
       if (wantsToBeStarter && currentlySubstitute) {
         const currentStarters = player.team.players.filter(
           (p) => p.id !== playerId && !p.isSubstitute
         );
-        
+
         // Check starter limit
         if (currentStarters.length >= 5) {
           return apiError(
-            "Team already has 5 starters. Demote another player to substitute first."
+            "Starting lineup is full (5/5). Please select which starter to replace."
           );
         }
-        
-        // Check role conflict - use the new role if provided, otherwise current role
-        const targetRole = (role as string) ?? player.role;
+
+        // Check role conflict
+        const targetRole = (updateData.role as GameRole) ?? player.role;
         const roleConflict = currentStarters.find((p) => p.role === targetRole);
         if (roleConflict) {
           return apiError(
-            `Cannot promote to starter: ${targetRole} role is already taken by ${roleConflict.ign}. Change role or demote that player first.`
+            `Cannot promote to starter: ${targetRole} role is already taken by ${roleConflict.ign}. Please pick an open role or select who to replace.`
           );
         }
       }
 
-      // Demoting from starter to sub
+      // Demoting from starter to sub without specify replacement
       if (!wantsToBeStarter && !currentlySubstitute) {
         const currentStartersCount = player.team.players.filter(
           (p) => !p.isSubstitute
         ).length;
-        
-        if (currentStartersCount <= 5 && player.team.players.length >= 5) {
+        const subsCount = player.team.players.filter((p) => p.isSubstitute).length;
+
+        if (currentStartersCount <= 5 && subsCount > 0) {
           return apiError(
-            "A team must maintain 5 starting players in its main lineup. Promote a substitute first before demoting a starter."
+            "A team must maintain 5 starting players in its lineup. Please select a substitute to replace this starter."
           );
         }
       }
-      
+
       updateData.isSubstitute = Boolean(isSubstitute);
     }
 

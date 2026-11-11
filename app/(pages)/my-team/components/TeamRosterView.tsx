@@ -5,7 +5,8 @@ import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, Crown, Users, Star, ArrowUpDown, Trash2, Copy, Check, Plus, Trophy,
-  Loader2, UploadCloud, LogOut, UserX, AlertTriangle, X, Search, CheckCircle2
+  Loader2, UploadCloud, LogOut, UserX, AlertTriangle, X, Search, CheckCircle2,
+  Crosshair, Axe, Zap, Coins, ArrowRight, UserCheck, RefreshCw, Pencil
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { fileToCompressedDataUrl } from '@/lib/supabase';
@@ -71,7 +72,18 @@ interface TeamRosterViewProps {
   currentUserId?: string;
   onRemovePlayer: (playerId: string) => Promise<void> | void;
   onLeaveTeam: (playerId: string) => Promise<void> | void;
-  onEditPlayer: (playerId: string, updates: { role?: string; isSubstitute?: boolean; photo?: string | null }) => void;
+  onEditPlayer: (
+    playerId: string,
+    updates: {
+      role?: string;
+      isSubstitute?: boolean;
+      photo?: string | null;
+      replacePlayerId?: string;
+      swapRoleWithPlayerId?: string;
+      swapRoleIfTaken?: boolean;
+      realName?: string | null;
+    }
+  ) => Promise<boolean | void> | void;
   onInvitePlayer: (ign: string, role: string) => Promise<boolean | void> | void;
   onGenerateTeamCode: () => void;
   teamCode: string | null;
@@ -80,12 +92,32 @@ interface TeamRosterViewProps {
   onCancelInvite?: (inviteId: string) => Promise<void> | void;
 }
 
+const VALID_ROLES = ['EXP', 'JUNGLE', 'MID', 'GOLD', 'ROAM'] as const;
+type ValidRole = (typeof VALID_ROLES)[number];
+
 const ROLE_COLORS: Record<string, string> = {
   EXP: '#e8a000',
   JUNGLE: '#ef4444',
   MID: '#a855f7',
   GOLD: '#10b981',
   ROAM: '#06b6d4',
+  FLEX: '#3b82f6',
+};
+
+const ROLE_LABEL: Record<string, string> = {
+  EXP: 'EXP Lane',
+  JUNGLE: 'Jungle',
+  MID: 'Mid Lane',
+  GOLD: 'Gold Lane',
+  ROAM: 'Roamer',
+};
+
+const ROLE_ICONS: Record<string, React.ElementType> = {
+  EXP: Crosshair,
+  JUNGLE: Axe,
+  MID: Zap,
+  GOLD: Coins,
+  ROAM: Shield,
 };
 
 export default function TeamRosterView({
@@ -104,7 +136,7 @@ export default function TeamRosterView({
 }: TeamRosterViewProps) {
   const [copiedCode, setCopiedCode] = React.useState(false);
   const [inviteIGN, setInviteIGN] = React.useState('');
-  const [inviteRole, setInviteRole] = React.useState('FLEX');
+  const [inviteRole, setInviteRole] = React.useState<string>('EXP');
   const [isInviting, setIsInviting] = React.useState(false);
   const [editingPlayerId, setEditingPlayerId] = React.useState<string | null>(null);
   const [cancellingInviteId, setCancellingInviteId] = React.useState<string | null>(null);
@@ -112,6 +144,23 @@ export default function TeamRosterView({
   const [editIsSub, setEditIsSub] = React.useState(false);
   const [editPhotoUrl, setEditPhotoUrl] = React.useState('');
   const [uploadingImage, setUploadingImage] = React.useState(false);
+
+  // Substitution & Promotion Modal State
+  type SubModalType = 'promote_sub' | 'sub_out_starter';
+  interface SubModalData {
+    type: SubModalType;
+    player: Player;
+  }
+  const [subModal, setSubModal] = React.useState<SubModalData | null>(null);
+  const [selectedPartnerId, setSelectedPartnerId] = React.useState<string>('');
+  const [selectedTargetRole, setSelectedTargetRole] = React.useState<string>('EXP');
+  const [submittingSub, setSubmittingSub] = React.useState(false);
+
+  // Swap Roles Modal State
+  const [showSwapRolesModal, setShowSwapRolesModal] = React.useState(false);
+  const [swapStarterA, setSwapStarterA] = React.useState<string>('');
+  const [swapStarterB, setSwapStarterB] = React.useState<string>('');
+  const [submittingSwap, setSubmittingSwap] = React.useState(false);
 
   // Available players / Search state
   const [availableUsers, setAvailableUsers] = React.useState<AvailableUser[]>([]);
@@ -199,6 +248,91 @@ export default function TeamRosterView({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
+  const handleOpenPromoteSub = (player: Player) => {
+    if (starters.length >= 5) {
+      const defaultStarter = starters[0];
+      setSelectedPartnerId(defaultStarter?.id || '');
+      setSelectedTargetRole(defaultStarter?.role || player.role || 'EXP');
+    } else {
+      const unfilled = VALID_ROLES.find((r) => !starters.some((s) => s.role === r)) || player.role || 'EXP';
+      setSelectedPartnerId('');
+      setSelectedTargetRole(unfilled);
+    }
+    setSubModal({
+      type: 'promote_sub',
+      player,
+    });
+  };
+
+  const handleOpenSubOutStarter = (player: Player) => {
+    if (substitutes.length === 0) {
+      toast.info("No reserve players in squad. Invite a player first!");
+      return;
+    }
+    const defaultSub = substitutes[0];
+    setSelectedPartnerId(defaultSub?.id || '');
+    setSelectedTargetRole(player.role);
+    setSubModal({
+      type: 'sub_out_starter',
+      player,
+    });
+  };
+
+  const handleConfirmSubstitution = async () => {
+    if (!subModal) return;
+    setSubmittingSub(true);
+    try {
+      if (subModal.type === 'promote_sub') {
+        if (starters.length >= 5) {
+          if (!selectedPartnerId) {
+            toast.error("Please select which starting player to replace");
+            setSubmittingSub(false);
+            return;
+          }
+          await onEditPlayer(subModal.player.id, {
+            replacePlayerId: selectedPartnerId,
+            role: selectedTargetRole,
+          });
+        } else {
+          await onEditPlayer(subModal.player.id, {
+            isSubstitute: false,
+            role: selectedTargetRole,
+          });
+        }
+      } else {
+        // sub_out_starter
+        if (!selectedPartnerId) {
+          toast.error("Please select a reserve player to substitute in");
+          setSubmittingSub(false);
+          return;
+        }
+        await onEditPlayer(subModal.player.id, {
+          replacePlayerId: selectedPartnerId,
+          role: selectedTargetRole,
+        });
+      }
+      setSubModal(null);
+    } finally {
+      setSubmittingSub(false);
+    }
+  };
+
+  const handleConfirmSwapRoles = async () => {
+    if (!swapStarterA || !swapStarterB || swapStarterA === swapStarterB) {
+      toast.error("Please select two different starters to swap roles");
+      return;
+    }
+    setSubmittingSwap(true);
+    try {
+      await onEditPlayer(swapStarterA, {
+        swapRoleWithPlayerId: swapStarterB,
+      });
+      setShowSwapRolesModal(false);
+    } finally {
+      setSubmittingSwap(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Top Quick Actions & Team Code Bar */}
@@ -277,12 +411,11 @@ export default function TeamRosterView({
                 onChange={(e) => setInviteRole(e.target.value)}
                 className="bg-black/60 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-amber-400 font-bold outline-none focus:border-amber-500/50"
               >
-                <option value="FLEX">FLEX</option>
-                <option value="EXP">EXP</option>
-                <option value="JUNGLE">JUNGLE</option>
-                <option value="MID">MID</option>
-                <option value="GOLD">GOLD</option>
-                <option value="ROAM">ROAM</option>
+                {VALID_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABEL[r] || r}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -503,11 +636,30 @@ export default function TeamRosterView({
 
       {/* Main Starters Section (5 Players) */}
       <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-          <h4 className="text-xs font-black uppercase tracking-widest text-zinc-300">
-            Starting Five (Main Lineup)
-          </h4>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+            <h4 className="text-xs font-black uppercase tracking-widest text-zinc-300">
+              Starting Five (Main Lineup)
+            </h4>
+            <span className="text-[10px] text-zinc-500 font-bold ml-1">
+              ({starters.length}/5 Active)
+            </span>
+          </div>
+
+          {isCaptain && starters.length >= 2 && (
+            <button
+              onClick={() => {
+                setSwapStarterA(starters[0]?.id || '');
+                setSwapStarterB(starters[1]?.id || '');
+                setShowSwapRolesModal(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm"
+              title="Swap roles between two starting players"
+            >
+              <ArrowUpDown size={12} /> Swap Roles
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -516,6 +668,7 @@ export default function TeamRosterView({
             const isCapt = player.user?.id === team.captainId || player.id === team.captainId;
             const isSelf = currentUserPlayer?.id === player.id;
             const photoUrl = player.photo || player.user?.photo;
+            const RoleIconComp = ROLE_ICONS[player.role] || Users;
 
             return (
               <div
@@ -532,13 +685,14 @@ export default function TeamRosterView({
                 {/* Role Badge */}
                 <div className="absolute top-3 right-3 z-10">
                   <span
-                    className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest backdrop-blur-md border shadow-md"
+                    className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest backdrop-blur-md border shadow-md flex items-center gap-1"
                     style={{
                       background: `${roleColor}20`,
                       borderColor: `${roleColor}50`,
                       color: roleColor,
                     }}
                   >
+                    <RoleIconComp size={10} />
                     {player.role}
                   </span>
                 </div>
@@ -573,15 +727,28 @@ export default function TeamRosterView({
                           setEditIsSub(player.isSubstitute);
                           setEditPhotoUrl(player.photo || player.user?.photo || '');
                         }}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20 transition-all"
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20 transition-all"
+                        title="Edit Player Info"
                       >
-                        Edit
+                        <Pencil size={11} /> Edit
                       </button>
+
+                      {isCaptain && (
+                        <button
+                          onClick={() => handleOpenSubOutStarter(player)}
+                          disabled={substitutes.length === 0}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 text-[10px] font-bold uppercase tracking-wider border border-amber-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                          title={substitutes.length === 0 ? "No reserve players available" : "Substitute player out"}
+                        >
+                          <ArrowUpDown size={11} /> Sub Out
+                        </button>
+                      )}
+
                       {/* Only show Remove for other players, not self */}
                       {isCaptain && !isSelf && (
                         <button
                           onClick={() => setPlayerToRemove(player)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
+                          className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
                           title="Remove member"
                         >
                           <Trash2 size={12} />
@@ -601,30 +768,48 @@ export default function TeamRosterView({
                   )}
 
                   {editingPlayerId === player.id && (
-                    <div className="space-y-1.5 p-1.5 bg-black/40 rounded-lg border border-white/5 relative z-20">
+                    <div className="space-y-1.5 p-2 bg-black/60 rounded-xl border border-white/10 relative z-20 text-left">
+                      <label className="text-[9px] text-zinc-400 font-bold uppercase">Role:</label>
                       <select
                         value={editRole}
                         onChange={(e) => setEditRole(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 text-xs text-white p-1 rounded"
+                        className="w-full bg-zinc-900 border border-white/10 text-xs text-white p-1.5 rounded-lg outline-none focus:border-amber-500/50"
                       >
-                        <option value="EXP">EXP</option>
-                        <option value="JUNGLE">JUNGLE</option>
-                        <option value="MID">MID</option>
-                        <option value="GOLD">GOLD</option>
-                        <option value="ROAM">ROAM</option>
-                        <option value="FLEX">FLEX</option>
+                        {VALID_ROLES.map((r) => (
+                          <option key={r} value={r}>
+                            {ROLE_LABEL[r] || r}
+                          </option>
+                        ))}
                       </select>
-                      <select
-                        value={editIsSub ? "true" : "false"}
-                        onChange={(e) => setEditIsSub(e.target.value === "true")}
-                        className="w-full bg-white/5 border border-white/10 text-xs text-white p-1 rounded"
-                      >
-                        <option value="false">Starter</option>
-                        <option value="true" disabled={team.players.length <= 5}>
-                          Substitute {team.players.length <= 5 ? '(Needs 5 starters)' : ''}
-                        </option>
-                      </select>
-                      <div className="flex flex-col gap-1.5">
+
+                      {/* Role swap notification if role taken by another starter */}
+                      {(() => {
+                        const occupant = starters.find(s => s.id !== player.id && s.role === editRole);
+                        if (!occupant) return null;
+                        return (
+                          <div className="p-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30 text-[9px] text-purple-300 font-medium">
+                            Swaps role with <strong>{occupant.ign}</strong> ({ROLE_LABEL[occupant.role] || occupant.role}) on save.
+                          </div>
+                        );
+                      })()}
+
+                      {/* Substitution shortcut */}
+                      {substitutes.length > 0 && isCaptain && (
+                        <div className="pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingPlayerId(null);
+                              handleOpenSubOutStarter(player);
+                            }}
+                            className="w-full py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[9px] font-bold uppercase tracking-wider border border-amber-500/20 flex items-center justify-center gap-1"
+                          >
+                            <ArrowUpDown size={10} /> Substitute with Reserve →
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-1.5 pt-1">
                         {editPhotoUrl ? (
                           <div className="relative w-full h-16 rounded-lg overflow-hidden bg-black/60 border border-white/10 flex items-center justify-center group">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -650,7 +835,7 @@ export default function TeamRosterView({
                             </div>
                           </div>
                         ) : (
-                          <label className="flex items-center justify-center gap-1.5 w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-[9px] text-zinc-300 py-2 rounded cursor-pointer transition-colors">
+                          <label className="flex items-center justify-center gap-1.5 w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-[9px] text-zinc-300 py-1.5 rounded-lg cursor-pointer transition-colors">
                             {uploadingImage ? (
                               <><Loader2 size={12} className="animate-spin text-amber-400" /> Uploading...</>
                             ) : (
@@ -666,19 +851,24 @@ export default function TeamRosterView({
                           </label>
                         )}
                       </div>
+
                       <div className="flex gap-1 pt-1">
                         <button
-                          onClick={() => {
-                            onEditPlayer(player.id, { role: editRole, isSubstitute: editIsSub, photo: editPhotoUrl || null });
+                          onClick={async () => {
+                            await onEditPlayer(player.id, {
+                              role: editRole,
+                              photo: editPhotoUrl || null,
+                              swapRoleIfTaken: true,
+                            });
                             setEditingPlayerId(null);
                           }}
-                          className="flex-1 bg-emerald-500/20 text-emerald-400 text-[9px] py-1 font-bold uppercase rounded border border-emerald-500/30 hover:bg-emerald-500/30"
+                          className="flex-1 bg-emerald-500/20 text-emerald-400 text-[9px] py-1 font-bold uppercase rounded-lg border border-emerald-500/30 hover:bg-emerald-500/30"
                         >
                           Save
                         </button>
                         <button
                           onClick={() => setEditingPlayerId(null)}
-                          className="flex-1 bg-white/5 text-zinc-400 text-[9px] py-1 font-bold uppercase rounded hover:bg-white/10"
+                          className="flex-1 bg-white/5 text-zinc-400 text-[9px] py-1 font-bold uppercase rounded-lg hover:bg-white/10"
                         >
                           Cancel
                         </button>
@@ -720,6 +910,7 @@ export default function TeamRosterView({
             const isCapt = player.user?.id === team.captainId || player.id === team.captainId;
             const isSelf = currentUserPlayer?.id === player.id;
             const photoUrl = player.photo || player.user?.photo;
+            const RoleIconComp = ROLE_ICONS[player.role] || Users;
 
             return (
               <div
@@ -728,13 +919,14 @@ export default function TeamRosterView({
               >
                 <div className="absolute top-3 right-3 z-10">
                   <span
-                    className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border"
+                    className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border flex items-center gap-1"
                     style={{
                       background: `${roleColor}20`,
                       borderColor: `${roleColor}40`,
                       color: roleColor,
                     }}
                   >
+                    <RoleIconComp size={10} />
                     SUB · {player.role}
                   </span>
                 </div>
@@ -760,6 +952,16 @@ export default function TeamRosterView({
                   {/* Controls for Captain or Self */}
                   {(isCaptain || isSelf) && editingPlayerId !== player.id && (
                     <div className="flex gap-1 transition-opacity opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+                      {isCaptain && (
+                        <button
+                          onClick={() => handleOpenPromoteSub(player)}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30 transition-all shadow-sm"
+                          title="Promote to Starting Lineup"
+                        >
+                          <ArrowUpDown size={11} /> Sub In
+                        </button>
+                      )}
+
                       <button
                         onClick={() => {
                           setEditingPlayerId(player.id);
@@ -767,14 +969,16 @@ export default function TeamRosterView({
                           setEditIsSub(player.isSubstitute);
                           setEditPhotoUrl(player.photo || player.user?.photo || '');
                         }}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20 transition-all"
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20 transition-all"
+                        title="Edit Player Info"
                       >
-                        Edit
+                        <Pencil size={11} /> Edit
                       </button>
+
                       {isCaptain && !isSelf && (
                         <button
                           onClick={() => setPlayerToRemove(player)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
+                          className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider border border-red-500/20 transition-all"
                           title="Remove member"
                         >
                           <Trash2 size={12} />
@@ -793,30 +997,37 @@ export default function TeamRosterView({
                   )}
 
                   {editingPlayerId === player.id && (
-                    <div className="space-y-1.5 p-1.5 bg-black/40 rounded-lg border border-white/5 relative z-20">
+                    <div className="space-y-1.5 p-2 bg-black/60 rounded-xl border border-white/10 relative z-20 text-left">
+                      <label className="text-[9px] text-zinc-400 font-bold uppercase">Role:</label>
                       <select
                         value={editRole}
                         onChange={(e) => setEditRole(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 text-xs text-white p-1 rounded"
+                        className="w-full bg-zinc-900 border border-white/10 text-xs text-white p-1.5 rounded-lg outline-none focus:border-amber-500/50"
                       >
-                        <option value="EXP">EXP</option>
-                        <option value="JUNGLE">JUNGLE</option>
-                        <option value="MID">MID</option>
-                        <option value="GOLD">GOLD</option>
-                        <option value="ROAM">ROAM</option>
-                        <option value="FLEX">FLEX</option>
+                        {VALID_ROLES.map((r) => (
+                          <option key={r} value={r}>
+                            {ROLE_LABEL[r] || r}
+                          </option>
+                        ))}
                       </select>
-                      <select
-                        value={editIsSub ? "true" : "false"}
-                        onChange={(e) => setEditIsSub(e.target.value === "true")}
-                        className="w-full bg-white/5 border border-white/10 text-xs text-white p-1 rounded"
-                      >
-                        <option value="false" disabled={starters.length >= 5}>
-                          Starter {starters.length >= 5 ? '(5/5 Starters Full)' : ''}
-                        </option>
-                        <option value="true">Substitute</option>
-                      </select>
-                      <div className="flex flex-col gap-1.5">
+
+                      {/* Promotion shortcut */}
+                      {isCaptain && (
+                        <div className="pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingPlayerId(null);
+                              handleOpenPromoteSub(player);
+                            }}
+                            className="w-full py-1.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-[9px] font-black uppercase tracking-wider border border-emerald-500/30 flex items-center justify-center gap-1"
+                          >
+                            <ArrowUpDown size={10} /> Promote / Sub In →
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-1.5 pt-1">
                         {editPhotoUrl ? (
                           <div className="relative w-full h-16 rounded-lg overflow-hidden bg-black/60 border border-white/10 flex items-center justify-center group">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -842,7 +1053,7 @@ export default function TeamRosterView({
                             </div>
                           </div>
                         ) : (
-                          <label className="flex items-center justify-center gap-1.5 w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-[9px] text-zinc-300 py-2 rounded cursor-pointer transition-colors">
+                          <label className="flex items-center justify-center gap-1.5 w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-[9px] text-zinc-300 py-1.5 rounded-lg cursor-pointer transition-colors">
                             {uploadingImage ? (
                               <><Loader2 size={12} className="animate-spin text-amber-400" /> Uploading...</>
                             ) : (
@@ -858,19 +1069,23 @@ export default function TeamRosterView({
                           </label>
                         )}
                       </div>
+
                       <div className="flex gap-1 pt-1">
                         <button
-                          onClick={() => {
-                            onEditPlayer(player.id, { role: editRole, isSubstitute: editIsSub, photo: editPhotoUrl || null });
+                          onClick={async () => {
+                            await onEditPlayer(player.id, {
+                              role: editRole,
+                              photo: editPhotoUrl || null,
+                            });
                             setEditingPlayerId(null);
                           }}
-                          className="flex-1 bg-emerald-500/20 text-emerald-400 text-[9px] py-1 font-bold uppercase rounded border border-emerald-500/30 hover:bg-emerald-500/30"
+                          className="flex-1 bg-emerald-500/20 text-emerald-400 text-[9px] py-1 font-bold uppercase rounded-lg border border-emerald-500/30 hover:bg-emerald-500/30"
                         >
                           Save
                         </button>
                         <button
                           onClick={() => setEditingPlayerId(null)}
-                          className="flex-1 bg-white/5 text-zinc-400 text-[9px] py-1 font-bold uppercase rounded hover:bg-white/10"
+                          className="flex-1 bg-white/5 text-zinc-400 text-[9px] py-1 font-bold uppercase rounded-lg hover:bg-white/10"
                         >
                           Cancel
                         </button>
@@ -889,6 +1104,412 @@ export default function TeamRosterView({
           )}
         </div>
       </div>
+
+      {/* ── SUBSTITUTION & PROMOTION MODAL ───────────────────────── */}
+      <AnimatePresence>
+        {subModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-lg bg-[#0e0e17] border border-amber-500/30 rounded-3xl p-6 space-y-5 shadow-2xl relative"
+            >
+              <button
+                type="button"
+                onClick={() => setSubModal(null)}
+                className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+              >
+                <X size={18} />
+              </button>
+
+              {/* Modal Header */}
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <ArrowUpDown size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-tight text-white">
+                    {subModal.type === 'promote_sub'
+                      ? 'Promote Player to Lineup'
+                      : 'Substitute Out Starter'}
+                  </h3>
+                  <p className="text-zinc-400 text-xs font-medium">
+                    {subModal.type === 'promote_sub'
+                      ? `Promoting reserve ${subModal.player.ign}`
+                      : `Replacing starter ${subModal.player.ign} (${subModal.player.role})`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Body */}
+              {subModal.type === 'promote_sub' && starters.length >= 5 ? (
+                /* Sub in when 5 starters exist -> MUST select which starter to replace */
+                <div className="space-y-4">
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
+                    Your starting five is full (5/5). Select which starting player <strong>{subModal.player.ign}</strong> will replace:
+                  </div>
+
+                  {/* Starters Selection List */}
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {starters.map((starter) => {
+                      const isSelected = selectedPartnerId === starter.id;
+                      const roleColor = ROLE_COLORS[starter.role] || '#e8a000';
+                      const isCapt = starter.user?.id === team.captainId || starter.id === team.captainId;
+
+                      return (
+                        <div
+                          key={starter.id}
+                          onClick={() => {
+                            setSelectedPartnerId(starter.id);
+                            setSelectedTargetRole(starter.role);
+                          }}
+                          className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-amber-500/15 border-amber-500/60 shadow-md'
+                              : 'bg-black/40 border-white/10 hover:border-white/20'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-zinc-800 shrink-0 border border-white/10 flex items-center justify-center text-xs font-bold text-amber-400">
+                              {starter.photo || starter.user?.photo ? (
+                                <Image
+                                  src={starter.photo || starter.user?.photo || ''}
+                                  alt={starter.ign}
+                                  fill
+                                  className="object-cover"
+                                />
+                              ) : (
+                                starter.ign.slice(0, 2).toUpperCase()
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="text-xs font-bold text-white truncate">{starter.ign}</span>
+                                {isCapt && (
+                                  <span className="text-[9px] text-amber-300 font-bold flex items-center gap-0.5">
+                                    <Crown size={10} /> Captain
+                                  </span>
+                                )}
+                              </div>
+                              <span
+                                className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                                style={{ background: `${roleColor}20`, color: roleColor }}
+                              >
+                                {ROLE_LABEL[starter.role] || starter.role}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {isSelected ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-black text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                                <Check size={12} /> Replace
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-zinc-500 font-bold uppercase">
+                                Select
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Role Assignment Selector */}
+                  <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                    <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
+                      Role for {subModal.player.ign} in Starting Lineup:
+                    </label>
+                    <select
+                      value={selectedTargetRole}
+                      onChange={(e) => setSelectedTargetRole(e.target.value)}
+                      className="w-full bg-zinc-900 border border-white/10 text-xs text-white p-2.5 rounded-xl outline-none focus:border-amber-500/50"
+                    >
+                      {VALID_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABEL[r] || r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Summary preview */}
+                  {selectedPartnerId && (
+                    <div className="p-3 rounded-xl bg-zinc-900/90 border border-white/10 flex items-center justify-between text-xs">
+                      <div className="text-emerald-400 font-bold flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        <span>{subModal.player.ign} ➔ Starting {selectedTargetRole}</span>
+                      </div>
+                      <ArrowRight size={14} className="text-zinc-600" />
+                      <div className="text-purple-400 font-bold flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-purple-400" />
+                        <span>{starters.find((s) => s.id === selectedPartnerId)?.ign} ➔ Reserves</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : subModal.type === 'promote_sub' ? (
+                /* Sub in when < 5 starters exist -> pick role directly */
+                <div className="space-y-4">
+                  <p className="text-xs text-zinc-300">
+                    Your starting lineup has open slots. Choose a role for <strong>{subModal.player.ign}</strong>:
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {VALID_ROLES.map((r) => {
+                      const isOccupied = starters.some((s) => s.role === r);
+                      const isSelected = selectedTargetRole === r;
+                      const roleColor = ROLE_COLORS[r] || '#e8a000';
+
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setSelectedTargetRole(r)}
+                          className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                            isSelected
+                              ? 'border-amber-500 bg-amber-500/20'
+                              : 'border-white/10 bg-black/40 hover:border-white/20'
+                          }`}
+                        >
+                          <span className="text-xs font-black uppercase" style={{ color: roleColor }}>
+                            {ROLE_LABEL[r]}
+                          </span>
+                          <span className="text-[9px] font-bold mt-1 text-zinc-500">
+                            {isOccupied ? 'Occupied' : 'Open Slot'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                /* sub_out_starter -> select which substitute to bring in */
+                <div className="space-y-4">
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
+                    Select a reserve player to replace <strong>{subModal.player.ign}</strong> in the Starting Five:
+                  </div>
+
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {substitutes.map((sub) => {
+                      const isSelected = selectedPartnerId === sub.id;
+                      const roleColor = ROLE_COLORS[sub.role] || '#a855f7';
+
+                      return (
+                        <div
+                          key={sub.id}
+                          onClick={() => setSelectedPartnerId(sub.id)}
+                          className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-amber-500/15 border-amber-500/60 shadow-md'
+                              : 'bg-black/40 border-white/10 hover:border-white/20'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-zinc-800 shrink-0 border border-white/10 flex items-center justify-center text-xs font-bold text-amber-400">
+                              {sub.photo || sub.user?.photo ? (
+                                <Image
+                                  src={sub.photo || sub.user?.photo || ''}
+                                  alt={sub.ign}
+                                  fill
+                                  className="object-cover"
+                                />
+                              ) : (
+                                sub.ign.slice(0, 2).toUpperCase()
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-white truncate block">{sub.ign}</span>
+                              <span
+                                className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded inline-block"
+                                style={{ background: `${roleColor}20`, color: roleColor }}
+                              >
+                                Preferred: {sub.role}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div>
+                            {isSelected ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-black text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                                <Check size={12} /> Bring In
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-zinc-500 font-bold uppercase">
+                                Select
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+                    <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
+                      Assigned Role in Starting Lineup:
+                    </label>
+                    <select
+                      value={selectedTargetRole}
+                      onChange={(e) => setSelectedTargetRole(e.target.value)}
+                      className="w-full bg-zinc-900 border border-white/10 text-xs text-white p-2.5 rounded-xl outline-none focus:border-amber-500/50"
+                    >
+                      {VALID_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABEL[r] || r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedPartnerId && (
+                    <div className="p-3 rounded-xl bg-zinc-900/90 border border-white/10 flex items-center justify-between text-xs">
+                      <div className="text-purple-400 font-bold flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-purple-400" />
+                        <span>{subModal.player.ign} ➔ Reserves</span>
+                      </div>
+                      <ArrowRight size={14} className="text-zinc-600" />
+                      <div className="text-emerald-400 font-bold flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        <span>{substitutes.find((s) => s.id === selectedPartnerId)?.ign} ➔ Starting {selectedTargetRole}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSubModal(null)}
+                  className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-bold uppercase tracking-wider transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={submittingSub || (subModal.type === 'promote_sub' && starters.length >= 5 && !selectedPartnerId) || (subModal.type === 'sub_out_starter' && !selectedPartnerId)}
+                  onClick={handleConfirmSubstitution}
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg shadow-amber-500/20 disabled:opacity-50"
+                >
+                  {submittingSub ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  <span>Confirm Lineup Change</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── SWAP ROLES MODAL ───────────────────────── */}
+      <AnimatePresence>
+        {showSwapRolesModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-md bg-[#0e0e17] border border-purple-500/30 rounded-3xl p-6 space-y-5 shadow-2xl relative"
+            >
+              <button
+                type="button"
+                onClick={() => setShowSwapRolesModal(false)}
+                className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+                  <ArrowUpDown size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-tight text-white">Swap Starter Roles</h3>
+                  <p className="text-zinc-400 text-xs font-medium">Reassign positions in the Starting Five</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block mb-1.5">
+                    Starter A:
+                  </label>
+                  <select
+                    value={swapStarterA}
+                    onChange={(e) => setSwapStarterA(e.target.value)}
+                    className="w-full bg-black/60 border border-white/10 text-xs text-white p-2.5 rounded-xl outline-none focus:border-purple-500/50"
+                  >
+                    {starters.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.ign} — ({ROLE_LABEL[s.role] || s.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex justify-center text-purple-400">
+                  <ArrowUpDown size={20} className="animate-pulse" />
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block mb-1.5">
+                    Starter B:
+                  </label>
+                  <select
+                    value={swapStarterB}
+                    onChange={(e) => setSwapStarterB(e.target.value)}
+                    className="w-full bg-black/60 border border-white/10 text-xs text-white p-2.5 rounded-xl outline-none focus:border-purple-500/50"
+                  >
+                    {starters.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.ign} — ({ROLE_LABEL[s.role] || s.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {swapStarterA && swapStarterB && swapStarterA !== swapStarterB && (
+                  <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/20 space-y-1 text-xs">
+                    <p className="text-zinc-300">
+                      <strong>{starters.find((s) => s.id === swapStarterA)?.ign}</strong> will play{' '}
+                      <span className="text-purple-300 font-bold">
+                        {ROLE_LABEL[starters.find((s) => s.id === swapStarterB)?.role || ''] || ''}
+                      </span>
+                    </p>
+                    <p className="text-zinc-300">
+                      <strong>{starters.find((s) => s.id === swapStarterB)?.ign}</strong> will play{' '}
+                      <span className="text-purple-300 font-bold">
+                        {ROLE_LABEL[starters.find((s) => s.id === swapStarterA)?.role || ''] || ''}
+                      </span>
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSwapRolesModal(false)}
+                  className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-bold uppercase tracking-wider transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={submittingSwap || !swapStarterA || !swapStarterB || swapStarterA === swapStarterB}
+                  onClick={handleConfirmSwapRoles}
+                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg shadow-purple-600/20 disabled:opacity-50"
+                >
+                  {submittingSwap ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpDown size={14} />}
+                  <span>Swap Positions</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ── LEAVE TEAM CONFIRMATION MODAL ───────────────────────── */}
       <AnimatePresence>

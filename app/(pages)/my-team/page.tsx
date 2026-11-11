@@ -244,24 +244,38 @@ export default function MyTeamPage() {
     }
   };
 
-  // ── Edit Player (Role / Substitute / Photo) ───────────────────────
-  const handleEditPlayer = async (playerId: string, updates: { role?: string; isSubstitute?: boolean; photo?: string | null }) => {
-    if (!team) return;
+  // ── Edit / Substitute Player (Role / Swap / Promotion / Photo) ──────
+  const handleEditPlayer = async (
+    playerId: string,
+    updates: {
+      role?: string;
+      isSubstitute?: boolean;
+      photo?: string | null;
+      replacePlayerId?: string;
+      swapRoleWithPlayerId?: string;
+      swapRoleIfTaken?: boolean;
+      realName?: string | null;
+    }
+  ): Promise<boolean> => {
+    if (!team) return false;
     try {
       const res = await fetch(`/api/teams/${team.id}/players/${playerId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        toast.success('Player updated');
-        fetchMyTeam();
+        toast.success(data?.message || 'Squad roster updated successfully');
+        await fetchMyTeam();
+        return true;
       } else {
-        const err = await res.json();
-        toast.error(err.error || 'Failed to update player');
+        toast.error(data?.error || 'Failed to update squad player');
+        return false;
       }
     } catch {
-      toast.error('Error updating player');
+      toast.error('Network error updating player');
+      return false;
     }
   };
 
