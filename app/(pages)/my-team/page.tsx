@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2,
   Crown, ArrowUpDown, Send, Trophy, Swords, UserCheck, Settings,
-  Sparkles, Camera, MapPin, Tag, Check, Copy
+  Sparkles, Camera, MapPin, Tag, Check, Copy, Clock, Mail
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { toast } from 'sonner';
@@ -64,7 +65,10 @@ interface TeamOption {
 
 interface TeamInvite {
   id: string;
+  sentAt?: string | null;
   createdAt?: string | null;
+  fromUserId?: string | null;
+  toUserId?: string | null;
   fromUser?: {
     id: string;
     ign: string;
@@ -72,16 +76,31 @@ interface TeamInvite {
     player?: { role?: string } | null;
     mainRole?: string | null;
   } | null;
+  toUser?: {
+    id: string;
+    ign: string;
+    photo?: string | null;
+  } | null;
   toIGN?: string | null;
+  message?: string | null;
   role?: string | null;
   team?: { id?: string; name?: string } | null;
 }
 
-export default function MyTeamPage() {
+export function MyTeamContent() {
   const { data: session, status } = useSession();
+  const searchParams = useSearchParams();
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'roster' | 'recruitment' | 'challenges' | 'settings'>('roster');
+
+  // ── Sync Active Tab from URL Query Param (e.g. ?tab=recruitment) ──
+  useEffect(() => {
+    const tab = searchParams?.get('tab');
+    if (tab && ['roster', 'recruitment', 'challenges', 'settings'].includes(tab)) {
+      setActiveTab(tab as any);
+    }
+  }, [searchParams]);
 
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [copiedHeaderCode, setCopiedHeaderCode] = useState(false);
@@ -91,6 +110,99 @@ export default function MyTeamPage() {
   const [teamOptions, setTeamOptions] = useState<TeamOption[]>([]);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [loadingInvites, setLoadingInvites] = useState(false);
+
+  // ── Pending Applications (when user applied to squads) ──
+  const [myApplications, setMyApplications] = useState<Array<{
+    id: string;
+    teamId: string;
+    message: string | null;
+    sentAt: string;
+    team?: {
+      id: string;
+      name: string;
+      tag: string;
+      logo?: string | null;
+      color?: string | null;
+    };
+  }>>([]);
+  const [loadingMyApps, setLoadingMyApps] = useState(false);
+  const [withdrawingAppId, setWithdrawingAppId] = useState<string | null>(null);
+
+  // ── Received Invites (when squads invited the user) ──
+  const [receivedInvites, setReceivedInvites] = useState<Array<any>>([]);
+  const [loadingReceivedInvites, setLoadingReceivedInvites] = useState(false);
+  const [respondingInviteId, setRespondingInviteId] = useState<string | null>(null);
+
+  const fetchMyApplications = useCallback(async () => {
+    try {
+      setLoadingMyApps(true);
+      const res = await fetch('/api/my-applications', { cache: 'no-store' });
+      if (res.ok) {
+        const d = await res.json();
+        setMyApplications(Array.isArray(d?.applications) ? d.applications : []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingMyApps(false);
+    }
+  }, []);
+
+  const fetchReceivedInvites = useCallback(async () => {
+    try {
+      setLoadingReceivedInvites(true);
+      const res = await fetch('/api/invites/received', { cache: 'no-store' });
+      if (res.ok) {
+        const d = await res.json();
+        setReceivedInvites(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingReceivedInvites(false);
+    }
+  }, []);
+
+  const handleWithdrawApplication = async (teamId: string) => {
+    try {
+      setWithdrawingAppId(teamId);
+      const res = await fetch(`/api/my-applications?teamId=${teamId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Application withdrawn successfully');
+        fetchMyApplications();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        toast.error(d?.error || 'Failed to withdraw application');
+      }
+    } catch {
+      toast.error('Failed to withdraw application');
+    } finally {
+      setWithdrawingAppId(null);
+    }
+  };
+
+  const handleRespondReceivedInvite = async (inviteId: string, action: 'accept' | 'decline') => {
+    try {
+      setRespondingInviteId(inviteId);
+      const res = await fetch(`/api/invites/${inviteId}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success(action === 'accept' ? '🎉 Welcome to the squad!' : 'Invite declined');
+        fetchReceivedInvites();
+        fetchMyTeam();
+      } else {
+        toast.error(d?.error || 'Failed to respond to invite');
+      }
+    } catch {
+      toast.error('Failed to respond to invite');
+    } finally {
+      setRespondingInviteId(null);
+    }
+  };
 
   // ── Fetch User's Team ──────────────────────────────────────
   const fetchMyTeam = useCallback(async () => {
@@ -120,10 +232,12 @@ export default function MyTeamPage() {
   useEffect(() => {
     if (status === 'authenticated') {
       fetchMyTeam();
+      fetchMyApplications();
+      fetchReceivedInvites();
     } else if (status === 'unauthenticated') {
       setLoading(false);
     }
-  }, [status, fetchMyTeam]);
+  }, [status, fetchMyTeam, fetchMyApplications, fetchReceivedInvites]);
 
   // ── Fetch Pending Applications/Invites ────────────────────
   const fetchInvites = useCallback(async () => {
@@ -484,44 +598,197 @@ export default function MyTeamPage() {
     );
   }
 
-  // If user is not on a team, show Register / Join Squad Hero Banner
+  // If user is not on a team, show Register / Join Squad Hero Banner & Active Applications/Invites
   if (!team) {
     return (
       <div className="min-h-screen bg-[#07070c] text-white pt-28 md:pt-36 pb-20 px-4">
-        <div className="max-w-4xl mx-auto text-center space-y-8 p-10 rounded-3xl bg-gradient-to-b from-[#12121c] to-[#07070c] border border-white/10 shadow-2xl relative overflow-hidden">
-          <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto">
-            <Shield size={40} />
+        <div className="max-w-4xl mx-auto space-y-8">
+          {/* Hero Banner */}
+          <div className="text-center space-y-8 p-10 rounded-3xl bg-gradient-to-b from-[#12121c] to-[#07070c] border border-white/10 shadow-2xl relative overflow-hidden">
+            <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto">
+              <Shield size={40} />
+            </div>
+
+            <div className="space-y-3">
+              <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
+                You Are Not in a Squad
+              </h1>
+              <p className="text-zinc-400 text-sm max-w-lg mx-auto leading-relaxed">
+                Assemble your roster, register your clan tag, or apply to join an active squad competing in Botsville tournaments.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
+              <Link
+                href="/register-team"
+                className="px-8 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider text-xs shadow-xl shadow-amber-500/20 transition-all flex items-center gap-2"
+              >
+                <Users size={16} /> Register New Squad
+              </Link>
+              <Link
+                href="/teams"
+                className="px-8 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-wider text-xs border border-white/10 transition-all flex items-center gap-2"
+              >
+                <Swords size={16} /> Explore Active Teams
+              </Link>
+            </div>
           </div>
 
-          <div className="space-y-3">
-            <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
-              You Are Not in a Squad
-            </h1>
-            <p className="text-zinc-400 text-sm max-w-lg mx-auto leading-relaxed">
-              Assemble your roster, register your clan tag, and compete in the national Botsville tournaments.
-            </p>
-          </div>
+          {/* Pending Applications Section */}
+          {myApplications.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-black uppercase tracking-widest text-amber-400 flex items-center gap-2">
+                  <Clock size={16} /> Your Pending Squad Applications ({myApplications.length})
+                </h2>
+                <span className="text-[10px] text-zinc-500 font-mono">Awaiting captain response</span>
+              </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
-            <Link
-              href="/register-team"
-              className="px-8 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider text-xs shadow-xl shadow-amber-500/20 transition-all flex items-center gap-2"
-            >
-              <Users size={16} /> Register New Squad
-            </Link>
-            <Link
-              href="/teams"
-              className="px-8 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-wider text-xs border border-white/10 transition-all flex items-center gap-2"
-            >
-              <Swords size={16} /> Explore Active Teams
-            </Link>
-          </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {myApplications.map((app) => (
+                  <div
+                    key={app.id}
+                    className="p-5 rounded-2xl bg-[#0f0f18] border border-white/10 hover:border-amber-500/30 transition-all space-y-4 flex flex-col justify-between"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-11 h-11 rounded-xl bg-black/60 border border-white/10 flex items-center justify-center font-black text-amber-400 overflow-hidden relative"
+                            style={{ borderColor: app.team?.color ? `${app.team.color}50` : undefined }}
+                          >
+                            {app.team?.logo ? (
+                              <Image src={app.team.logo} alt={app.team.name} fill className="object-cover" />
+                            ) : (
+                              <span>{app.team?.tag || 'SQ'}</span>
+                            )}
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-white text-sm">{app.team?.name || 'Squad'}</h3>
+                            <span className="text-[10px] font-mono text-zinc-400">Tag: [{app.team?.tag}]</span>
+                          </div>
+                        </div>
+
+                        <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+                          <Clock size={11} className="animate-pulse" /> Pending
+                        </span>
+                      </div>
+
+                      {app.message && (
+                        <div className="p-3 rounded-xl bg-black/40 border border-white/5">
+                          <p className="text-[11px] text-zinc-300 italic leading-relaxed">
+                            {app.message}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="text-[10px] text-zinc-500 font-mono">
+                        Submitted: {new Date(app.sentAt).toLocaleDateString()}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-white/5 flex items-center justify-between">
+                      <Link
+                        href={`/teams/${app.teamId}`}
+                        className="text-[11px] text-zinc-400 hover:text-white font-bold uppercase tracking-wider transition-colors"
+                      >
+                        View Squad →
+                      </Link>
+
+                      <button
+                        type="button"
+                        onClick={() => handleWithdrawApplication(app.teamId)}
+                        disabled={withdrawingAppId === app.teamId}
+                        className="px-3.5 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-[10px] font-bold uppercase transition-all flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        {withdrawingAppId === app.teamId ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <X size={12} />
+                        )}
+                        <span>Withdraw</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Direct Invites Received Section */}
+          {receivedInvites.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-black uppercase tracking-widest text-emerald-400 flex items-center gap-2">
+                  <Mail size={16} /> Direct Squad Invites Received ({receivedInvites.length})
+                </h2>
+                <span className="text-[10px] text-zinc-500 font-mono">Invited by squad captains</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {receivedInvites.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="p-5 rounded-2xl bg-gradient-to-b from-[#121815] to-[#0c120f] border border-emerald-500/30 space-y-4 flex flex-col justify-between"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-xl bg-black/60 border border-emerald-500/30 flex items-center justify-center font-black text-emerald-400 overflow-hidden relative">
+                          {inv.team?.logo ? (
+                            <Image src={inv.team.logo} alt={inv.team.name} fill className="object-cover" />
+                          ) : (
+                            <span>{inv.team?.tag || 'SQ'}</span>
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-white text-sm">{inv.team?.name || 'Squad'}</h3>
+                          <span className="text-[10px] font-mono text-zinc-400">Invited you to their roster</span>
+                        </div>
+                      </div>
+
+                      {inv.message && (
+                        <p className="text-xs text-emerald-200/80 italic bg-black/30 p-2.5 rounded-lg border border-emerald-500/20">
+                          &ldquo;{inv.message}&rdquo;
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-3 border-t border-emerald-500/20">
+                      <button
+                        onClick={() => handleRespondReceivedInvite(inv.id, 'accept')}
+                        disabled={respondingInviteId === inv.id}
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md disabled:opacity-50"
+                      >
+                        {respondingInviteId === inv.id ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <Check size={13} />
+                        )}
+                        <span>Accept Invite</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleRespondReceivedInvite(inv.id, 'decline')}
+                        disabled={respondingInviteId === inv.id}
+                        className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 border border-white/10 transition-all disabled:opacity-50"
+                      >
+                        <X size={13} />
+                        <span>Decline</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
   const isCaptain = Boolean(team.isCaptain);
+  const incomingApplications = invites.filter((inv) => (inv.fromUserId || inv.fromUser?.id) !== team.captainId);
+  const sentInvites = invites.filter((inv) => (inv.fromUserId || inv.fromUser?.id) === team.captainId);
 
   return (
     <div className="min-h-screen bg-[#07070c] text-white pt-24 pb-20">
@@ -558,24 +825,25 @@ export default function MyTeamPage() {
 
           {/* Banner Content Body */}
           <div className="p-6 sm:p-8 -mt-16 sm:-mt-20 relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
-            <div className="flex items-end gap-5">
-              {/* Logo Avatar */}
-              <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden bg-zinc-900 border-2 border-white/20 shadow-2xl shrink-0 group">
+            <div className="flex flex-col sm:flex-row sm:items-end gap-5">
+              {/* Logo with Captain Upload Trigger */}
+              <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl bg-zinc-950 border-4 border-[#0d0d14] shadow-2xl overflow-hidden shrink-0 group/logo">
                 {team.logo ? (
-                  <Image src={team.logo} alt={team.name} fill className="object-cover" />
+                  <Image src={team.logo} alt={team.name} fill className="object-cover" priority />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-[#101018] text-amber-400 font-black text-2xl">
+                  <div className="w-full h-full flex items-center justify-center bg-zinc-900 text-amber-400 font-mono font-black text-2xl">
                     {team.tag}
                   </div>
                 )}
+
                 {isCaptain && (
-                  <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 cursor-pointer text-white">
+                  <label className="absolute inset-0 bg-black/70 opacity-0 group-hover/logo:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white gap-1 p-2 text-center">
                     {uploadingHeaderLogo ? (
-                      <Loader2 size={18} className="animate-spin text-amber-400" />
+                      <Loader2 size={20} className="animate-spin text-amber-400" />
                     ) : (
                       <>
                         <Camera size={18} className="text-amber-400" />
-                        <span className="text-[9px] font-black uppercase">Change</span>
+                        <span className="text-[9px] font-black uppercase tracking-wider">Change Logo</span>
                       </>
                     )}
                     <input
@@ -589,37 +857,47 @@ export default function MyTeamPage() {
                 )}
               </div>
 
-              {/* Title & Tag */}
-              <div className="space-y-1 pb-1">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-mono font-black uppercase">
+              {/* Team Titles & Identifiers */}
+              <div className="space-y-1.5 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-mono font-black uppercase tracking-wider">
                     [{team.tag}]
                   </span>
-                  <span className="text-zinc-400 text-xs font-bold uppercase">{team.region || 'Accra'}</span>
+                  <span className="px-2.5 py-0.5 rounded-lg bg-white/5 border border-white/10 text-zinc-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                    <MapPin size={10} /> {team.region}
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
+                    ● {team.status}
+                  </span>
                 </div>
-                <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
+
+                <h1 className="text-2xl sm:text-4xl font-black uppercase tracking-tight text-white truncate">
                   {team.name}
                 </h1>
+
+                <p className="text-zinc-400 text-xs">
+                  {team.players.length} / 20 Registered Players ({team.players.filter((p) => !p.isSubstitute).length} Starters)
+                </p>
               </div>
             </div>
 
-            {/* Quick Status Pill & Team Code */}
+            {/* Quick Team Code Copy Pill & Captain Badge */}
             <div className="flex flex-wrap items-center gap-3">
               {team.teamCode && (
-                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-black/60 border border-amber-500/30 text-xs shadow-lg backdrop-blur-md">
-                  <span className="text-zinc-400 text-[10px] font-bold uppercase tracking-wider">Team Code:</span>
-                  <span className="text-amber-400 font-mono font-black tracking-widest text-sm">{team.teamCode}</span>
+                <div className="flex items-center gap-2 bg-black/70 border border-amber-500/30 px-3.5 py-1.5 rounded-xl">
+                  <span className="text-zinc-400 text-[10px] uppercase font-bold tracking-wider">Squad Code:</span>
+                  <span className="text-amber-400 font-mono font-black text-xs tracking-widest">{team.teamCode}</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(team.teamCode || '');
+                      navigator.clipboard.writeText(team.teamCode!);
                       setCopiedHeaderCode(true);
-                      toast.success('Team Code copied! Share with new players to join during signup.');
+                      toast.success('Squad Join Code copied!');
                       setTimeout(() => setCopiedHeaderCode(false), 2000);
                     }}
-                    className="p-1 rounded hover:bg-white/10 text-zinc-300 transition-colors"
-                    title="Copy Team Code to share with new recruits"
+                    className="p-1 rounded hover:bg-white/10 text-zinc-300 transition-colors ml-0.5"
+                    title="Copy Squad Code"
                   >
-                    {copiedHeaderCode ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                    {copiedHeaderCode ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
                   </button>
                 </div>
               )}
@@ -639,7 +917,7 @@ export default function MyTeamPage() {
           <div className="flex items-center gap-3 overflow-x-auto py-3 scrollbar-hide">
             {[
               { key: 'roster', label: 'Squad Roster', icon: Shield },
-              { key: 'recruitment', label: 'Recruitment & Trials', icon: UserCheck, badge: invites.length },
+              { key: 'recruitment', label: 'Applications & Trials', icon: UserCheck, badge: incomingApplications.length },
               { key: 'challenges', label: 'Challenge Arena', icon: Swords, badge: challenges.length },
               { key: 'settings', label: 'Identity & Customization', icon: Settings },
             ].map((tab) => {
@@ -702,7 +980,7 @@ export default function MyTeamPage() {
                 onGenerateTeamCode={generateInviteCode}
                 teamCode={team.teamCode || inviteCode}
                 generatingCode={generatingCode}
-                invites={invites}
+                invites={sentInvites}
                 onCancelInvite={handleCancelInvite}
               />
             )}
@@ -712,7 +990,7 @@ export default function MyTeamPage() {
                 isCaptain={isCaptain}
                 isRecruiting={Boolean(team.isRecruiting)}
                 onToggleRecruiting={handleToggleRecruiting}
-                invites={invites}
+                invites={incomingApplications}
                 onAcceptInvite={handleAcceptInvite}
                 onDeclineInvite={handleDeclineInvite}
                 loadingInvites={loadingInvites}
@@ -743,5 +1021,20 @@ export default function MyTeamPage() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+export default function MyTeamPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#07070c] flex flex-col items-center justify-center pt-28 md:pt-36 text-center">
+          <Loader2 size={36} className="animate-spin text-amber-400 mb-3" />
+          <p className="text-xs font-mono font-black uppercase tracking-widest text-zinc-500">Loading Squad Hub...</p>
+        </div>
+      }
+    >
+      <MyTeamContent />
+    </Suspense>
   );
 }

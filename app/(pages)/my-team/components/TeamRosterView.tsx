@@ -41,6 +41,7 @@ interface Team {
 
 interface TeamInvite {
   id: string;
+  fromUserId?: string | null;
   toIGN?: string | null;
   toUser?: {
     id: string;
@@ -579,7 +580,7 @@ export default function TeamRosterView({
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {invites.map((inv) => {
-                  const targetIgn = inv.toUser?.ign || inv.toIGN || 'Player';
+                  const targetIgn = inv.toIGN || inv.toUser?.ign || 'Player';
                   const targetPhoto = inv.toUser?.photo;
                   const roleColor = ROLE_COLORS[inv.role || 'FLEX'] || '#e8a000';
                   const isCancellingThis = cancellingInviteId === inv.id;

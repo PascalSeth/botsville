@@ -131,8 +131,17 @@ export async function POST(
     // 1) recipient (invite target) accepts an invite sent by a team -> behavior unchanged
     // 2) captain (invite target for an application) accepts an application -> create player for the applicant (invite.fromUserId)
 
-    // Default role if not provided (for captain-driven accepts)
-    const acceptRole = role && Object.values(GameRole).includes(role) ? (role as GameRole) : GameRole.EXP;
+    // Default role if not provided (for captain-driven accepts, try extracting from application message)
+    let extractedRole: GameRole | undefined;
+    if (invite.message) {
+      const match = invite.message.match(/Preferred Role:\s*([A-Za-z]+)/i);
+      if (match && Object.values(GameRole).includes(match[1].toUpperCase() as GameRole)) {
+        extractedRole = match[1].toUpperCase() as GameRole;
+      }
+    }
+    const acceptRole = role && Object.values(GameRole).includes(role)
+      ? (role as GameRole)
+      : (extractedRole || GameRole.EXP);
 
     // Helper to create player for a target user id
     const createPlayerForUser = async (targetUserId: string, targetIgn: string) => {

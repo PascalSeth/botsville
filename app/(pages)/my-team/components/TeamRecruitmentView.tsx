@@ -7,12 +7,22 @@ import { toast } from 'sonner';
 
 interface TeamInvite {
   id: string;
+  sentAt?: string | null;
   createdAt?: string | null;
+  message?: string | null;
+  fromUserId?: string | null;
+  toUserId?: string | null;
   fromUser?: {
     id: string;
     ign: string;
     photo?: string | null;
     player?: { role?: string } | null;
+    mainRole?: string | null;
+  } | null;
+  toUser?: {
+    id: string;
+    ign: string;
+    photo?: string | null;
     mainRole?: string | null;
   } | null;
   toIGN?: string | null;
@@ -177,7 +187,7 @@ export default function TeamRecruitmentView({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-black uppercase tracking-widest text-zinc-300 flex items-center gap-2">
-            <UserCheck size={16} className="text-amber-400" /> Scout Inbox & Trial Requests ({invites.length})
+            <UserCheck size={16} className="text-amber-400" /> Scout Inbox & Roster Applications ({invites.length})
           </h4>
         </div>
 
@@ -190,37 +200,75 @@ export default function TeamRecruitmentView({
           <div className="p-12 rounded-2xl border border-dashed border-white/10 bg-white/[0.01] text-center space-y-2">
             <Users size={36} className="text-zinc-600 mx-auto" />
             <p className="text-xs font-black uppercase tracking-widest text-zinc-400">No Pending Applications</p>
-            <p className="text-zinc-600 text-xs">When free agents apply for your squad, their profile cards will appear here.</p>
+            <p className="text-zinc-600 text-xs">When free agents apply for your squad, their application cards will appear here.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {invites.map((inv) => {
               const applicant = inv.fromUser;
-              const mainRole = applicant?.mainRole || applicant?.player?.role || 'FLEX';
+              const roleMatch = inv.message?.match(/Preferred Role:\s*([A-Za-z]+)/i);
+              const heroMatch = inv.message?.match(/Signature Hero:\s*([^·"💬]+)/i);
+              const pitchMatch = inv.message?.match(/💬\s*"([^"]+)"/i);
+              const appliedRole = roleMatch ? roleMatch[1].toUpperCase() : (applicant?.mainRole || applicant?.player?.role || 'FLEX');
+              const signatureHero = heroMatch ? heroMatch[1].trim() : null;
+              const pitch = pitchMatch ? pitchMatch[1].trim() : (!roleMatch && inv.message ? inv.message : null);
+
+              const roleObj = ROLES.find(r => r.key === appliedRole);
+              const roleColor = roleObj?.color || '#e8a000';
 
               return (
                 <div
                   key={inv.id}
-                  className="p-5 rounded-2xl bg-gradient-to-b from-[#12121a] to-[#0a0a0e] border border-white/10 space-y-4 hover:border-white/20 transition-all shadow-xl"
+                  className="p-5 rounded-2xl bg-gradient-to-b from-[#12121a] to-[#0a0a0e] border border-white/10 space-y-4 hover:border-white/20 transition-all shadow-xl flex flex-col justify-between"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 shrink-0">
-                      {applicant?.photo ? (
-                        <Image src={applicant.photo} alt={applicant.ign || 'Player'} fill className="object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-zinc-600 font-bold">
-                          {applicant?.ign?.slice(0, 2) || 'PL'}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 shrink-0">
+                        {applicant?.photo ? (
+                          <Image src={applicant.photo} alt={applicant.ign || 'Player'} fill className="object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-zinc-600 font-bold">
+                            {applicant?.ign?.slice(0, 2) || 'PL'}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <h5 className="text-white font-black text-sm uppercase tracking-wide truncate">
+                          {applicant?.ign || inv.toIGN || 'Applicant'}
+                        </h5>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span
+                            className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider"
+                            style={{
+                              backgroundColor: `${roleColor}25`,
+                              borderColor: `${roleColor}50`,
+                              borderWidth: 1,
+                              color: roleColor,
+                            }}
+                          >
+                            {appliedRole} Lane
+                          </span>
+                          {signatureHero && (
+                            <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 text-zinc-300">
+                              ⚡ {signatureHero}
+                            </span>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </div>
 
-                    <div className="min-w-0 flex-1">
-                      <h5 className="text-white font-black text-sm uppercase tracking-wide truncate">
-                        {applicant?.ign || inv.toIGN || 'Applicant'}
-                      </h5>
-                      <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                        {mainRole}
-                      </span>
+                    {pitch && (
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
+                        <p className="text-[11px] text-zinc-300 italic leading-relaxed">
+                          &ldquo;{pitch}&rdquo;
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono">
+                      <span>Submitted: {inv.sentAt ? new Date(inv.sentAt).toLocaleDateString() : 'Recent'}</span>
+                      <span className="text-amber-400/80">Pending Review</span>
                     </div>
                   </div>
 
@@ -229,14 +277,14 @@ export default function TeamRecruitmentView({
                     <div className="flex items-center gap-2 pt-2 border-t border-white/5">
                       <button
                         onClick={() => onAcceptInvite(inv.id)}
-                        className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all"
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md"
                       >
                         <Check size={14} /> Accept
                       </button>
 
                       <button
                         onClick={() => onDeclineInvite(inv.id)}
-                        className="flex-1 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 border border-white/10 transition-all"
+                        className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 border border-white/10 transition-all"
                       >
                         <X size={14} /> Decline
                       </button>

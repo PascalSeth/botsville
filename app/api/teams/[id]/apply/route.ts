@@ -119,7 +119,7 @@ export async function POST(
           type: "TEAM_INVITE_RECEIVED",
           title: `New Roster Application: ${user.ign}`,
           message: `${user.ign} applied to join ${invite.team.name}${role ? ` as ${role}` : ''}`,
-          linkUrl: `/my-team`,
+          linkUrl: `/my-team?tab=recruitment`,
         },
       });
     }

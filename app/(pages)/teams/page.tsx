@@ -1014,6 +1014,43 @@ export default function TeamsPage() {
       <main className="min-h-screen bg-[#08080e] pt-24 lg:pt-28">
         <PageHeader teamsCount={teams.length} topTeam={teams[0]} />
 
+        {myApplications.length > 0 && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3 pb-1">
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                  <Clock size={16} className="animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-white text-xs font-black uppercase tracking-wide">
+                      Active Squad Applications ({myApplications.length})
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold uppercase">
+                      Under Captain Review
+                    </span>
+                  </div>
+                  <p className="text-zinc-400 text-[11px] mt-0.5">
+                    Applied to: {myApplications.map((a) => a.team?.name || 'Squad').join(', ')}. Review status or manage applications in{' '}
+                    <Link href="/my-team" className="text-amber-400 font-bold underline hover:text-amber-300">
+                      My Team
+                    </Link>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                <Link
+                  href="/my-team"
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-[10px] font-black uppercase tracking-wider transition-all"
+                >
+                  View in My Team →
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
         {challengeFeedback && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3">
             <div className="border border-[#e8a000]/25 bg-[#e8a000]/8 px-3 py-2 text-xs text-[#e8a000]">
