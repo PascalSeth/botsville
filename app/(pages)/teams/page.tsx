@@ -1,32 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode, type CSSProperties } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Zap, Swords, Star, Target, Wind, Trophy, Search, X, MapPin, Users, ChevronRight, Crown, Loader2, AlertTriangle, CheckCircle2, MessageSquare, Send, ArrowRight, Clock } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { Shield, Users, Trophy, Search, X, ArrowUpRight, ArrowRight, Shuffle, Check, Swords, GitCompareArrows, Send, ChevronRight } from 'lucide-react';
 import { useHero } from '@/app/contexts/HeroContext';
 
-
-
-
-// ── Role system ─────────────────────────────────────────────
-const ROLE_META: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
-  EXP:      { color: '#e8a000', icon: <Swords size={9} />,  label: 'EXP'     },
-  JUNGLE:   { color: '#e84040', icon: <Zap    size={9} />,  label: 'Jungle'  },
-  MID:      { color: '#9b59b6', icon: <Star   size={9} />,  label: 'Mid'     },
-  GOLD:     { color: '#27ae60', icon: <Target size={9} />,  label: 'Gold'    },
-  ROAM:     { color: '#4a90d9', icon: <Shield size={9} />,  label: 'Roam'    },
-  // Legacy role mapping for display
-  Tank:      { color: '#4a90d9', icon: <Shield size={9} />,  label: 'Tank'     },
-  Fighter:   { color: '#e8a000', icon: <Swords size={9} />,  label: 'Fighter'  },
-  Assassin:  { color: '#e84040', icon: <Zap    size={9} />,  label: 'Assassin' },
-  Support:   { color: '#16a085', icon: <Wind   size={9} />,  label: 'Support'  },
-};
-
-const TIER_COLORS: Record<string, string> = { S: '#e8a000', A: '#4a90d9', B: '#9b59b6', C: '#555' };
-
-// ── API Response Types ─────────────────────────────────────────────
 interface ApiPlayer {
   id: string;
   ign: string;
@@ -76,1450 +56,206 @@ interface AvailabilityTeam {
   teamId: string;
 }
 
-interface AvailabilityPayload {
-  weekStart?: string;
-  ping?: {
-    weekStart: string;
-    scrimDate: string;
-  } | null;
-  availableTeams?: AvailabilityTeam[];
+type Application = { id: string; teamId: string; message: string | null; sentAt: string; team?: { id: string; name: string; tag: string } };
+const ROLES = ['EXP', 'JUNGLE', 'MID', 'GOLD', 'ROAM'] as const;
+type Role = typeof ROLES[number];
+const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
+const rate = (t: ApiTeam) => t.wins + t.losses > 0 ? Math.round(t.wins / (t.wins + t.losses) * 100) : null;
+const teamStyle = (team: ApiTeam) => {
+  const palette = ['#7c6cff', '#14b8a6', '#f97360', '#528aff', '#d45ba7'];
+  const seed = Array.from(team.id).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const color = /^#[0-9a-f]{6}$/i.test(team.color || '') ? team.color! : palette[seed % palette.length];
+  return { '--team': color } as CSSProperties;
+};
+function TeamImage({ src, alt = '', contain = false }: { src?: string | null; alt?: string; contain?: boolean }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const isFailed = !src || failedSrc === src;
+  return src && !isFailed ? <Image key={src} src={src} alt={alt} fill sizes="(max-width: 700px) 90vw, 420px" style={{ objectFit: contain ? 'contain' : 'cover' }} onError={() => setFailedSrc(src)} /> : <span className="td-image-fallback"><Shield size={26} /></span>;
+}
+function Dialog({ title, onClose, children, wide = false, locked = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean; locked?: boolean }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { ref.current?.showModal(); const previous = document.body.style.overflow; document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = previous } }, []);
+  return <dialog ref={ref} className={`td-dialog ${wide ? 'td-dialog-wide' : ''}`} aria-label={title} onCancel={e => { e.preventDefault(); if (!locked) onClose() }} onClick={e => { if (e.target === e.currentTarget && !locked) onClose() }}><div className="td-dialog-inner"><header><span>{title}</span><button type="button" aria-label="Close dialog" disabled={locked} onClick={onClose}><X size={18} /></button></header>{children}</div></dialog>;
+}
+function Metrics({ team }: { team: ApiTeam }) { return <div className="td-metrics"><div><strong>{team.wins}<small> / {team.losses}</small></strong><span>Wins / losses</span></div><div><strong>{rate(team) === null ? '—' : `${rate(team)}%`}</strong><span>Win rate</span></div><div><strong>{team.points.toLocaleString()}</strong><span>Points</span></div></div> }
+function SquadStage({ team, onApply, onChallenge, onCompare, compared, application, canChallenge, ownTeam }: { team: ApiTeam; onApply: () => void; onChallenge: () => void; onCompare: () => void; compared: boolean; application: boolean; canChallenge: boolean; ownTeam: boolean }) {
+  const [spotlight, setSpotlight] = useState<string | null>(null);
+  const starters = team.players.filter(p => !p.isSubstitute);
+  const subs = team.players.filter(p => p.isSubstitute);
+  const focused = team.players.find(p => p.id === spotlight);
+  return <article className="ss-stage ss-arena" style={teamStyle(team)}>
+    <div className="ss-banner">
+      {team.banner && <div className="ss-banner-image" aria-hidden="true"><TeamImage src={team.banner} /></div>}
+      <span className="ss-banner-wordmark" aria-hidden="true">{team.tag || 'SQUAD'}</span>
+      <div className="ss-banner-kicker"><span>BOTSVILLE / SQUAD SPOTLIGHT</span><span className="ss-recruiting">{ownTeam ? 'Your squad' : team.isRecruiting ? 'Recruiting players' : 'Roster locked'}</span></div>
+      <div className="ss-team-header"><span className="ss-team-logo"><TeamImage src={team.logo} contain /></span><div className="ss-team-title"><span>{team.region || 'Ghana'}{team.tier ? ` / ${team.tier} TIER` : ''}</span><h2>{team.name}</h2></div><span className="ss-banner-rank"><small>RANK</small><strong>{team.rank ? `#${team.rank}` : '—'}</strong></span></div>
+    </div>
+    <div className="ss-lineup-top"><span><b>{team.tag || "SQUAD"}</b> STARTING LINEUP</span><span>{starters.length} players <span aria-hidden="true">/</span> Tap to explore</span></div>
+    <div className={`ss-lineup ${spotlight ? 'has-spotlight' : ''}`} style={{ '--players': Math.max(starters.length, 1) } as CSSProperties}>
+      {starters.map((player, i) => <button type="button" key={player.id} className={`ss-player ${spotlight === player.id ? 'is-spotlight' : ''}`} aria-pressed={spotlight === player.id} aria-label={`Spotlight ${player.ign}, ${player.role}`} onClick={() => setSpotlight(id => id === player.id ? null : player.id)}>
+        <span className="ss-player-photo"><TeamImage src={player.photo || player.user?.photo} alt={player.ign} /></span><span className="ss-player-shade" /><span className="ss-player-top"><span className="ss-role" data-role={player.role?.toUpperCase()}>{player.role || 'PLAYER'}</span><span className="ss-player-index">{String(i + 1).padStart(2, '0')}</span></span>{player.user?.id && player.user.id === team.captain?.id && <span className="ss-portrait-captain" title="Team captain">C</span>}<span className="ss-player-info"><strong>{player.ign}</strong><small>{player.signatureHero || 'Signature hero unlisted'}</small><span className="ss-player-explore">{spotlight === player.id ? 'In the spotlight' : 'Meet the player'}<ArrowUpRight size={12} /></span></span>
+      </button>)}
+      {!starters.length && <div className="ss-no-players"><Users size={32} /><h3>The lineup is still under wraps.</h3><p>Player portraits will appear here once this squad publishes its roster.</p></div>}
+    </div>
+    {focused && <div className="ss-player-detail" role="status"><div><span>PLAYER SPOTLIGHT</span><strong>{focused.ign}</strong>{focused.realName && <small>{focused.realName}</small>}</div><p>{focused.role}{focused.secondaryRole ? ` / ${focused.secondaryRole}` : ''}<small>{focused.signatureHero ? `Signature hero · ${focused.signatureHero}` : 'Signature hero not listed'}</small></p>{focused.user?.id && focused.user.id === team.captain?.id && <span className="ss-captain">CAPTAIN</span>}<button type="button" aria-label="Close player spotlight" onClick={() => setSpotlight(null)}><X size={15} /></button></div>}
+    {subs.length > 0 && <div className="ss-subs"><span>ON THE BENCH</span>{subs.map(player => <button type="button" key={player.id} aria-pressed={spotlight === player.id} onClick={() => setSpotlight(id => id === player.id ? null : player.id)}><span className="ss-sub-photo"><TeamImage src={player.photo || player.user?.photo} /></span><strong>{player.ign}<small>{player.role}</small></strong></button>)}</div>}
+    <div className="ss-bottom"><Metrics team={team} /><div className="ss-actions"><Link href={`/teams/${team.id}`} className="td-secondary">Squad profile<ArrowUpRight size={13} /></Link>{(team.isRecruiting || application) && !ownTeam && <button type="button" className="td-primary" onClick={onApply}>{application ? 'Application status' : 'Join this squad'}<ArrowRight size={13} /></button>}{canChallenge && <button type="button" className="td-secondary" onClick={onChallenge}><Swords size={13} />Challenge</button>}<button type="button" className="ss-compare" aria-pressed={compared} onClick={onCompare}>{compared ? <Check size={14} /> : <GitCompareArrows size={14} />}Compare</button></div></div>
+    {team.trophies.length > 0 && <div className="td-trophies">{team.trophies.map((t, i) => <span key={i}><Trophy size={12} />{t}</span>)}</div>}
+  </article>;
 }
 
-// ── Scanlines ────────────────────────────────────────────────
-const Scanlines = ({ opacity = 0.03 }: { opacity?: number }) => (
-  <div className="absolute inset-0 pointer-events-none z-[1]"
-    style={{ opacity, backgroundImage: 'repeating-linear-gradient(0deg,transparent,transparent 2px,#fff 2px,#fff 3px)', backgroundSize: '100% 3px' }} />
-);
-
-// ── Player photo card (starters + subs) ─────────────────────
-const PlayerPhotoCard = ({ p, delay = 0 }: { p: ApiPlayer; delay?: number }) => {
-  const rm = ROLE_META[p.role] || ROLE_META.ROAM;
-  const photoUrl = p.photo || p.user?.photo || '/heroes/stun.png';
-  
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.32 }}
-      className="shrink-0 flex flex-col overflow-hidden border"
-      style={{
-        width: 96,
-        borderColor: p.isSubstitute ? `${rm.color}15` : `${rm.color}35`,
-        background: 'rgba(0,0,0,0.6)',
-        opacity: p.isSubstitute ? 0.72 : 1,
-      }}
-    >
-      {/* Role colour bar */}
-      <div className="h-0.5 w-full shrink-0" style={{ background: p.isSubstitute ? `${rm.color}55` : rm.color }} />
-
-      {/* Photo */}
-      <div className="relative w-full overflow-hidden bg-[#111]" style={{ aspectRatio: '3/4' }}>
-        <Image
-          src={photoUrl}
-          alt={p.ign}
-          fill
-          className="object-cover object-top"
-          style={{ filter: p.isSubstitute ? 'grayscale(40%) brightness(0.75)' : 'brightness(0.9)' }}
-        />
-        {/* bottom gradient */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-
-        {/* Sub badge */}
-        {p.isSubstitute && (
-          <div className="absolute top-1 left-1 bg-black/75 border border-white/10 px-1 py-px">
-            <span className="text-[7px] font-black tracking-widest uppercase text-[#555]">SUB</span>
-          </div>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="p-1.5 flex flex-col gap-0.5">
-        <div className="flex items-center gap-1" style={{ color: rm.color }}>
-          {rm.icon}
-          <span className="text-[7px] font-black tracking-widest uppercase">{rm.label}</span>
-        </div>
-        <p className="text-white font-black text-[13px] leading-none uppercase truncate"
-          style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{p.ign}</p>
-        <p className="text-[7px] tracking-wide truncate" style={{ color: `${rm.color}80` }}>{p.signatureHero || '—'}</p>
-        <p className="text-[#2a2a2a] text-[7px] truncate">{p.realName || '—'}</p>
-      </div>
-    </motion.div>
-  );
-};
-
-// ══════════════════════════════════════════════════════════
-// PAGE HEADER
-// ══════════════════════════════════════════════════════════
-const PageHeader = ({ teamsCount, topTeam }: { teamsCount: number; topTeam?: ApiTeam }) => (
-  <div className="relative overflow-hidden border-b border-white/[0.05]">
-    <div className="absolute inset-0">
-      {topTeam?.banner && (
-        <Image src={topTeam.banner} alt="" fill className="object-cover brightness-[0.12]" />
-      )}
-      <div className="absolute inset-0 bg-gradient-to-r from-[#08080e]/95 via-[#08080e]/80 to-[#08080e]/95" />
-      {topTeam?.color && (
-        <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at left, ${topTeam.color}15, transparent 60%)` }} />
-      )}
-    </div>
-    <Scanlines opacity={0.02} />
-
-    <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-
-        {/* Title */}
-        <div>
-          <motion.p initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-            className="text-[#e8a000] text-[9px] tracking-[0.4em] uppercase font-black mb-2 flex items-center gap-2">
-            <span className="w-4 h-px bg-[#e8a000]" />Ghana MLBB · Season 5
-          </motion.p>
-          <motion.h1 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, delay: 0.08 }}
-            className="text-white font-black uppercase leading-none tracking-tight"
-            style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(2.2rem, 6vw, 4rem)' }}>
-            Registered<br />
-            <span style={{ WebkitTextStroke: topTeam?.color ? `2px ${topTeam.color}` : '2px #e8a000', color: 'transparent' }}>Teams</span>
-          </motion.h1>
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-            className="text-[#444] text-sm mt-2 tracking-wide">
-            {teamsCount} squads competing · IESF Africa qualifier
-          </motion.p>
-        </div>
-
-        {/* Right: gif + standings */}
-        <div className="flex items-end gap-4">
-
-          {/* ── Badang gif ── */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-            className="pointer-events-none select-none shrink-0"
-          >
-            <Image
-              src="/gif/badang.gif"
-              alt="Badang"
-              width={80}
-              height={80}
-              className="object-contain sm:w-[100px] sm:h-[100px] lg:w-[110px] lg:h-[110px]
-                         drop-shadow-[0_0_28px_rgba(232,160,0,0.4)]"
-              unoptimized
-            />
-          </motion.div>
-        </div>
-      </div>
-    </div>
-    <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#e8a000]/30 to-transparent" />
-  </div>
-);
-
-// ══════════════════════════════════════════════════════════
-// SPOTLIGHT PANEL (desktop left zone)
-// ══════════════════════════════════════════════════════════
-const SpotlightPanel = ({ team, userTeamId }: { team: ApiTeam; userTeamId?: string | null }) => {
-  const winRate = team.wins + team.losses > 0 
-    ? Math.round((team.wins / (team.wins + team.losses)) * 100) 
-    : 0;
-  const starters = team.players.filter(p => !p.isSubstitute);
-  const subs = team.players.filter(p => p.isSubstitute);
-  const teamColor = team.color || '#e8a000';
-  const bannerUrl = team.banner || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1400&q=80';
-  const logoUrl = team.logo || '/heroes/stun.png';
-
-  return (
-    <AnimatePresence mode="wait">
-      <motion.div key={team.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        transition={{ duration: 0.3 }} className="relative w-full h-full flex flex-col overflow-hidden">
-
-        {/* ── Banner BG ── */}
-        <div className="absolute inset-0">
-          <Image src={bannerUrl} alt={team.name} fill className="object-cover object-center brightness-[0.2]" />
-          <div className="absolute inset-0"
-            style={{ background: `radial-gradient(ellipse at bottom left, ${teamColor}45, transparent 60%)` }} />
-          <div className="absolute inset-0"
-            style={{ background: `linear-gradient(125deg, ${teamColor}15, transparent 45%)` }} />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#08080e] via-[#08080e]/55 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#08080e]/60" />
-        </div>
-        <Scanlines opacity={0.02} />
-
-        {/* Ghost rank */}
-        <div className="absolute inset-0 flex items-center justify-end pr-4 pointer-events-none select-none overflow-hidden">
-          <motion.span key={`ghost-${team.id}`} initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5 }} className="font-black leading-none"
-            style={{ fontSize: 'clamp(8rem, 20vw, 16rem)', color: `${teamColor}0b`,
-                     fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '-0.05em' }}>
-            #{team.rank || '—'}
-          </motion.span>
-        </div>
-
-        {/* ── Scrollable content ── */}
-        <div className="relative z-10 flex flex-col gap-5 h-full p-6 lg:p-8 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
-
-          {/* Top: logo + rank + tier */}
-          <div className="flex items-center gap-3 shrink-0">
-            {/* Team logo */}
-            <div className="relative w-12 h-12 border-2 overflow-hidden shrink-0"
-              style={{ borderColor: `${teamColor}60` }}>
-              <Image src={logoUrl} alt={`${team.name} logo`} fill className="object-cover"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              {/* Fallback: show tag text if logo missing */}
-              <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                <span className="font-black text-[10px] tracking-widest" style={{ color: teamColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
-                  {team.tag}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="bg-black/60 border border-white/10 px-2.5 py-1.5 flex items-center gap-2 backdrop-blur-sm">
-                <span className="text-[#444] text-[8px] tracking-widest uppercase">Rank</span>
-                <span className="text-white font-black text-lg font-mono leading-none">#{team.rank || '—'}</span>
-              </div>
-              <span className="font-black text-[10px] tracking-widest px-2.5 py-1.5"
-                style={{ color: TIER_COLORS[team.tier] || TIER_COLORS.C, background: `${TIER_COLORS[team.tier] || TIER_COLORS.C}20`,
-                         border: `1px solid ${TIER_COLORS[team.tier] || TIER_COLORS.C}50` }}>
-                {team.tier || 'C'}-TIER
-              </span>
-              {team.trophies.length > 0 && (
-                <div className="flex items-center gap-1.5 bg-black/50 border border-[#e8a000]/20 px-2 py-1.5">
-                  <Trophy size={9} className="text-[#e8a000]" />
-                  <span className="text-[#e8a000] text-[8px] font-black tracking-widest">{team.trophies.length} TROPHY</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Team name + stats */}
-          <div className="flex flex-col gap-3 shrink-0">
-            <motion.div key={`name-${team.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
-              <p className="text-[8px] tracking-[0.4em] uppercase font-black mb-1" style={{ color: `${teamColor}80` }}>
-                <MapPin size={8} className="inline mr-1" />{team.region} · Ghana MLBB Season 5
-              </p>
-              <h2 className="font-black uppercase leading-none text-white"
-                style={{ fontFamily: "'Barlow Condensed', sans-serif",
-                         fontSize: 'clamp(1.8rem, 4.5vw, 3.6rem)', letterSpacing: '-0.02em' }}>
-                {team.name}
-              </h2>
-              <div className="mt-2 h-0.5 w-20" style={{ background: `linear-gradient(90deg, ${teamColor}, transparent)` }} />
-            </motion.div>
-
-            <motion.div key={`stats-${team.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }} className="flex items-center gap-4 flex-wrap">
-              {[
-                { label: 'Wins',     val: team.wins,                  color: '#27ae60' },
-                { label: 'Losses',   val: team.losses,                color: '#e84040' },
-                { label: 'Win Rate', val: `${winRate}%`,              color: teamColor },
-                { label: 'Points',   val: team.points.toLocaleString(), color: teamColor },
-                { label: 'Prize',    val: `₵${(team.totalPrizeMoney / 100).toLocaleString()}`, color: '#e8a000'  },
-              ].map(s => (
-                <div key={s.label}>
-                  <span className="font-black text-xl font-mono leading-none" style={{ color: s.color }}>{s.val}</span>
-                  <p className="text-[8px] tracking-[0.2em] uppercase mt-0.5 text-[#333]">{s.label}</p>
-                </div>
-              ))}
-            </motion.div>
-
-            {/* Win bar */}
-            <div className="w-full max-w-xs h-0.5 bg-white/[0.06]">
-              <motion.div className="h-full" key={`bar-${team.id}`}
-                style={{ background: `linear-gradient(90deg, ${teamColor}60, ${teamColor})` }}
-                initial={{ width: 0 }} animate={{ width: `${winRate}%` }}
-                transition={{ duration: 1, delay: 0.3, ease: 'easeOut' }} />
-            </div>
-
-            {/* Trophies */}
-            {team.trophies.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {team.trophies.map(t => (
-                  <div key={t} className="flex items-center gap-1.5 border border-[#e8a000]/20 bg-black/50 px-2 py-1">
-                    <Trophy size={8} className="text-[#e8a000] shrink-0" />
-                    <span className="text-[#777] text-[9px] tracking-wide">{t}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-          {/* Actions: View Squad Profile + Apply */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <Link
-              href={`/teams/${team.id}`}
-              className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-4 py-2 bg-gradient-to-r from-[#e8a000] to-[#ffb800] text-black rounded-lg hover:brightness-110 transition-all shadow-md"
-            >
-              <Shield size={12} />
-              View Squad Profile →
-            </Link>
-
-            {team.isRecruiting && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (userTeamId) return; // prevent action if already in a team
-                  const ev = new CustomEvent('team-apply', { detail: { teamId: team.id } });
-                  window.dispatchEvent(ev);
-                }}
-                disabled={Boolean(userTeamId)}
-                className={
-                  `text-[10px] font-black uppercase tracking-widest px-3 py-2 border border-white/10 rounded-lg transition-all ` +
-                  (userTeamId ? 'opacity-40 cursor-not-allowed text-[#bbb]' : 'text-white hover:bg-white/5')
-                }
-              >
-                {userTeamId ? 'Already In A Team' : 'Apply To Join'}
-              </button>
-            )}
-          </div>
-          </div>
-
-          {/* ── Starting Five ── */}
-          {starters.length > 0 && (
-            <div className="shrink-0">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Users size={9} className="text-[#333]" />
-                <span className="text-[#333] text-[8px] tracking-[0.3em] uppercase font-black">Starting Five</span>
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-                {starters.map((p, i) => <PlayerPhotoCard key={p.id} p={p} delay={0.18 + i * 0.06} />)}
-              </div>
-            </div>
-          )}
-
-          {/* ── Substitutes ── */}
-          {subs.length > 0 && (
-            <div className="shrink-0">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Crown size={9} className="text-[#333]" />
-                <span className="text-[#333] text-[8px] tracking-[0.3em] uppercase font-black">Substitutes</span>
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-                {subs.map((p, i) => <PlayerPhotoCard key={p.id} p={p} delay={0.4 + i * 0.07} />)}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right edge fade into sidebar */}
-        <div className="hidden lg:block absolute top-0 right-0 bottom-0 w-12
-                        bg-gradient-to-l from-[#08080e] to-transparent pointer-events-none z-20" />
-      </motion.div>
-    </AnimatePresence>
-  );
-};
-
-// ══════════════════════════════════════════════════════════
-// SIDEBAR ENTRY
-// ══════════════════════════════════════════════════════════
-const SidebarEntry = ({ team, active, onClick, index, canChallenge, challengeLoading, onChallenge, captainTeamId }: {
-  team: ApiTeam;
-  active: boolean;
-  onClick: () => void;
-  index: number;
-  canChallenge?: boolean;
-  challengeLoading?: boolean;
-  onChallenge?: () => void;
-  captainTeamId?: string | null;
-}) => {
-  const teamColor = team.color || '#e8a000';
-  const logoUrl = team.logo || '/heroes/stun.png';
-  const bannerUrl = team.banner || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1400&q=80';
-
-  return (
-    <motion.button
-      initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.35, delay: index * 0.05 }}
-      onClick={onClick}
-      className="w-full text-left relative overflow-hidden border-b transition-all duration-200 group"
-      style={{ borderColor: active ? `${teamColor}30` : 'rgba(255,255,255,0.04)',
-               background: active ? `${teamColor}0e` : 'transparent' }}
-    >
-      <div className="absolute left-0 top-0 bottom-0 w-0.5 transition-all duration-300"
-        style={{ background: active ? teamColor : 'transparent' }} />
-
-      <div className="flex items-center gap-2 pl-3 pr-3">
-        {/* Rank */}
-        <span className="font-black font-mono text-base w-6 shrink-0 py-3 leading-none"
-          style={{ color: active ? teamColor : '#1e1e28', fontFamily: "'Barlow Condensed', sans-serif" }}>
-          {team.rank || '—'}
-        </span>
-
-        {/* Team logo */}
-        <div className="relative w-8 h-8 shrink-0 border overflow-hidden"
-          style={{ borderColor: `${teamColor}35` }}>
-          <Image src={logoUrl} alt="" fill className="object-cover"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-            <span className="font-black text-[7px]" style={{ color: teamColor }}>{team.tag}</span>
-          </div>
-        </div>
-
-        {/* Banner thumb */}
-        <div className="relative w-10 h-10 shrink-0 overflow-hidden">
-          <Image src={bannerUrl} alt="" fill
-            className="object-cover brightness-50 group-hover:brightness-75 transition-all duration-300" />
-          <div className="absolute inset-0" style={{ background: `${teamColor}22` }} />
-        </div>
-
-        {/* Name + tier */}
-        <div className="flex-1 min-w-0 py-3">
-          <p className="font-black text-xs uppercase tracking-wide leading-none truncate"
-            style={{ color: active ? 'white' : (canChallenge ? '#777' : (captainTeamId ? teamColor : '#777')), fontFamily: "'Barlow Condensed', sans-serif" }}>
-            {team.name}
-          </p>
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className="text-[7px] font-black tracking-widest px-1 py-px"
-              style={{ color: TIER_COLORS[team.tier] || TIER_COLORS.C, background: `${TIER_COLORS[team.tier] || TIER_COLORS.C}18`,
-                       border: `1px solid ${TIER_COLORS[team.tier] || TIER_COLORS.C}30` }}>
-              {team.tier || 'C'}
-            </span>
-            <span className="text-[#2a2a2a] text-[8px] font-mono">{team.points.toLocaleString()}</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {canChallenge && onChallenge && (
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (!challengeLoading) onChallenge();
-              }}
-              onKeyDown={(event) => {
-                if ((event.key === 'Enter' || event.key === ' ') && !challengeLoading) {
-                  event.stopPropagation();
-                  onChallenge();
-                }
-              }}
-              className="text-[8px]  uppercase tracking-wider px-2 py-1 border hover:bg-[#e8a000]/15 cursor-pointer disabled:opacity-50"
-              style={{ color: teamColor, borderColor: `${teamColor}35`, opacity: challengeLoading ? 0.5 : 1 }}
-            >
-              {challengeLoading ? '...' : 'Challenge'}
-            </div>
-          )}
-          <ChevronRight size={11} style={{ color: active ? teamColor : '#222' }} className="shrink-0" />
-        </div>
-      </div>
-
-      {!active && (
-        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-          style={{ background: `linear-gradient(90deg, ${teamColor}08, transparent)` }} />
-      )}
-    </motion.button>
-  );
-};
-
-// ══════════════════════════════════════════════════════════
-// MOBILE TEAM ROW — accordion with photo cards
-// ══════════════════════════════════════════════════════════
-const MobileTeamRow = ({ team, active, onClick, canChallenge, challengeLoading, onChallenge, userTeamId, isPendingApplied }: {
-  team: ApiTeam;
-  active: boolean;
-  onClick: () => void;
-  canChallenge?: boolean;
-  challengeLoading?: boolean;
-  onChallenge?: () => void;
-  userTeamId?: string | null;
-  isPendingApplied?: boolean;
-}) => {
-
-  const winRate = team.wins + team.losses > 0 
-    ? Math.round((team.wins / (team.wins + team.losses)) * 100) 
-    : 0;
-  const starters = team.players.filter(p => !p.isSubstitute);
-  const subs = team.players.filter(p => p.isSubstitute);
-  const teamColor = team.color || '#e8a000';
-  const bannerUrl = team.banner || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1400&q=80';
-  const logoUrl = team.logo || '/heroes/stun.png';
-
-  return (
-    <div className="border-b" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-
-      {/* ── Collapsed header ── */}
-      <button onClick={onClick} className="w-full relative overflow-hidden group text-left">
-        {/* Banner BG */}
-        <div className="absolute inset-0">
-          <Image src={bannerUrl} alt="" fill className="object-cover brightness-[0.18]" />
-          <div className="absolute inset-0"
-            style={{ background: `linear-gradient(90deg, ${teamColor}18, transparent 60%)` }} />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#08080e]/75 to-[#08080e]/92" />
-        </div>
-        <div className="absolute left-0 top-0 bottom-0 w-0.5 transition-colors"
-          style={{ background: active ? teamColor : 'transparent' }} />
-
-        <div className="relative flex items-center gap-3 px-4 py-3.5">
-          {/* Logo */}
-          <div className="relative w-11 h-11 shrink-0 border-2 overflow-hidden"
-            style={{ borderColor: `${teamColor}50` }}>
-            <Image src={logoUrl} alt="" fill className="object-cover"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-              <span className="font-black text-[8px]" style={{ color: teamColor, fontFamily: "'Barlow Condensed', sans-serif" }}>{team.tag}</span>
-            </div>
-          </div>
-
-          {/* Identity */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="font-black font-mono text-sm" style={{ color: active ? teamColor : '#2a2a2a' }}>#{team.rank || '—'}</span>
-              <span className="text-[7px] font-black tracking-widest px-1.5 py-0.5"
-                style={{ color: TIER_COLORS[team.tier] || TIER_COLORS.C, background: `${TIER_COLORS[team.tier] || TIER_COLORS.C}18`,
-                         border: `1px solid ${TIER_COLORS[team.tier] || TIER_COLORS.C}30` }}>
-                {team.tier || 'C'}
-              </span>
-            </div>
-            <p className="text-white font-black text-base uppercase leading-tight truncate"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{team.name}</p>
-            <p className="text-[8px] tracking-widest uppercase mt-0.5" style={{ color: `${teamColor}70` }}>{team.region}</p>
-          </div>
-
-          {/* Points */}
-          <div className="text-right shrink-0">
-            <p className="font-black text-sm font-mono" style={{ color: teamColor }}>{(team.points/1000).toFixed(1)}k</p>
-            <p className="text-[8px] text-[#2a2a2a] uppercase tracking-widest">pts</p>
-          </div>
-
-          <motion.div animate={{ rotate: active ? 90 : 0 }} transition={{ duration: 0.25 }}>
-            <ChevronRight size={13} style={{ color: active ? teamColor : '#2a2a2a' }} />
-          </motion.div>
-        </div>
-      </button>
-
-      {/* ── Expanded ── */}
-      <AnimatePresence>
-        {active && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-            className="overflow-hidden">
-
-            {/* Mini cinematic banner */}
-            <div className="relative h-24 overflow-hidden shrink-0">
-              <Image src={bannerUrl} alt="" fill className="object-cover brightness-30" />
-              <div className="absolute inset-0"
-                style={{ background: `radial-gradient(ellipse at bottom left, ${teamColor}35, transparent 60%)` }} />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#09090f] to-transparent" />
-              <Scanlines opacity={0.02} />
-              {/* Ghost tag */}
-              <div className="absolute right-3 bottom-1 pointer-events-none select-none">
-                <span className="font-black text-5xl leading-none"
-                  style={{ color: `${teamColor}12`, fontFamily: "'Barlow Condensed', sans-serif" }}>
-                  {team.tag}
-                </span>
-              </div>
-              {/* Trophies inside banner */}
-              {team.trophies.length > 0 && (
-                <div className="absolute top-2 left-3 flex flex-col gap-1">
-                  {team.trophies.map(t => (
-                    <div key={t} className="flex items-center gap-1 bg-black/65 border border-[#e8a000]/20 px-2 py-1">
-                      <Trophy size={8} className="text-[#e8a000] shrink-0" />
-                      <span className="text-[#e8a000] text-[8px] font-black tracking-wide uppercase truncate max-w-[200px]">{t}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-[#09090f] border-t px-4 pb-6" style={{ borderColor: `${teamColor}18` }}>
-
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-1.5 my-4">
-                {[
-                  { label: 'Wins',     val: team.wins,     color: '#27ae60' },
-                  { label: 'Losses',   val: team.losses,   color: '#e84040' },
-                  { label: 'Win Rate', val: `${winRate}%`, color: teamColor },
-                ].map(s => (
-                  <div key={s.label} className="flex flex-col items-center py-2 border"
-                    style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-                    <span className="font-black text-lg font-mono" style={{ color: s.color }}>{s.val}</span>
-                    <span className="text-[8px] text-[#333] tracking-widest uppercase">{s.label}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Win bar */}
-              <div className="h-0.5 w-full bg-white/[0.05] mb-5">
-                <motion.div className="h-full" style={{ background: teamColor }}
-                  initial={{ width: 0 }} animate={{ width: `${winRate}%` }}
-                  transition={{ duration: 0.8, delay: 0.1 }} />
-              </div>
-
-              {canChallenge && onChallenge && (
-                <div className="mb-4">
-                  <button
-                    type="button"
-                    disabled={challengeLoading}
-                    onClick={onChallenge}
-                    className="text-[10px] font-black uppercase tracking-widest px-3 py-2 border hover:bg-[#e8a000]/15 disabled:opacity-50"
-                    style={{ color: teamColor, borderColor: `${teamColor}35` }}
-                  >
-                    {challengeLoading ? 'Sending...' : 'Challenge This Team'}
-                  </button>
-                </div>
-              )}
-              {/* Actions: View Squad Profile + Apply */}
-              <div className="flex items-center gap-2 flex-wrap mb-4">
-                <Link
-                  href={`/teams/${team.id}`}
-                  className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-3.5 py-2 rounded-xl bg-[#e8a000] text-black hover:bg-[#ffb800] transition-all shadow-md"
-                >
-                  <Shield size={12} />
-                  View Squad Profile →
-                </Link>
-
-                {!canChallenge && team.isRecruiting && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('team-apply', { detail: { teamId: team.id } }));
-                    }}
-                    className={
-                      `flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border transition-all shadow-md ` +
-                      (isPendingApplied
-                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/35'
-                        : userTeamId
-                          ? 'bg-white/5 border-white/10 text-zinc-500 hover:border-red-500/30 hover:text-red-400'
-                          : 'bg-gradient-to-r from-[#e8a000]/20 to-[#ffb800]/20 border-[#e8a000]/40 text-[#ffb800] hover:bg-[#e8a000]/30 hover:border-[#e8a000]')
-                    }
-                  >
-                    {isPendingApplied ? (
-                      <Clock size={12} className="animate-pulse text-amber-400 shrink-0" />
-                    ) : (
-                      <Swords size={12} />
-                    )}
-                    <span>
-                      {isPendingApplied
-                        ? 'Application Pending'
-                        : userTeamId
-                          ? 'Already In A Team'
-                          : 'Apply For Roster'}
-                    </span>
-                  </button>
-                )}
-              </div>
-
-
-
-              {/* ── Starting Five — photo cards ── */}
-              {starters.length > 0 && (
-                <>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Users size={9} className="text-[#333]" />
-                    <span className="text-[#333] text-[8px] tracking-[0.25em] uppercase font-black">Starting Five</span>
-                  </div>
-                  <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
-                    {starters.map((p, i) => <PlayerPhotoCard key={p.id} p={p} delay={0.04 + i * 0.05} />)}
-                  </div>
-                </>
-              )}
-
-              {/* ── Substitutes ── */}
-              {subs.length > 0 && (
-                <>
-                  <div className="flex items-center gap-1.5 mt-4 mb-2">
-                    <Crown size={9} className="text-[#333]" />
-                    <span className="text-[#333] text-[8px] tracking-[0.25em] uppercase font-black">Substitutes</span>
-                  </div>
-                  <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-                    {subs.map((p, i) => <PlayerPhotoCard key={p.id} p={p} delay={0.28 + i * 0.06} />)}
-                  </div>
-                </>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
-// ══════════════════════════════════════════════════════════
-// MAIN PAGE
-// ══════════════════════════════════════════════════════════
 export default function TeamsPage() {
-  const [teams, setTeams] = useState<ApiTeam[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'All'|'S'|'A'|'B'|'C'>('All');
-  const [captainTeamId, setCaptainTeamId] = useState<string | null>(null);
-  const [userTeamId, setUserTeamId] = useState<string | null>(null);
-  const [challengeSubmittingId, setChallengeSubmittingId] = useState<string | null>(null);
-  const [challengeFeedback, setChallengeFeedback] = useState<string | null>(null);
-  const [applyFeedback, setApplyFeedback] = useState<string | null>(null);
-  const [availableTeamIds, setAvailableTeamIds] = useState<string[]>([]);
-  const [showAvailableOnly, setShowAvailableOnly] = useState(false);
-  const [weeklyScrimDateLabel, setWeeklyScrimDateLabel] = useState<string | null>(null);
-
-
-  // ── Hero Catalog from DB ──
-  const heroCtx = useHero();
-  const heroCatalog = heroCtx?.heroCatalog ?? [];
-  const [heroSearch, setHeroSearch] = useState('');
-
-  // ── Roster Application Modal State ──
-  const [selectedApplyTeam, setSelectedApplyTeam] = useState<ApiTeam | null>(null);
-  const [applyForm, setApplyForm] = useState({
-    role: 'EXP' as 'EXP' | 'JUNGLE' | 'MID' | 'GOLD' | 'ROAM',
-    signatureHero: '',
-    pitch: '',
-  });
-  const [applySubmitting, setApplySubmitting] = useState(false);
-  const [applyError, setApplyError] = useState<string | null>(null);
-  const [applySuccessMessage, setApplySuccessMessage] = useState<string | null>(null);
-
-  // ── Pending Applications State ──
-  const [myApplications, setMyApplications] = useState<Array<{
-    id: string;
-    teamId: string;
-    message: string | null;
-    sentAt: string;
-    team?: { id: string; name: string; tag: string };
-  }>>([]);
-
-  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
-
-  const fetchMyApplications = useCallback(async () => {
-    try {
-      const res = await fetch('/api/my-applications', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        setMyApplications(Array.isArray(data?.applications) ? data.applications : []);
-      }
-    } catch {
-      setMyApplications([]);
-    }
-  }, []);
-
-  const withdrawApplication = async (teamId: string) => {
-    try {
-      setWithdrawingId(teamId);
-      const res = await fetch(`/api/my-applications?teamId=${teamId}`, { method: 'DELETE' });
-      if (res.ok) {
-        setApplySuccessMessage('Application withdrawn.');
-        setSelectedApplyTeam(null);
-        await fetchMyApplications();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setApplyError(data?.error || 'Failed to withdraw application');
-      }
-    } catch {
-      setApplyError('Failed to withdraw application');
-    } finally {
-      setWithdrawingId(null);
-    }
-  };
-
-
-
-
-  const fetchWeeklyAvailability = useCallback(async () => {
-    try {
-      const response = await fetch('/api/matches/challenges/availability');
-      const data = (await response.json()) as AvailabilityPayload;
-      if (!response.ok) {
-        setAvailableTeamIds([]);
-        setWeeklyScrimDateLabel(null);
-        return;
-      }
-
-      const ids = Array.isArray(data.availableTeams)
-        ? data.availableTeams.map((entry) => entry.teamId)
-        : [];
-
-      setAvailableTeamIds(ids);
-      setWeeklyScrimDateLabel(data.ping?.scrimDate ? new Date(data.ping.scrimDate).toLocaleString() : null);
-    } catch {
-      setAvailableTeamIds([]);
-      setWeeklyScrimDateLabel(null);
-    }
-  }, []);
-
-  const fetchCaptainTeam = useCallback(async () => {
-    try {
-      const response = await fetch('/api/my-team');
-      if (!response.ok) {
-        setCaptainTeamId(null);
-        setUserTeamId(null);
-        return;
-      }
-      const data = await response.json();
-      // Track whether the user is a captain and also whether they belong to a team at all
-      if (data?.isCaptain && data?.id) {
-        setCaptainTeamId(data.id);
-        setUserTeamId(data.id);
-        fetchWeeklyAvailability();
-      } else if (data?.id) {
-        setUserTeamId(data.id);
-        setCaptainTeamId(null);
-      } else {
-        setCaptainTeamId(null);
-        setUserTeamId(null);
-      }
-    } catch {
-      setCaptainTeamId(null);
-      setUserTeamId(null);
-    }
-  }, [fetchWeeklyAvailability]);
-
+  const { data: session, status: authStatus } = useSession(); const account = session?.user?.id;
+  const { heroCatalog = [] } = useHero();
+  const [teams, setTeams] = useState<ApiTeam[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [retry, setRetry] = useState(0);
+  const [userTeamId, setUserTeamId] = useState<string | null>(null); const [captainTeamId, setCaptainTeamId] = useState<string | null>(null); const [accountLoading, setAccountLoading] = useState(true); const [available, setAvailable] = useState<string[]>([]); const [scrimDate, setScrimDate] = useState(''); const [applications, setApplications] = useState<Application[]>([]);
+  const [selectedSquad, setSelectedSquad] = useState<string | null>(null);
+  const [search, setSearch] = useState(''); const [tier, setTier] = useState('ALL'); const [region, setRegion] = useState('ALL'); const [sort, setSort] = useState('rank'); const [mode, setMode] = useState('ALL');
+  const [viewTeam, setViewTeam] = useState<ApiTeam | null>(null); const [applyTeam, setApplyTeam] = useState<ApiTeam | null>(null); const [compare, setCompare] = useState<string[]>([]); const [compareOpen, setCompareOpen] = useState(false); const [challengeTarget, setChallengeTarget] = useState<ApiTeam | null>(null);
+  const [form, setForm] = useState<{ role: Role; signatureHero: string; pitch: string }>({ role: 'EXP', signatureHero: '', pitch: '' }); const [heroSearch, setHeroSearch] = useState(''); const [formError, setFormError] = useState(''); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false); const lock = useRef(false); const generation = useRef(0);
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  useEffect(() => { const abort = new AbortController(); setLoading(true); setError(''); void (async () => { try { const r = await fetch('/api/teams', { cache: 'no-store', signal: abort.signal }); const d = await r.json(); if (!r.ok) throw Error(typeof d.error === 'string' ? d.error : 'Teams couldn’t load.'); if (abort.signal.aborted) return; setTeams((Array.isArray(d.teams) ? d.teams : []).map((t: ApiTeam) => ({ ...t, players: Array.isArray(t.players) ? t.players : [], trophies: Array.isArray(t.trophies) ? t.trophies : [], wins: number(t.wins), losses: number(t.losses), rank: number(t.rank), points: number(t.points), totalPrizeMoney: number(t.totalPrizeMoney), name: t.name || 'Unnamed squad', tag: t.tag || '' }))); } catch (e) { if (!abort.signal.aborted) setError(e instanceof Error ? e.message : 'Teams couldn’t load.') } finally { if (!abort.signal.aborted) setLoading(false) } })(); return () => abort.abort() }, [retry]);
   useEffect(() => {
-    fetchTeams();
-    fetchCaptainTeam();
-    fetchMyApplications();
-  }, [fetchCaptainTeam, fetchMyApplications]);
+    const version = ++generation.current; const abort = new AbortController(); setUserTeamId(null); setCaptainTeamId(null); setAvailable([]); setApplications([]); setScrimDate(''); setMode('ALL'); setAccountLoading(true); setApplyTeam(null); setChallengeTarget(null); setFormError('');
+    if (authStatus === 'loading') return () => abort.abort(); if (authStatus !== 'authenticated') { setAccountLoading(false); return () => abort.abort() }
+    const read = async (url: string) => { const r = await fetch(url, { cache: 'no-store', signal: abort.signal }); return r.ok ? r.json() : null };
+    const gen = generation;
+    void (async () => { const r = await Promise.allSettled([read('/api/my-team'), read('/api/my-applications'), read('/api/matches/challenges/availability')]); if (abort.signal.aborted || version !== generation.current) return; const my = r[0].status === 'fulfilled' ? r[0].value : null; setUserTeamId(my?.id || null); setCaptainTeamId(my?.isCaptain ? my.id : null); const apps = r[1].status === 'fulfilled' ? r[1].value : null; setApplications(Array.isArray(apps?.applications) ? apps.applications : []); const availability = r[2].status === 'fulfilled' ? r[2].value : null; setAvailable(Array.isArray(availability?.availableTeams) ? availability.availableTeams.map((x: AvailabilityTeam) => x.teamId) : []); if (availability?.ping?.scrimDate) setScrimDate(new Date(availability.ping.scrimDate).toLocaleString()); setAccountLoading(false) })(); return () => { abort.abort(); gen.current++; };
+  }, [account, authStatus]);
+  const refreshApplications = useCallback(async () => { const r = await fetch('/api/my-applications', { cache: 'no-store' }); if (r.ok) { const d = await r.json(); setApplications(Array.isArray(d.applications) ? d.applications : []) } }, []);
+  const openApply = useCallback((team: ApiTeam) => { setViewTeam(null); setApplyTeam(team); setForm({ role: 'EXP', signatureHero: '', pitch: '' }); setHeroSearch(''); setFormError(''); setConfirmWithdraw(false) }, []);
+  useEffect(() => { const handler = (e: Event) => { const id = (e as CustomEvent<{ teamId: string }>).detail?.teamId; const team = teams.find(t => t.id === id); if (team) openApply(team) }; window.addEventListener('team-apply', handler); return () => window.removeEventListener('team-apply', handler) }, [teams, openApply]);
+  const regions = Array.from(new Set(teams.map(t => t.region).filter(Boolean))).sort();
+  const filtered = teams.filter(t => (tier === 'ALL' || t.tier === tier) && (region === 'ALL' || t.region === region) && (mode !== 'RECRUITING' || t.isRecruiting) && (mode !== 'AVAILABLE' || available.includes(t.id) && t.id !== userTeamId) && `${t.name} ${t.tag} ${t.region}`.toLowerCase().includes(search.trim().toLowerCase())).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name) : sort === 'points' ? b.points - a.points : sort === 'wins' ? b.wins - a.wins : (a.rank || Infinity) - (b.rank || Infinity) || b.points - a.points);
+  const activeSquad = filtered.find(t => t.id === selectedSquad) || filtered[0];
+  const activeSquadIndex = filtered.findIndex(t => t.id === activeSquad?.id);
+  const cycleSquad = (delta: number) => { if (filtered.length) setSelectedSquad(filtered[(activeSquadIndex + delta + filtered.length) % filtered.length].id) };
+  const compared = compare.map(id => teams.find(t => t.id === id)).filter((t): t is ApiTeam => !!t);
+  const pending = applications.find(a => a.teamId === applyTeam?.id); const heroMatches = heroCatalog.filter(h => `${h.name} ${h.key}`.toLowerCase().includes(heroSearch.toLowerCase()));
+  const toggleCompare = (id: string) => { if (compare.includes(id)) { setCompare(prev => prev.filter(x => x !== id)); return } if (compare.length === 2) { setNotice('Choose two squads at a time. Remove one from the comparison to add another.'); return } setCompare(prev => prev.includes(id) || prev.length >= 2 ? prev : [...prev, id]) };
+  const submitApplication = async () => { if (!applyTeam || lock.current || userTeamId || accountLoading || authStatus !== 'authenticated') return; if (!applyTeam.isRecruiting) { setFormError('This squad is not currently recruiting.'); return } if (form.signatureHero && !heroCatalog.some(h => h.name === form.signatureHero)) { setFormError('Choose a hero from the list.'); return } lock.current = true; setBusy(true); setFormError(''); const version = generation.current; try { const r = await fetch(`/api/teams/${applyTeam.id}/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }); const d = await r.json().catch(() => ({})); if (!r.ok) throw Error(typeof d.error === 'string' ? d.error : 'Could not submit your application.'); if (version !== generation.current) return; setNotice(`Application sent to ${applyTeam.name}. The captain will review it.`); setApplyTeam(null); await refreshApplications() } catch (e) { if (version === generation.current) setFormError(e instanceof Error ? e.message : 'Please try again.') } finally { lock.current = false; setBusy(false) } };
+  const withdraw = async () => { if (!applyTeam || lock.current) return; lock.current = true; setBusy(true); setFormError(''); try { const r = await fetch(`/api/my-applications?teamId=${encodeURIComponent(applyTeam.id)}`, { method: 'DELETE' }); const d = await r.json().catch(() => ({})); if (!r.ok) throw Error(typeof d.error === 'string' ? d.error : 'Could not withdraw application.'); setNotice('Application withdrawn.'); setApplyTeam(null); await refreshApplications() } catch (e) { setFormError(e instanceof Error ? e.message : 'Please try again.') } finally { lock.current = false; setBusy(false) } };
+  const sendChallenge = async () => { if (!challengeTarget || !captainTeamId || challengeTarget.id === captainTeamId || !available.includes(challengeTarget.id) || lock.current) return; lock.current = true; setBusy(true); setFormError(''); try { const r = await fetch('/api/matches/challenges', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengedTeamId: challengeTarget.id }) }); const d = await r.json().catch(() => ({})); if (!r.ok) throw Error(typeof d.error === 'string' ? d.error : 'Could not send the challenge.'); setNotice(`Challenge sent to ${challengeTarget.name}. Waiting for their captain’s response.`); setChallengeTarget(null) } catch (e) { setFormError(e instanceof Error ? e.message : 'Please try again.') } finally { lock.current = false; setBusy(false) } };
+  const resetFilters = () => { setSearch(''); setTier('ALL'); setRegion('ALL'); setMode('ALL') };
+  return <main className="td-page"><style>{styles}</style><div className="td-shell">
+    <header className="ss-page-header"><div><span className="td-eyebrow">BOTSVILLE / GHANA MLBB</span><h1>Meet the players.<br /><span>Know the squad.</span></h1></div><div><p>The faces behind the plays.<br />Explore the lineup. Find your next team.</p><Link href="/register-team">Register your squad<ArrowUpRight size={13} /></Link></div></header>
+    {notice && <div className="td-notice" role="status"><span>{notice}</span><button type="button" onClick={() => setNotice('')} aria-label="Dismiss message"><X size={15} /></button></div>}
+    {applications.length > 0 && <div className="td-applications"><span><b>{applications.length}</b> squad {applications.length === 1 ? 'application' : 'applications'}</span><div>{applications.map(a => <button type="button" key={a.id} onClick={() => { const team = teams.find(t => t.id === a.teamId); if (team) openApply(team) }} disabled={!teams.some(t => t.id === a.teamId)}>{a.team?.name || 'Squad'}<ChevronRight size={12} /></button>)}</div><Link href="/my-team">Manage<ArrowUpRight size={12} /></Link></div>}
+    <section id="team-directory" className="td-directory" aria-labelledby="td-directory-title"><div className="td-directory-heading"><div><span className="td-eyebrow">THE LINEUP</span><h2 id="td-directory-title">Choose your squad.</h2></div><span>{filtered.length} {filtered.length === 1 ? 'squad' : 'squads'} to discover</span></div>
+      <div className="td-toolbar"><label className="td-search"><Search size={16} /><input aria-label="Search teams" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search squads, tags or cities…" />{search && <button type="button" onClick={() => setSearch('')} aria-label="Clear search"><X size={14} /></button>}</label><select aria-label="Filter region" value={region} onChange={e => setRegion(e.target.value)}><option value="ALL">All regions</option>{regions.map(r => <option key={r}>{r}</option>)}</select><select aria-label="Filter tier" value={tier} onChange={e => setTier(e.target.value)}><option value="ALL">All tiers</option>{['S', 'A', 'B', 'C'].map(t => <option key={t} value={t}>{t} tier</option>)}</select><select aria-label="Sort squads" value={sort} onChange={e => setSort(e.target.value)}><option value="rank">By rank</option><option value="points">Most points</option><option value="wins">Most wins</option><option value="name">A–Z</option></select></div>
+      <div className="td-directory-tabs" role="group" aria-label="Squad availability">{[{ key: 'ALL', label: 'All squads' }, { key: 'RECRUITING', label: 'Looking for players' }, ...(captainTeamId ? [{ key: 'AVAILABLE', label: 'Ready to scrim' }] : [])].map(m => <button type="button" key={m.key} aria-pressed={mode === m.key} onClick={() => setMode(m.key)}>{m.label}</button>)}{(search || region !== 'ALL' || tier !== 'ALL' || mode !== 'ALL') && <button type="button" className="td-reset" onClick={resetFilters}>Reset filters</button>}</div>
+      {mode === 'AVAILABLE' && scrimDate && <p className="td-muted">Scheduled scrim: {scrimDate}</p>}
+      {loading ? <div className="td-empty" role="status"><Shield size={28} /><h3>Getting the squads ready…</h3></div> : error ? <div className="td-empty" role="alert"><h3>{error}</h3><button type="button" className="td-secondary" onClick={() => setRetry(n => n + 1)}>Try again</button></div> : !filtered.length ? <div className="td-empty"><Search size={27} /><h3>No squads found.</h3><p>Try a different name, region or tier.</p><button type="button" className="td-secondary" onClick={resetFilters}>Show all squads</button></div> : activeSquad ? <div className="ss-showcase" style={teamStyle(activeSquad)}><SquadStage key={activeSquad.id} team={activeSquad} onApply={() => openApply(activeSquad)} onChallenge={() => { setFormError(''); setChallengeTarget(activeSquad) }} onCompare={() => toggleCompare(activeSquad.id)} compared={compare.includes(activeSquad.id)} application={applications.some(a => a.teamId === activeSquad.id)} canChallenge={!!captainTeamId && activeSquad.id !== captainTeamId && available.includes(activeSquad.id)} ownTeam={userTeamId === activeSquad.id} />
+        <aside className="ss-sidebar" aria-label="Browse squads"><div className="ss-selector-header"><span>SQUAD {String(activeSquadIndex + 1).padStart(2, '0')} / {String(filtered.length).padStart(2, '0')}</span><div><button type="button" disabled={filtered.length < 2} onClick={() => setSelectedSquad(filtered[(activeSquadIndex + 1 + Math.floor(Math.random() * (filtered.length - 1))) % filtered.length].id)}><Shuffle size={13} />Surprise me</button><button type="button" aria-label="Previous squad" disabled={filtered.length < 2} onClick={() => cycleSquad(-1)}>←</button><button type="button" aria-label="Next squad" disabled={filtered.length < 2} onClick={() => cycleSquad(1)}>→</button></div></div>
+          <div className="ss-team-selector" role="group" aria-label="Select squad">{filtered.map(t => <button type="button" key={t.id} aria-pressed={activeSquad.id === t.id} onClick={() => setSelectedSquad(t.id)}><span className="ss-selector-logo"><TeamImage src={t.logo} contain /></span><span><strong>{t.tag || t.name}</strong><small>{t.name}</small></span><span className="ss-selector-rank">{t.rank ? `#${t.rank}` : '—'}</span></button>)}</div></aside></div> : null}
 
-
-  // Auto-dismiss applyFeedback after a short time to avoid sticky messages
-  useEffect(() => {
-    if (!applyFeedback) return;
-    const t = setTimeout(() => setApplyFeedback(null), 4000);
-    return () => clearTimeout(t);
-  }, [applyFeedback]);
-
-  const challengeTeam = async (teamId: string) => {
-    if (!captainTeamId) {
-      setChallengeFeedback('Only team captains can send challenges.');
-      return;
-    }
-
-    if (!availableTeamIds.includes(teamId)) {
-      setChallengeFeedback('This team is not marked available for this week yet.');
-      return;
-    }
-
-    setChallengeSubmittingId(teamId);
-    setChallengeFeedback(null);
-    try {
-      const response = await fetch('/api/matches/challenges', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ challengedTeamId: teamId }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setChallengeFeedback(data?.error || 'Failed to send challenge');
-        return;
-      }
-      setChallengeFeedback('Challenge sent successfully. Waiting for captain response.');
-    } catch {
-      setChallengeFeedback('Failed to send challenge');
-    } finally {
-      setChallengeSubmittingId(null);
-    }
-  };
-
-  const applyToTeam = useCallback(async (teamId: string, payload?: { role?: string; signatureHero?: string; pitch?: string }) => {
-    if (userTeamId) {
-      setApplyError('You are currently registered under another squad. Leave your current squad or ask your captain to disband before applying.');
-      return;
-    }
-
-    setApplySubmitting(true);
-    setApplyError(null);
-    setApplyFeedback(null);
-
-    try {
-      const response = await fetch(`/api/teams/${teamId}/apply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload || {}),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setApplyError(data?.error || 'Unable to submit application to this team.');
-        return;
-      }
-      setApplySuccessMessage(`⚔️ Application submitted to squad captain!`);
-      setSelectedApplyTeam(null);
-      setApplyForm({ role: 'EXP', signatureHero: '', pitch: '' });
-      await fetchMyApplications();
-
-    } catch {
-      setApplyError('Network connection issue. Please check your connection and try again.');
-    } finally {
-      setApplySubmitting(false);
-    }
-  }, [userTeamId]);
-
-  // Listen for in-panel apply button events
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const ce = e as CustomEvent<{ teamId: string }>;
-      if (ce?.detail?.teamId) {
-        const targetTeam = teams.find(t => t.id === ce.detail.teamId);
-        if (targetTeam) {
-          setSelectedApplyTeam(targetTeam);
-          setApplyError(null);
-        }
-      }
-    };
-    window.addEventListener('team-apply', handler as EventListener);
-    return () => window.removeEventListener('team-apply', handler as EventListener);
-  }, [teams]);
-
-
-  const fetchTeams = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/teams', { cache: 'no-store' });
-      const data = await response.json();
-      
-      if (response.ok && data.teams) {
-        setTeams(data.teams);
-        if (data.teams.length > 0) {
-          setActiveId(data.teams[0].id);
-        }
-      } else {
-        setError(data.error || 'Failed to load teams');
-      }
-    } catch (err) {
-      console.error('Error fetching teams:', err);
-      setError('Failed to load teams');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const activeTeam = teams.find(t => t.id === activeId);
-  const filtered = teams.filter(t => {
-    if (filter !== 'All' && t.tier !== filter) return false;
-    if (search && !t.name.toLowerCase().includes(search.toLowerCase()) &&
-        !t.tag.toLowerCase().includes(search.toLowerCase())) return false;
-    if (showAvailableOnly && captainTeamId) {
-      if (t.id === captainTeamId) return true;
-      if (!availableTeamIds.includes(t.id)) return false;
-    }
-    return true;
-  });
-
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-[#08080e] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-[#e8a000]" />
-      </main>
-    );
-  }
-
-  if (error) {
-    return (
-      <main className="min-h-screen bg-[#08080e] flex items-center justify-center">
-        <p className="text-[#e84040]">{error}</p>
-      </main>
-    );
-  }
-
-  return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&display=swap');
-        ::-webkit-scrollbar { width: 0; height: 0; }
-      `}</style>
-
-      <main className="min-h-screen bg-[#08080e] pt-24 lg:pt-28">
-        <PageHeader teamsCount={teams.length} topTeam={teams[0]} />
-
-        {myApplications.length > 0 && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3 pb-1">
-            <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
-                  <Clock size={16} className="animate-pulse" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-white text-xs font-black uppercase tracking-wide">
-                      Active Squad Applications ({myApplications.length})
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold uppercase">
-                      Under Captain Review
-                    </span>
-                  </div>
-                  <p className="text-zinc-400 text-[11px] mt-0.5">
-                    Applied to: {myApplications.map((a) => a.team?.name || 'Squad').join(', ')}. Review status or manage applications in{' '}
-                    <Link href="/my-team" className="text-amber-400 font-bold underline hover:text-amber-300">
-                      My Team
-                    </Link>.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                <Link
-                  href="/my-team"
-                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-[10px] font-black uppercase tracking-wider transition-all"
-                >
-                  View in My Team →
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {challengeFeedback && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3">
-            <div className="border border-[#e8a000]/25 bg-[#e8a000]/8 px-3 py-2 text-xs text-[#e8a000]">
-              {challengeFeedback}
-            </div>
-          </div>
-        )}
-
-        {/* ── DESKTOP: spotlight + sidebar ── */}
-        <div className="hidden lg:flex" style={{ height: 'calc(100vh - 196px)', minHeight: 560 }}>
-
-              {applyFeedback && applyFeedback.length > 0 && (
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3">
-                  <div className="border border-white/10 bg-white/3 px-3 py-2 text-xs text-white">
-                    {applyFeedback}
-                  </div>
-                </div>
-              )}
-
-            {/* Spotlight column */}
-            <div className="flex-1 relative overflow-hidden">
-              {activeTeam && <SpotlightPanel team={activeTeam} userTeamId={userTeamId} />}
-            </div>
-
-            <div className="w-72 xl:w-80 shrink-0 border-l flex flex-col bg-[#08080e]"
-              style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-
-              <div className="p-3 border-b space-y-2" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="flex items-center gap-2 bg-[#0d0d14] border border-white/[0.06] px-2.5 py-2
-                              focus-within:border-[#e8a000]/30 transition-colors">
-                <Search size={11} className="text-[#333] shrink-0" />
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search team..."
-                  className="bg-transparent text-white text-[10px] placeholder:text-[#222] outline-none flex-1 tracking-wide" />
-                {search && <button onClick={() => setSearch('')}><X size={10} className="text-[#444]" /></button>}
-              </div>
-              <div className="flex gap-1">
-                {(['All','S','A','B','C'] as const).map(t => (
-                  <button key={t} onClick={() => setFilter(t)}
-                    className="flex-1 py-1 text-[9px] font-black tracking-widest uppercase border transition-all"
-                    style={filter === t
-                      ? { background: '#e8a000', color: '#000', borderColor: '#e8a000' }
-                      : { background: 'transparent', color: '#333', borderColor: '#ffffff0a' }}>
-                    {t}
-                  </button>
-                ))}
-              </div>
-              {captainTeamId && (
-                <button
-                  type="button"
-                  onClick={() => setShowAvailableOnly((prev) => !prev)}
-                  className="w-full py-1 text-[9px] font-black tracking-widest uppercase border transition-all"
-                  style={showAvailableOnly
-                    ? { background: '#e8a000', color: '#000', borderColor: '#e8a000' }
-                    : { background: 'transparent', color: '#666', borderColor: '#ffffff0f' }}
-                >
-                  {showAvailableOnly ? 'Showing Available Teams' : 'Available Teams Only'}
-                </button>
-              )}
-              {captainTeamId && weeklyScrimDateLabel && (
-                <p className="text-[9px] text-[#777] tracking-wide">Scrim date: {weeklyScrimDateLabel}</p>
-              )}
-            </div>
-
-            <div className="overflow-y-auto flex-1">
-              {filtered.length === 0
-                ? <p className="text-[#1e1e28] text-[10px] tracking-widest uppercase text-center mt-12">No results</p>
-                : filtered.map((team, i) => (
-                    <SidebarEntry key={team.id} team={team} index={i}
-                      active={activeId === team.id}
-                      onClick={() => setActiveId(team.id)}
-                        canChallenge={Boolean(captainTeamId && captainTeamId !== team.id && availableTeamIds.includes(team.id))}
-                      challengeLoading={challengeSubmittingId === team.id}
-                      onChallenge={() => challengeTeam(team.id)}
-                      captainTeamId={captainTeamId} />
-                  ))
-              }
-            </div>
-
-            <div className="border-t p-3" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-              <p className="text-[#222] text-[8px] tracking-[0.25em] uppercase text-center">
-                {filtered.length} of {teams.length} teams
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* ── MOBILE / TABLET: accordion ── */}
-        <div className="lg:hidden">
-          <div className="px-4 py-3 border-b flex flex-col gap-2" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-            <div className="flex items-center gap-2 bg-[#0d0d14] border border-white/[0.06] px-3 py-2.5
-                            focus-within:border-[#e8a000]/30 transition-colors">
-              <Search size={12} className="text-[#333] shrink-0" />
-              <input value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search team or tag..."
-                className="bg-transparent text-white text-[11px] placeholder:text-[#2a2a2a] outline-none flex-1 tracking-wide" />
-              {search && <button onClick={() => setSearch('')}><X size={11} className="text-[#444]" /></button>}
-            </div>
-            <div className="flex gap-1.5">
-              {(['All','S','A','B','C'] as const).map(t => (
-                <button key={t} onClick={() => setFilter(t)}
-                  className="flex-1 py-1.5 text-[9px] font-black tracking-widest uppercase border transition-all"
-                  style={filter === t
-                    ? { background: '#e8a000', color: '#000', borderColor: '#e8a000' }
-                    : { background: 'transparent', color: '#444', borderColor: '#ffffff0d' }}>
-                  {t}
-                </button>
-              ))}
-            </div>
-            {captainTeamId && (
-              <button
-                type="button"
-                onClick={() => setShowAvailableOnly((prev) => !prev)}
-                className="w-full py-1.5 text-[9px] font-black tracking-widest uppercase border transition-all"
-                style={showAvailableOnly
-                  ? { background: '#e8a000', color: '#000', borderColor: '#e8a000' }
-                  : { background: 'transparent', color: '#666', borderColor: '#ffffff0f' }}
-              >
-                {showAvailableOnly ? 'Showing Available Teams' : 'Available Teams Only'}
-              </button>
-            )}
-            {captainTeamId && weeklyScrimDateLabel && (
-              <p className="text-[9px] text-[#777] tracking-wide">Scrim date: {weeklyScrimDateLabel}</p>
-            )}
-          </div>
-
-          <div>
-            {filtered.map(team => (
-              <MobileTeamRow key={team.id} team={team}
-                active={activeId === team.id}
-                onClick={() => setActiveId(prev => prev === team.id ? null : team.id)}
-                canChallenge={Boolean(captainTeamId && captainTeamId !== team.id && availableTeamIds.includes(team.id))}
-                challengeLoading={challengeSubmittingId === team.id}
-                onChallenge={() => challengeTeam(team.id)}
-                userTeamId={userTeamId}
-                isPendingApplied={myApplications.some(a => a.teamId === team.id)} />
-            ))}
-
-          </div>
-        </div>
-
-        {/* ── Success Toast Banner ── */}
-        <AnimatePresence>
-          {applySuccessMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: 50, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 50, scale: 0.95 }}
-              className="fixed bottom-6 right-6 z-[999] bg-[#0c1a14] border border-emerald-500/40 text-emerald-300 p-4 rounded-xl shadow-2xl flex items-center gap-3 max-w-md backdrop-blur-xl"
-            >
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-xs leading-tight">{applySuccessMessage}</p>
-                <p className="text-[10px] text-emerald-400/70 mt-0.5">The squad captain will review your application on their My Team portal.</p>
-              </div>
-              <button onClick={() => setApplySuccessMessage(null)} className="p-1 hover:bg-white/10 rounded-lg">
-                <X size={14} />
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ── Creative Roster Application Modal ── */}
-        <AnimatePresence>
-          {selectedApplyTeam && (() => {
-            const teamColor = selectedApplyTeam.color || '#e8a000';
-            const roles = ['EXP', 'JUNGLE', 'MID', 'GOLD', 'ROAM'] as const;
-            const myAppForTeam = myApplications.find((a) => a.teamId === selectedApplyTeam.id);
-
-            const filteredHeroes = heroCatalog.filter((h) =>
-              h.name.toLowerCase().includes(heroSearch.toLowerCase()) ||
-              h.key.toLowerCase().includes(heroSearch.toLowerCase())
-            );
-
-            return (
-              <div
-                className="fixed inset-0 z-[1000] overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-4 flex min-h-full items-center justify-center"
-                onClick={() => { setSelectedApplyTeam(null); setApplyError(null); setHeroSearch(''); }}
-              >
-
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.94, y: 15 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.94, y: 15 }}
-                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="relative w-full max-w-lg max-h-[88vh] flex flex-col bg-[#0a0a12] border border-white/10 rounded-2xl shadow-[0_0_60px_rgba(0,0,0,0.95)] overflow-hidden my-auto text-white"
-                >
-                  {/* Modal Header (Fixed, non-shrinking) */}
-                  <div
-                    className="shrink-0 p-4 sm:p-5 border-b border-white/10 relative overflow-hidden"
-                    style={{ background: `linear-gradient(135deg, ${teamColor}25, transparent 80%)` }}
-                  >
-                    <div className="flex items-center justify-between relative z-10">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-11 h-11 rounded-xl border-2 flex items-center justify-center bg-black/60 font-black overflow-hidden relative shrink-0"
-                          style={{ borderColor: `${teamColor}60` }}
-                        >
-                          {selectedApplyTeam.logo ? (
-                            <Image src={selectedApplyTeam.logo} alt="" fill className="object-cover" />
-                          ) : (
-                            <span className="text-xs" style={{ color: teamColor }}>{selectedApplyTeam.tag}</span>
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-zinc-400">
-                            {myAppForTeam ? 'Application Status' : 'Roster Application'}
-                          </p>
-                          <h3
-                            className="text-lg sm:text-xl font-black uppercase tracking-tight text-white leading-none mt-0.5"
-                            style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-                          >
-                            {selectedApplyTeam.name}
-                          </h3>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => { setSelectedApplyTeam(null); setApplyError(null); setHeroSearch(''); }}
-                        className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-all"
-                      >
-                        <X size={18} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Modal Body (Scrollable inside max-height) */}
-                  <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 custom-scrollbar">
-
-                    {/* Human Error HUD Card if error occurred */}
-                    {applyError && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 space-y-2"
-                      >
-                        <div className="flex items-start gap-2.5">
-                          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-                          <div className="space-y-1">
-                            <h4 className="text-xs font-black uppercase tracking-wider text-red-400">Application Notice</h4>
-                            <p className="text-xs leading-relaxed text-red-200/90">{applyError}</p>
-                          </div>
-                        </div>
-
-                        {applyError.includes('Leave your current squad') && (
-                          <div className="pt-2 border-t border-red-500/20 flex justify-end">
-                            <a
-                              href="/my-team"
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-200 text-[10px] font-black uppercase tracking-wider transition-colors"
-                            >
-                              <span>Manage My Team</span>
-                              <ArrowRight size={12} />
-                            </a>
-                          </div>
-                        )}
-                      </motion.div>
-                    )}
-
-                    {/* Pending Application State View */}
-                    {myAppForTeam ? (
-                      <div className="space-y-4 py-2">
-                        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-3">
-                          <div className="flex items-start gap-3">
-                            <Clock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 animate-pulse" />
-                            <div className="space-y-1">
-                              <h4 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
-                                <span>Application Under Review</span>
-                                <span className="px-2 py-0.5 rounded text-[8px] bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                                  PENDING CAPTAIN RESPONSE
-                                </span>
-                              </h4>
-                              <p className="text-xs leading-relaxed text-amber-100/90">
-                                Your application has been delivered to the squad captain of <span className="font-bold text-white">{selectedApplyTeam.name}</span>. You will receive a notification as soon as they review your profile.
-                              </p>
-                            </div>
-                          </div>
-
-                          {myAppForTeam.message && (
-                            <div className="pt-2.5 border-t border-amber-500/20 space-y-1">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-amber-400/80">Submitted Note to Captain</p>
-                              <p className="text-xs italic text-amber-100/80 bg-black/30 p-2.5 rounded-lg border border-amber-500/20">
-                                "{myAppForTeam.message}"
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between text-xs">
-                          <span className="text-zinc-400 text-[10px] uppercase font-mono tracking-wider">
-                            Submitted: {new Date(myAppForTeam.sentAt).toLocaleDateString()}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={withdrawingId === selectedApplyTeam.id}
-                            onClick={() => withdrawApplication(selectedApplyTeam.id)}
-                            className="px-3.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 disabled:opacity-50"
-                          >
-                            {withdrawingId === selectedApplyTeam.id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <X size={12} />
-                            )}
-                            <span>Withdraw Request</span>
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      /* New Application Form */
-                      <>
-                        {/* 1. Preferred Role Picker */}
-                        <div>
-                          <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1.5">
-                            1. Preferred Main Role
-                          </label>
-                          <div className="grid grid-cols-5 gap-1.5">
-                            {roles.map((r) => {
-                              const meta = ROLE_META[r];
-                              const selected = applyForm.role === r;
-                              return (
-                                <button
-                                  key={r}
-                                  type="button"
-                                  onClick={() => setApplyForm((prev) => ({ ...prev, role: r }))}
-                                  className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
-                                    selected
-                                      ? 'bg-white/15 border-white text-white shadow-lg scale-105'
-                                      : 'bg-white/5 border-white/5 text-zinc-500 hover:border-white/20 hover:text-zinc-300'
-                                  }`}
-                                >
-                                  <div
-                                    className="w-5 h-5 rounded-lg flex items-center justify-center mb-0.5"
-                                    style={{ backgroundColor: `${meta.color}20`, color: meta.color }}
-                                  >
-                                    {meta.icon}
-                                  </div>
-                                  <span className="text-[8px] font-black uppercase tracking-wider">{meta.label}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* 2. Signature Hero Selector (From DB Catalog) */}
-                        <div>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                              2. Signature Hero (Select from DB)
-                            </label>
-                            {applyForm.signatureHero && (
-                              <span className="text-[10px] font-black text-[#ffb800]">Selected: {applyForm.signatureHero}</span>
-                            )}
-                          </div>
-
-                          {/* Hero Search input */}
-                          <div className="relative mb-2">
-                            <Search size={12} className="absolute left-3 top-3 text-zinc-500" />
-                            <input
-                              type="text"
-                              value={heroSearch}
-                              onChange={(e) => setHeroSearch(e.target.value)}
-                              placeholder="Search DB hero list (e.g. Chou, Ling, Fanny)..."
-                              className="w-full bg-[#12121a] border border-white/10 rounded-xl pl-8 pr-4 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#e8a000]/60 transition-all"
-                            />
-                          </div>
-
-                          {/* Hero Avatars Grid */}
-                          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-36 overflow-y-auto p-1 bg-black/40 border border-white/5 rounded-xl custom-scrollbar">
-                            {filteredHeroes.map((hero) => {
-                              const isSelected = applyForm.signatureHero.toLowerCase() === hero.name.toLowerCase();
-                              return (
-                                <button
-                                  key={hero.id || hero.key}
-                                  type="button"
-                                  onClick={() => setApplyForm((prev) => ({ ...prev, signatureHero: hero.name }))}
-                                  className={`relative flex flex-col items-center p-1.5 rounded-xl border transition-all ${
-                                    isSelected
-                                      ? 'bg-[#e8a000]/20 border-[#e8a000] shadow-md shadow-[#e8a000]/30 scale-105'
-                                      : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20'
-                                  }`}
-                                >
-                                  <div className="relative w-8 h-8 rounded-lg overflow-hidden mb-1 border border-white/10">
-                                    <Image src={hero.imageUrl || '/heroes/stun.png'} alt={hero.name} fill className="object-cover" />
-                                  </div>
-                                  <span className="text-[8px] font-bold text-center truncate w-full text-zinc-300">
-                                    {hero.name}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                            {filteredHeroes.length === 0 && (
-                              <div className="col-span-full py-4 text-center text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
-                                No matching heroes found in DB
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* 3. Pitch / Message to Captain */}
-                        <div>
-                          <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">
-                            3. Pitch Note to Captain
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={applyForm.pitch}
-                            onChange={(e) => setApplyForm((prev) => ({ ...prev, pitch: e.target.value }))}
-                            placeholder="Introduce your rank, win rate, or scrimmage availability..."
-                            className="w-full bg-[#12121a] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#e8a000]/60 transition-all resize-none"
-                          />
-                        </div>
-
-                        {/* Live Application Card Preview */}
-                        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Applicant HUD Card Preview</p>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span
-                              className="px-2 py-0.5 rounded text-[9px] font-black uppercase"
-                              style={{
-                                backgroundColor: `${ROLE_META[applyForm.role]?.color || '#e8a000'}20`,
-                                color: ROLE_META[applyForm.role]?.color || '#e8a000',
-                              }}
-                            >
-                              {applyForm.role}
-                            </span>
-                            {applyForm.signatureHero && (
-                              <span className="text-[10px] text-zinc-300 font-bold">⚡ Signature: {applyForm.signatureHero}</span>
-                            )}
-                          </div>
-                          {applyForm.pitch && (
-                            <p className="text-[10px] text-zinc-400 italic">"{applyForm.pitch}"</p>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Modal Footer (Fixed, non-shrinking) */}
-                  <div className="shrink-0 p-4 border-t border-white/10 bg-black/50 flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedApplyTeam(null); setApplyError(null); setHeroSearch(''); }}
-                      className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-wider text-zinc-400 hover:text-white transition-all"
-                    >
-                      Cancel
-                    </button>
-                    {!myAppForTeam && (
-                      <button
-                        type="button"
-                        disabled={applySubmitting}
-                        onClick={() => applyToTeam(selectedApplyTeam.id, applyForm)}
-                        className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-[#e8a000] to-[#ffb800] hover:brightness-110 disabled:opacity-50 text-black text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-[#e8a000]/20"
-                      >
-                        {applySubmitting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Send size={13} />
-                        )}
-                        <span>{applySubmitting ? 'Submitting...' : 'Submit Application'}</span>
-                      </button>
-                    )}
-                  </div>
-
-                </motion.div>
-              </div>
-            );
-          })()}
-        </AnimatePresence>
-
-      </main>
-    </>
-  );
+      <div className="td-directory-footer"><span>Every squad has a story. Find yours.</span><Link href="/leaderboard">Full standings<ArrowUpRight size={13} /></Link></div></section>
+  </div>
+    {compared.length > 0 && <div className="td-compare-dock"><div><GitCompareArrows size={17} /><span>{compared.map(t => t.tag || t.name).join(' vs ')}<small>{compared.length === 1 ? 'Choose one more squad' : 'Two squads. Side by side.'}</small></span></div><button type="button" className="td-primary" disabled={compared.length !== 2} onClick={() => setCompareOpen(true)}>Compare<ArrowRight size={13} /></button><button type="button" className="td-icon" onClick={() => { setCompare([]); setCompareOpen(false) }} aria-label="Clear comparison"><X size={16} /></button></div>}
+    {compareOpen && compared.length === 2 && <Dialog title="Head to head" wide onClose={() => setCompareOpen(false)}><div className="td-compare-content"><div className="td-comparison-teams"><span />{compared.map(t => <div key={t.id}><span className="td-compare-logo"><TeamImage src={t.logo} contain /></span><strong>{t.name}</strong><small>{t.region || 'Ghana'}</small></div>)}</div><table className="td-comparison-table"><caption>Squad statistics comparison</caption><tbody>{[{ label: 'Rank', values: compared.map(t => t.rank ? `#${t.rank}` : 'Unranked') }, { label: 'Tier', values: compared.map(t => t.tier || '—') }, { label: 'Points', values: compared.map(t => t.points.toLocaleString()) }, { label: 'Wins / losses', values: compared.map(t => `${t.wins} / ${t.losses}`) }, { label: 'Win rate', values: compared.map(t => rate(t) === null ? 'No matches' : `${rate(t)}%`) }, { label: 'Players', values: compared.map(t => t._count?.players ?? t.players.length) }, { label: 'Recruitment', values: compared.map(t => t.isRecruiting ? 'Open' : 'Closed') }].map(row => <tr key={row.label}><th scope="row">{row.label}</th>{row.values.map((v, i) => <td key={i}>{v}</td>)}</tr>)}</tbody></table><p className="td-muted">Season totals, not results from matches between these two squads.</p></div></Dialog>}
+    {viewTeam && <Dialog title="Meet the squad" wide onClose={() => setViewTeam(null)}><div className="td-peek" style={teamStyle(viewTeam)}><div className="td-peek-banner"><TeamImage src={viewTeam.banner} /><span className="td-cover-shade" /><div><span className="td-peek-logo"><TeamImage src={viewTeam.logo} contain /></span><div><span className="td-eyebrow">{viewTeam.region || 'GHANA'} · {viewTeam.tag}</span><h2>{viewTeam.name}</h2></div></div></div><div className="td-peek-body"><Metrics team={viewTeam} /><div className="td-peek-actions"><Link href={`/teams/${viewTeam.id}`} className="td-primary">Full squad profile<ArrowUpRight size={14} /></Link>{(viewTeam.isRecruiting || applications.some(a => a.teamId === viewTeam.id)) && <button type="button" className="td-secondary" onClick={() => openApply(viewTeam)}>{applications.some(a => a.teamId === viewTeam.id) ? 'Application status' : 'Apply to join'}</button>}{captainTeamId && viewTeam.id !== captainTeamId && available.includes(viewTeam.id) && <button type="button" className="td-secondary" onClick={() => { setFormError(''); setChallengeTarget(viewTeam); setViewTeam(null) }}><Swords size={14} />Challenge</button>}</div>{viewTeam.captain && <p className="td-muted">Captain · {viewTeam.captain.ign}</p>}<h3 className="td-roster-heading">The starting lineup <span>{viewTeam.players.filter(p => !p.isSubstitute).length} players</span></h3><div className="td-player-grid">{viewTeam.players.filter(p => !p.isSubstitute).map(p => <div className="td-player" key={p.id}><span className="td-player-photo"><TeamImage src={p.photo || p.user?.photo} alt={p.ign} /></span><span className="td-player-role">{p.role || 'Player'}</span><strong>{p.ign}</strong>{p.signatureHero && <small>{p.signatureHero}</small>}</div>)}</div>{!viewTeam.players.length && <p className="td-muted">The roster hasn’t been published yet.</p>}{viewTeam.players.some(p => p.isSubstitute) && <><h3 className="td-roster-heading">Substitutes</h3><div className="td-substitutes">{viewTeam.players.filter(p => p.isSubstitute).map(p => <span key={p.id}><strong>{p.ign}</strong>{p.role}</span>)}</div></>}{viewTeam.trophies.length > 0 && <div className="td-trophies">{viewTeam.trophies.map((t, i) => <span key={i}><Trophy size={12} />{t}</span>)}</div>}</div></div></Dialog>}
+    {applyTeam && <Dialog title={`Join ${applyTeam.name}`} locked={busy} onClose={() => setApplyTeam(null)}><div className="td-apply-body"><div className="td-apply-team"><span><TeamImage src={applyTeam.logo} contain /></span><div><small>YOUR NEXT SQUAD?</small><h2>{applyTeam.name}</h2></div></div>{formError && <p className="td-form-error" role="alert">{formError}</p>}{accountLoading ? <p className="td-muted">Checking your squad status…</p> : authStatus !== 'authenticated' ? <div className="td-apply-gate"><h3>Your next chapter starts here.</h3><p>Log in to introduce yourself to the captain.</p><Link href="/login?callbackUrl=%2Fteams" className="td-primary">Log in to apply<ArrowRight size={14} /></Link></div> : pending ? <><div className="td-pending"><Check size={22} /><h3>Your application is with the captain.</h3><p>Submitted {new Date(pending.sentAt).toLocaleDateString()}</p>{pending.message && <blockquote>{pending.message}</blockquote>}</div>{confirmWithdraw ? <div className="td-withdraw-confirm"><p>Withdraw your application to {applyTeam.name}?</p><button type="button" className="td-secondary" disabled={busy} onClick={() => setConfirmWithdraw(false)}>Keep application</button><button type="button" className="td-secondary" disabled={busy} onClick={() => void withdraw()}>{busy ? 'Withdrawing…' : 'Withdraw application'}</button></div> : <button type="button" className="td-secondary" onClick={() => setConfirmWithdraw(true)}>Withdraw application</button>}</> : userTeamId ? <div className="td-apply-gate"><h3>You’re already on a squad.</h3><p>Manage your current membership before applying to another team.</p><Link href="/my-team" className="td-primary">My team<ArrowUpRight size={14} /></Link></div> : !applyTeam.isRecruiting ? <p className="td-muted">This squad’s roster is currently closed.</p> : <form onSubmit={e => { e.preventDefault(); void submitApplication() }}><fieldset disabled={busy} className="td-form-fields"><legend className="td-sr">Squad application</legend><label className="td-field-label">01 <span>Where do you play?</span></label><div className="td-role-picks" role="group" aria-label="Preferred role">{ROLES.map(r => <button type="button" key={r} aria-pressed={form.role === r} onClick={() => setForm(f => ({ ...f, role: r }))}>{r}</button>)}</div><div className="td-field-label">02 <span>Your signature hero</span><small>Optional</small></div><label className="td-search"><Search size={14} /><input aria-label="Find a signature hero" value={heroSearch} onChange={e => setHeroSearch(e.target.value)} placeholder="Find your main…" /></label><div className="td-hero-grid">{heroMatches.map(h => <button type="button" key={h.id || h.key} aria-pressed={form.signatureHero === h.name} onClick={() => setForm(f => ({ ...f, signatureHero: f.signatureHero === h.name ? '' : h.name }))}><span><TeamImage src={h.imageUrl} />{form.signatureHero === h.name && <i><Check size={12} /></i>}</span><strong>{h.name}</strong></button>)}{!heroMatches.length && <p>No heroes found. You can still submit without one.</p>}</div><label htmlFor="squad-pitch" className="td-field-label">03 <span>Introduce yourself</span><small>Optional</small></label><textarea id="squad-pitch" value={form.pitch} onChange={e => setForm(f => ({ ...f, pitch: e.target.value }))} maxLength={1000} rows={3} placeholder="Your rank, playstyle and when you’re free to scrim…" /><div className="td-pitch-count">{form.pitch.length}/1000</div><div className="td-player-pass"><span>YOUR PLAYER CARD</span><strong>{session?.user?.ign || 'You'} <small>{form.role}{form.signatureHero ? ` / ${form.signatureHero}` : ''}</small></strong><p>{form.pitch || 'Add a short note to help the captain get to know you.'}</p></div><button type="submit" className="td-primary td-submit" disabled={busy}>{busy ? 'Sending application…' : 'Send to the captain'}<Send size={14} /></button></fieldset></form>}</div></Dialog>}
+    {challengeTarget && <Dialog title="Send a scrim challenge" locked={busy} onClose={() => setChallengeTarget(null)}><div className="td-apply-body"><Swords size={28} /><h2>Your squad vs {challengeTarget.name}.</h2><p className="td-muted">Send a challenge to their captain for the available scrim slot.{scrimDate ? ` ${scrimDate}` : ''}</p>{formError && <p className="td-form-error" role="alert">{formError}</p>}<button type="button" className="td-primary" disabled={busy} onClick={() => void sendChallenge()}>{busy ? 'Sending…' : 'Send challenge'}<ArrowRight size={14} /></button></div></Dialog>}
+  </main>;
 }
 
+const styles = `
+.td-page{--gold:#e7be7b;background:#0a0e14;color:#ecede6;min-height:100vh;padding:88px 0 110px;font-family:Arial,Helvetica,sans-serif}.td-page *{box-sizing:border-box}.td-shell{max-width:1240px;margin:auto;padding:0 28px}.td-page a{text-decoration:none;color:inherit}.td-page button{font:inherit;cursor:pointer}.td-page button:disabled{cursor:default;opacity:.45}.td-page :is(a,button,input,select,textarea):focus-visible{outline:2px solid #efd297;outline-offset:4px}.td-eyebrow{display:block;color:#cfb58b;font-size:9px;letter-spacing:1.8px;line-height:1.6}.td-intro{display:grid;grid-template-columns:1.1fr 1fr;gap:44px;align-items:center;padding:24px 0 40px}.td-intro h1{font-size:clamp(32px,3.7vw,49px);line-height:1.08;letter-spacing:-1.8px;margin:15px 0 16px;font-weight:750}.td-intro h1>span{color:#e2bd82}.td-intro-copy>p{color:#a5b2b5;font-size:13px;line-height:1.8;max-width:390px;margin:0}.td-intro-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}.td-primary,.td-secondary{min-height:44px;padding:12px 16px;border-radius:6px;font-size:11px!important;font-weight:600!important;display:inline-flex;align-items:center;justify-content:center;gap:12px;text-decoration:none;line-height:1.4}.td-primary{background:#e7be7b;color:#221b11!important;border:1px solid #e7be7b}.td-primary:hover:not(:disabled){background:#f0d29d}.td-secondary{background:#ffffff04;border:1px solid #ffffff22;color:#cdd7d8!important}.td-secondary:hover{background:#ffffff09;border-color:#ffffff45}.td-intro-counts{display:flex;align-items:center;gap:22px;margin-top:22px;font-size:10px;color:#91a2aa;flex-wrap:wrap}.td-intro-counts b{font-size:14px;color:#e5e9e5;margin-right:4px}.td-intro-counts a{display:flex;align-items:center;gap:6px;color:#d6c2a0}.td-spotlight{position:relative;isolation:isolate;min-height:290px;height:100%;max-height:340px;width:100%;border:1px solid #ffffff25;border-radius:14px;background:#1c2b3a;overflow:hidden;color:#eef0e8;text-align:left;padding:24px}.td-spotlight>img{object-fit:cover}.td-spotlight-shade{position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,#0a10164d,#0a1016e8)}.td-spotlight-top{position:absolute;top:22px;left:22px;right:22px;display:flex;align-items:center;justify-content:space-between;color:#e0d2b7;font-size:8px;letter-spacing:1.6px;z-index:2}.td-spotlight-ghost{position:absolute;right:-8px;top:12%;font-weight:900;font-size:110px;letter-spacing:-8px;color:#ffffff0d;z-index:2;white-space:nowrap}.td-spotlight-content{position:absolute;bottom:24px;left:24px;right:24px;display:flex;align-items:center;gap:16px;z-index:2}.td-spotlight-logo{position:relative;width:66px;height:66px;flex-shrink:0}.td-spotlight-content>span:last-child{min-width:0}.td-spotlight-content small{display:block;font-size:8px;color:#d8c59f;letter-spacing:1px}.td-spotlight-content strong{display:block;font-size:27px;letter-spacing:-.6px;line-height:1.15;overflow-wrap:anywhere;margin:8px 0}.td-spotlight-content>span>span{font-size:10px;color:#a3b5be}.td-image-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#90a4b4}.td-notice{display:flex;justify-content:space-between;gap:16px;align-items:center;border:1px solid #e7be7b30;background:#e7be7b0b;padding:12px 16px;border-radius:8px;font-size:12px;line-height:1.6;margin-bottom:16px;color:#dec9a9}.td-notice button,.td-icon{display:flex;justify-content:center;align-items:center;width:40px;height:40px;border:0;background:none;color:#bdcbd2;flex-shrink:0}.td-applications{display:flex;align-items:center;gap:16px;padding:14px 16px;border:1px solid #ffffff16;border-radius:8px;background:#131c25;font-size:11px;margin-bottom:24px}.td-applications>div{display:flex;gap:8px;flex:1;overflow:auto}.td-applications button,.td-applications a{display:flex;align-items:center;gap:6px;white-space:nowrap;min-height:36px;background:none;border:0;color:#e0c295;font-size:10px}.td-directory{scroll-margin-top:80px}.td-directory-heading{display:flex;justify-content:space-between;align-items:end;gap:16px;margin:12px 0 20px}.td-directory-heading h2{font-size:28px;letter-spacing:-.8px;margin:6px 0 0}.td-directory-heading>span{font-size:10px;color:#92a4af}.td-toolbar{display:grid;grid-template-columns:minmax(0,1fr) 150px 110px 130px;gap:8px}.td-search{display:flex;align-items:center;gap:10px;min-width:0;min-height:44px;background:#111a24;border:1px solid #ffffff1c;border-radius:6px;padding:0 12px;color:#94a9b3}.td-search input{flex:1;min-width:0;background:none;border:0;color:#e7ece9;font-size:12px;outline:none;padding:12px 0}.td-search button{display:flex;align-items:center;justify-content:center;background:none;border:0;color:#b8cad2;width:30px;height:36px}.td-search:focus-within{border-color:#cdb17c}.td-toolbar select{border:1px solid #ffffff1c;background:#111a24;color:#becbd1;border-radius:6px;padding:10px;font-size:11px;min-width:0;min-height:44px}.td-directory-tabs{display:flex;align-items:center;gap:22px;overflow:auto;margin:12px 0 22px;border-bottom:1px solid #ffffff13;scrollbar-width:thin}.td-directory-tabs button{border:0;border-bottom:2px solid transparent;background:none;color:#92a5b0;font-size:11px;min-height:46px;white-space:nowrap;padding:0}.td-directory-tabs button[aria-pressed=true]{color:#eac58c;border-bottom-color:#eac58c}.td-directory-tabs .td-reset{margin-left:auto;font-size:9px;color:#adbbc2}.td-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.td-card{background:#121b25;border:1px solid #ffffff16;border-radius:11px;overflow:hidden;transition:transform .2s,border-color .2s}.td-card:hover{border-color:#ffffff40;transform:translateY(-3px)}.td-card-cover{display:block;position:relative;width:100%;height:146px;border:0;background:#223247;padding:0;text-align:left;overflow:visible}.td-card-cover>img{object-fit:cover;border-radius:10px 10px 0 0}.td-cover-shade{position:absolute;inset:0;background:linear-gradient(180deg,#080e1844,#121b25ed)}.td-tag-watermark{position:absolute;right:12px;bottom:12px;color:#ffffff0d;font-size:65px;font-weight:900;letter-spacing:-4px;line-height:1;pointer-events:none}.td-card-rank{position:absolute;top:14px;left:16px;color:#efdfbc;font-size:12px;font-weight:700}.td-card-tier{position:absolute;right:14px;top:14px;color:#dce2da;background:#08101bcc;border:1px solid #ffffff25;border-radius:4px;font-size:8px;padding:5px 7px;letter-spacing:1px}.td-card-cover:after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--team);opacity:.65}.td-card-logo{position:absolute;width:58px;height:58px;left:18px;bottom:4px;filter:drop-shadow(0 4px 8px #0007)}.td-card-body{padding:14px 18px 0}.td-card-identity{display:flex;align-items:center;justify-content:space-between;gap:10px}.td-card-identity>div{min-width:0}.td-location{display:flex;align-items:center;gap:4px;color:#99aab5;font-size:9px}.td-name-button{padding:0;border:0;background:none;text-align:left;color:#ebeee9;min-height:36px}.td-name-button h3{font-size:18px;letter-spacing:-.4px;line-height:1.25;margin:6px 0;overflow-wrap:anywhere}.td-compare-toggle{width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:#ffffff04;border:1px solid #ffffff16;border-radius:6px;color:#a3b6c1;flex-shrink:0}.td-compare-toggle.is-on{background:#e7be7b12;border-color:#e7be7b70;color:#e7be7b}.td-card-signals{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:8px;color:#92a4af;margin:10px 0 14px}.td-card-signals>span{display:flex;align-items:center;gap:5px}.td-card-signals .td-open{color:#9cc8af}.td-open i{width:4px;height:4px;border-radius:50%;background:#8cb69c}.td-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:16px 0;border-top:1px solid #ffffff0e}.td-metrics strong{display:block;font-size:19px;font-variant-numeric:tabular-nums;font-weight:600;color:#e6e9e1}.td-metrics strong small{font-size:12px;color:#90a2ad;font-weight:400}.td-metrics>div>span{display:block;font-size:8px;color:#8ea3af;margin-top:5px}.td-card-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;border-top:1px solid #ffffff10}.td-text-button,.td-card-apply{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0;border:0;background:none;color:#b6c7cf;font-size:10px!important}.td-card-apply{color:#edcb91}.td-directory-footer{display:flex;justify-content:space-between;gap:16px;margin-top:28px;color:#849ca9;font-size:10px}.td-directory-footer>a{display:flex;gap:8px;color:#bdaf94}.td-empty{padding:55px 16px;text-align:center;border:1px dashed #ffffff24;border-radius:9px;color:#9db2bb}.td-empty>svg{margin:auto;color:#c0ad89}.td-empty h3{font-size:20px;color:#dce5e2;margin:16px 0 10px}.td-empty p{font-size:12px;margin:0 0 20px}.td-compare-dock{position:fixed;z-index:60;bottom:max(16px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100% - 24px);display:flex;align-items:center;gap:18px;padding:12px 14px 12px 20px;border:1px solid #e7be7b40;border-radius:12px;background:#182430f5;backdrop-filter:blur(16px);box-shadow:0 15px 50px #0008}.td-compare-dock>div{display:flex;align-items:center;gap:12px;color:#e7c38a;min-width:0}.td-compare-dock>div>span{font-size:12px;overflow-wrap:anywhere;max-width:260px}.td-compare-dock small{display:block;font-size:9px;color:#9fb3be;margin-top:5px}.td-compare-dock .td-primary{font-size:10px!important;flex-shrink:0}.td-dialog{padding:0;border:1px solid #ffffff28;border-radius:14px;background:#121c27;color:#e5ede6;width:min(520px,calc(100% - 24px));max-height:calc(100dvh - 24px);margin:auto;overflow:hidden;font-family:Arial,Helvetica,sans-serif}.td-dialog-wide{width:min(850px,calc(100% - 24px))}.td-dialog::backdrop{background:#050a12c9;backdrop-filter:blur(7px)}.td-dialog-inner{max-height:calc(100dvh - 26px);overflow:auto;scrollbar-width:thin;scrollbar-color:#485c6c transparent}.td-dialog-inner>header{position:sticky;top:0;z-index:10;background:#121c27f5;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:6px 12px 6px 22px;border-bottom:1px solid #ffffff12;min-height:54px}.td-dialog-inner>header>span{font-size:11px;color:#bbced7}.td-dialog-inner>header>button{width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:none;border:0;color:#bdcfd7;flex-shrink:0}.td-peek-banner{height:190px;position:relative;background:#223449}.td-peek-banner>img{object-fit:cover}.td-peek-banner>div{position:absolute;left:24px;right:24px;bottom:24px;display:flex;gap:18px;align-items:center}.td-peek-logo{position:relative;width:68px;height:68px;flex-shrink:0}.td-peek-banner h2{font-size:32px;letter-spacing:-1px;line-height:1.15;margin:6px 0 0;overflow-wrap:anywhere}.td-peek-body{padding:8px 24px 26px}.td-peek-body>.td-metrics{border:0;padding:20px 0}.td-peek-actions{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}.td-muted{font-size:11px;color:#a2b6c3;line-height:1.7}.td-roster-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;color:#d1ddd9;font-weight:600;margin:24px 0 12px}.td-roster-heading>span{font-size:9px;color:#8ea9b8;font-weight:400}.td-player-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.td-player{min-width:0}.td-player-photo{display:block;position:relative;width:100%;aspect-ratio:3/4;max-height:185px;overflow:hidden;background:#233446;border-radius:6px}.td-player-photo img{object-position:top}.td-player-role{display:block;font-size:8px;letter-spacing:.5px;color:#cbb58e;margin-top:10px}.td-player>strong{display:block;overflow-wrap:anywhere;font-size:12px;line-height:1.4;margin:5px 0}.td-player>small{display:block;font-size:9px;color:#99b2be}.td-substitutes{display:flex;flex-wrap:wrap;gap:8px}.td-substitutes>span{font-size:9px;color:#92abba;border:1px solid #ffffff14;padding:9px 12px;border-radius:5px}.td-substitutes strong{color:#d4e0dd;font-size:11px;margin-right:8px}.td-trophies{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}.td-trophies span{display:flex;align-items:center;gap:7px;background:#e7be7b09;border:1px solid #e7be7b25;color:#ddc596;font-size:9px;padding:8px 10px;border-radius:4px}.td-compare-content{padding:22px}.td-comparison-teams{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px}.td-comparison-teams>div{text-align:center;min-width:0}.td-compare-logo{position:relative;display:block;width:48px;height:48px;margin:0 auto 10px}.td-comparison-teams strong{display:block;font-size:14px;line-height:1.4;overflow-wrap:anywhere}.td-comparison-teams small{display:block;font-size:9px;color:#98b2bf;margin-top:5px}.td-comparison-table{width:100%;border-collapse:collapse;table-layout:fixed}.td-comparison-table caption{text-align:left;font-size:9px;color:#91a8b8;padding:10px 0}.td-comparison-table th,.td-comparison-table td{width:33.33%;border-top:1px solid #ffffff12;padding:14px 8px;font-size:11px;overflow-wrap:anywhere}.td-comparison-table th{font-weight:400;color:#97b0be;text-align:left}.td-comparison-table td{text-align:center;color:#e0d4bc;font-weight:600}.td-apply-body{padding:22px}.td-apply-team{display:flex;align-items:center;gap:14px;margin-bottom:24px}.td-apply-team>span{position:relative;display:block;width:48px;height:48px;flex-shrink:0}.td-apply-team small{font-size:8px;letter-spacing:1px;color:#bca986}.td-apply-team h2{font-size:22px;line-height:1.2;margin:6px 0 0;letter-spacing:-.5px}.td-form-error{font-size:12px;color:#ecc1b3;background:#a95c4520;border:1px solid #d68b6740;border-radius:6px;padding:12px;line-height:1.6}.td-apply-gate h3,.td-pending h3{font-size:21px;line-height:1.3;letter-spacing:-.5px;margin:12px 0}.td-apply-gate p,.td-pending p{font-size:12px;color:#a6bfcd;line-height:1.7;margin:0 0 20px}.td-pending>svg{color:#a7cbb6}.td-pending blockquote{margin:12px 0 24px;padding:12px;border-left:2px solid #d4b781;background:#ffffff04;font-size:12px;line-height:1.7;color:#c4d5d6;white-space:pre-wrap;overflow-wrap:anywhere}.td-withdraw-confirm p{font-size:12px;line-height:1.6}.td-withdraw-confirm button{margin:5px}.td-form-fields{border:0;padding:0;margin:0;min-width:0}.td-field-label{display:flex;gap:10px;align-items:center;font-size:10px;color:#d8bc8f;margin:22px 0 12px}.td-field-label>span{font-size:12px;color:#d4e0dd}.td-field-label>small{font-size:9px;color:#8ca8b7;margin-left:auto}.td-role-picks{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}.td-role-picks button{border:1px solid #ffffff16;background:#1c2b39;color:#a5bdc9;border-radius:6px;min-height:44px;font-size:9px}.td-role-picks button[aria-pressed=true]{border-color:#e7be7b;background:#e7be7b12;color:#efd5a9}.td-hero-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;max-height:205px;overflow:auto;margin-top:12px;padding:4px;scrollbar-width:thin}.td-hero-grid>button{min-width:0;background:none;border:1px solid transparent;padding:4px;border-radius:6px;color:#acbfcc}.td-hero-grid>button[aria-pressed=true]{border-color:#e7be7b;background:#e7be7b09;color:#efd5a5}.td-hero-grid>button>span{position:relative;display:block;aspect-ratio:1;background:#253748;border-radius:4px;overflow:hidden}.td-hero-grid img{object-position:top}.td-hero-grid i{position:absolute;bottom:0;right:0;background:#e7be7b;color:#1e190e;padding:3px;border-radius:3px}.td-hero-grid strong{display:block;font-size:8px;line-height:1.4;margin:5px 0 0;overflow-wrap:anywhere}.td-hero-grid p{grid-column:1/-1;font-size:11px;color:#9bb3c0;line-height:1.6}.td-form-fields textarea{display:block;resize:vertical;min-height:86px;max-height:220px;width:100%;background:#0e1720;color:#dbe6e4;border:1px solid #ffffff20;border-radius:6px;padding:12px;font-family:inherit;font-size:12px;line-height:1.6}.td-pitch-count{text-align:right;font-size:8px;color:#8aabba;margin-top:6px}.td-player-pass{margin:18px 0;border:1px solid #c7af8038;border-left:3px solid #c7af80;background:#1b2a36;padding:14px;border-radius:5px}.td-player-pass>span{font-size:7px;letter-spacing:1.2px;color:#c9b68f}.td-player-pass strong{display:block;font-size:13px;margin-top:8px}.td-player-pass small{font-size:9px;color:#adbdbe;margin-left:8px;font-weight:400}.td-player-pass p{font-size:10px;line-height:1.7;color:#a1bac5;margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}.td-submit{width:100%}.td-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:1000px){.td-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.td-intro{gap:26px}.td-intro h1{font-size:38px}.td-intro-counts{gap:14px}.td-spotlight-content strong{font-size:23px}.td-toolbar{grid-template-columns:minmax(0,1fr) 135px 95px 115px}.td-spotlight-content{gap:12px}.td-spotlight-logo{width:50px;height:50px}}
+@media(max-width:700px){.td-page{padding-top:74px}.td-shell{padding:0 16px}.td-intro{grid-template-columns:1fr;gap:24px;padding:12px 0 28px}.td-intro h1{font-size:35px;letter-spacing:-1.3px}.td-intro-copy>p{font-size:12px;max-width:360px}.td-intro-actions{margin-top:20px}.td-intro-counts{font-size:9px;gap:16px;margin-top:18px}.td-intro-counts b{font-size:13px}.td-spotlight{min-height:180px;height:180px;padding:16px}.td-spotlight-top{top:16px;left:16px;right:16px;font-size:7px}.td-spotlight-content{bottom:18px;left:18px;right:18px}.td-spotlight-content strong{font-size:24px}.td-spotlight-content small{font-size:7px}.td-spotlight-ghost{font-size:88px;top:10%}.td-directory-heading h2{font-size:25px}.td-directory-heading>span{font-size:9px}.td-toolbar{grid-template-columns:1fr 1fr 1fr;gap:6px}.td-toolbar .td-search{grid-column:1/-1}.td-search input{font-size:16px}.td-search input::placeholder{font-size:12px}.td-toolbar select{font-size:10px;padding:10px 5px}.td-directory-tabs{gap:18px;margin-bottom:18px}.td-directory-tabs button{font-size:10px}.td-directory-tabs .td-reset{font-size:8px}.td-grid{grid-template-columns:1fr;gap:16px}.td-card-cover{height:154px}.td-card-logo{width:62px;height:62px}.td-name-button h3{font-size:21px}.td-compare-toggle{width:44px;height:44px}.td-card-signals{font-size:9px}.td-metrics strong{font-size:21px}.td-metrics>div>span{font-size:9px}.td-card-body{padding:14px 18px 0}.td-text-button,.td-card-apply{font-size:11px!important;min-height:48px}.td-directory-footer{font-size:9px;line-height:1.6}.td-applications{flex-wrap:wrap;font-size:10px;gap:8px}.td-applications>div{order:3;flex-basis:100%}.td-applications>a{margin-left:auto}.td-compare-dock{gap:8px;padding:10px}.td-compare-dock>div>svg{display:none}.td-compare-dock>div>span{font-size:10px;max-width:145px}.td-compare-dock small{font-size:8px;line-height:1.5}.td-compare-dock .td-primary{padding:10px;font-size:9px!important;gap:6px}.td-compare-dock .td-icon{width:28px}.td-peek-banner{height:160px}.td-peek-banner>div{left:16px;right:16px;bottom:18px;gap:12px}.td-peek-logo{width:48px;height:48px}.td-peek-banner h2{font-size:25px}.td-peek-banner .td-eyebrow{font-size:8px;letter-spacing:.8px}.td-peek-body{padding:8px 16px 22px}.td-player-grid{display:flex;overflow-x:auto;scroll-snap-type:x proximity;padding:0 0 8px}.td-player{flex:0 0 112px;scroll-snap-align:start}.td-player-photo{height:146px;aspect-ratio:auto}.td-player>strong{font-size:12px}.td-roster-heading{margin-top:20px}.td-apply-body{padding:18px 16px}.td-apply-team h2{font-size:20px}.td-hero-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.td-form-fields textarea{font-size:16px}.td-form-fields textarea::placeholder{font-size:12px}.td-compare-content{padding:16px}.td-comparison-teams strong{font-size:11px}.td-comparison-table th,.td-comparison-table td{font-size:10px;padding:12px 5px}.td-comparison-teams{grid-template-columns:1fr 1fr 1fr}.td-notice{font-size:11px;padding:10px 12px}}
+@media(prefers-reduced-motion:reduce){.td-page *{transition:none!important;scroll-behavior:auto!important}.td-card:hover{transform:none}}
+
+/* Player-first squad showcase */
+.ss-page-header{display:flex;justify-content:space-between;align-items:end;gap:24px;padding:16px 0 26px}.ss-page-header h1{font-size:36px;line-height:1.05;letter-spacing:-1.2px;margin:12px 0 0}.ss-page-header h1 span{color:#e0bd83}.ss-page-header p{font-size:12px;line-height:1.8;color:#a4b4bd;margin:0 0 12px}.ss-page-header a{display:flex;gap:8px;align-items:center;min-height:36px;color:#d7c09a;font-size:10px}.td-directory-heading{display:none}.td-directory-tabs{margin-bottom:16px}.ss-stage{position:relative;isolation:isolate;overflow:hidden;border:1px solid #ffffff20;border-radius:12px;padding:24px;background:#111b26}.ss-backdrop{position:absolute;inset:0;z-index:-1;opacity:.16;pointer-events:none}.ss-backdrop img{object-fit:cover;filter:blur(2px)}.ss-backdrop:after{content:'';position:absolute;inset:0;background:linear-gradient(#111b2600,#111b26 90%)}.ss-team-header{display:flex;gap:14px;align-items:center;margin-bottom:25px}.ss-team-logo{position:relative;display:block;width:54px;height:54px;flex-shrink:0}.ss-team-title{flex:1;min-width:0}.ss-team-title>span{font-size:8px;letter-spacing:1.2px;color:#ccb895}.ss-team-title h2{font-size:32px;line-height:1.1;letter-spacing:-.7px;margin:7px 0 0;overflow-wrap:anywhere}.ss-recruiting{font-size:9px;line-height:1.5;color:#a6c5b4;border:1px solid #ffffff20;border-radius:4px;padding:7px 9px}.ss-lineup-top{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:8px;letter-spacing:1px;color:#afc2ca;margin-bottom:12px}.ss-lineup-top>span:last-child{letter-spacing:0;color:#8fa6b4}.ss-lineup{display:flex;gap:8px;overflow-x:auto;padding:6px 3px 12px;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#657480 transparent}.ss-player{position:relative;isolation:isolate;flex:1 0 calc((100% - 32px)/5);min-width:130px;height:clamp(230px,29vw,360px);border:1px solid #ffffff24;background:#24384a;border-radius:7px;padding:0;text-align:left;overflow:hidden;scroll-snap-align:start;color:#eef1ea;transition:transform .25s,border-color .25s,filter .25s}.ss-player:nth-child(even){margin-top:12px;height:clamp(218px,calc(29vw - 12px),348px)}.ss-player-photo{position:absolute;inset:0}.ss-player-photo img{object-position:center top;transition:transform .4s}.ss-player-shade{position:absolute;inset:0;background:linear-gradient(180deg,#0003,transparent 30%,#0c1422b0 75%,#0c1422 100%)}.ss-player-index{position:absolute;top:12px;left:12px;font-size:9px;color:#fff9;letter-spacing:1px}.ss-player-info{position:absolute;left:14px;right:10px;bottom:17px}.ss-role{display:inline-block;font-size:8px;letter-spacing:1.3px;color:#e4c99c;border-bottom:1px solid #e4c99c70;padding-bottom:6px;margin-bottom:9px}.ss-player-info strong{display:block;font-size:clamp(16px,1.8vw,24px);font-weight:800;line-height:1.1;letter-spacing:-.4px;overflow-wrap:anywhere}.ss-player-info small{display:block;font-size:9px;line-height:1.5;color:#acbbc6;margin-top:8px}.ss-player:hover,.ss-player.is-spotlight{border-color:#e0bf83;transform:translateY(-4px)}.ss-player:hover img,.ss-player.is-spotlight img{transform:scale(1.045)}.ss-lineup.has-spotlight .ss-player:not(.is-spotlight){filter:saturate(.6);border-color:#ffffff12}.ss-player-detail{display:flex;align-items:center;gap:24px;padding:14px 18px;background:#233445;border:1px solid #d8b57933;border-radius:6px;margin:4px 0 14px}.ss-player-detail>div>span{display:block;font-size:7px;letter-spacing:1px;color:#c7b28b}.ss-player-detail strong{display:block;font-size:16px;margin-top:5px}.ss-player-detail p{flex:1;font-size:11px;color:#c0d0d8;margin:0;line-height:1.6}.ss-player-detail small{display:block;font-size:9px;color:#94afbf}.ss-player-detail button{display:flex;align-items:center;justify-content:center;width:40px;height:40px;background:none;border:0;color:#bccfdb}.ss-captain{font-size:8px;color:#e4c18a}.ss-subs{display:flex;gap:10px;align-items:center;overflow-x:auto;margin:8px 0 18px;padding-bottom:4px}.ss-subs>span{font-size:8px;color:#91a6b3;white-space:nowrap;margin-right:8px}.ss-subs button{display:flex;align-items:center;gap:8px;background:#ffffff04;border:1px solid #ffffff14;border-radius:5px;padding:6px 12px 6px 6px;text-align:left;color:#d7e3e6;min-width:max-content}.ss-subs button[aria-pressed=true]{border-color:#ddbc7e}.ss-sub-photo{position:relative;width:32px;height:36px;overflow:hidden;border-radius:3px;background:#203345}.ss-sub-photo img{object-position:top}.ss-subs strong{font-size:10px;font-weight:600}.ss-subs small{display:block;font-size:8px;color:#8ba6b8;margin-top:4px}.ss-bottom{display:flex;align-items:center;justify-content:space-between;gap:24px;border-top:1px solid #ffffff14;padding-top:14px}.ss-bottom .td-metrics{border:0;padding:0;min-width:270px;gap:26px}.ss-bottom .td-metrics strong{font-size:20px}.ss-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.ss-actions .td-primary,.ss-actions .td-secondary{font-size:10px!important;padding:10px 12px}.ss-compare{display:flex;align-items:center;gap:7px;min-height:44px;border:0;background:none;color:#a7bcc8;font-size:9px!important;padding:8px}.ss-compare[aria-pressed=true]{color:#e8c68b}.ss-stage .td-trophies{margin-top:18px}.ss-no-players{width:100%;padding:55px 20px;text-align:center;color:#99afbd;line-height:1.6}.ss-no-players svg{margin:auto}.ss-no-players h3{font-size:20px;color:#d6e0e2}.ss-no-players p{font-size:12px}.ss-selector-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;font-size:9px;letter-spacing:1px;color:#b1a68e}.ss-selector-header>div{display:flex;gap:6px;align-items:center}.ss-selector-header button{display:flex;align-items:center;justify-content:center;gap:7px;min-width:40px;min-height:40px;border:1px solid #ffffff1a;background:#121e2a;color:#aebfca;border-radius:5px;font-size:10px;padding:8px 10px}.ss-team-selector{display:flex;gap:8px;overflow-x:auto;padding:4px 3px 12px;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#657480 transparent}.ss-team-selector>button{display:flex;align-items:center;gap:12px;flex:0 0 210px;min-width:0;min-height:70px;scroll-snap-align:start;background:#131f2a;border:1px solid #ffffff15;border-radius:7px;padding:12px;color:#a3b7c3;text-align:left}.ss-team-selector>button[aria-pressed=true]{border-color:#e0bc7c;background:#d4b0700d;color:#e4ceaa}.ss-selector-logo{position:relative;display:block;width:34px;height:34px;flex-shrink:0}.ss-team-selector>button>span:nth-child(2){min-width:0;flex:1}.ss-team-selector strong{display:block;font-size:12px}.ss-team-selector small{display:block;font-size:8px;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#94a7b3}.ss-selector-rank{font-size:10px}.td-toolbar{margin-top:8px}
+@media(max-width:900px){.ss-bottom{align-items:start;flex-direction:column;gap:16px}.ss-actions{justify-content:flex-start}.ss-team-title h2{font-size:27px}.ss-player{min-width:150px;flex-basis:calc((100% - 16px)/3);height:285px}.ss-player:nth-child(even){height:273px}.ss-stage{padding:20px}}
+@media(max-width:600px){.ss-page-header{padding:6px 0 18px;gap:12px}.ss-page-header h1{font-size:28px;letter-spacing:-1px}.ss-page-header>div:last-child{max-width:125px}.ss-page-header p{font-size:10px;line-height:1.6}.ss-page-header a{font-size:9px}.ss-page-header .td-eyebrow{font-size:7px;letter-spacing:1px}.ss-stage{padding:18px 12px 16px;margin:0 -4px}.ss-team-header{gap:10px;margin-bottom:20px;flex-wrap:wrap}.ss-team-logo{width:40px;height:40px}.ss-team-title h2{font-size:24px}.ss-team-title>span{font-size:7px;letter-spacing:.6px}.ss-recruiting{padding:5px 7px;font-size:8px;margin-left:50px;margin-top:-4px}.ss-lineup-top{gap:10px;font-size:7px}.ss-lineup-top>span:last-child{max-width:145px;text-align:right;line-height:1.5}.ss-lineup{margin:0 -12px;padding:5px 12px 12px;gap:7px}.ss-player{flex:0 0 44%;min-width:142px;height:270px}.ss-player:nth-child(even){height:258px}.ss-player-info{left:12px;bottom:16px}.ss-player-info strong{font-size:20px}.ss-player-info small{font-size:8px}.ss-role{font-size:7px}.ss-player-detail{padding:10px;gap:12px;flex-wrap:wrap}.ss-player-detail strong{font-size:14px}.ss-player-detail p{font-size:10px}.ss-player-detail button{margin-left:auto}.ss-player-detail small{font-size:8px}.ss-subs{margin:6px 0 14px;gap:7px}.ss-subs>span{font-size:7px;margin-right:3px}.ss-bottom{gap:15px}.ss-bottom .td-metrics{min-width:0;width:100%;gap:12px}.ss-bottom .td-metrics strong{font-size:19px}.ss-actions{width:100%;gap:7px}.ss-actions .td-primary,.ss-actions .td-secondary{flex:1;font-size:9px!important;padding:10px;white-space:nowrap}.ss-compare{font-size:8px!important}.ss-selector-header{font-size:8px;padding:12px 0}.ss-selector-header button{font-size:9px;min-height:44px}.ss-team-selector>button{flex-basis:180px;min-height:64px;padding:10px;gap:9px}.ss-team-selector{margin:0 -16px;padding:3px 16px 12px}.ss-selector-logo{width:30px;height:30px}.ss-team-selector strong{font-size:11px}.td-directory-tabs{margin:8px 0 14px}.td-directory-tabs button{min-height:40px}.td-toolbar{gap:5px}.td-directory-footer{margin-top:18px}}
+@media(prefers-reduced-motion:reduce){.ss-player:hover,.ss-player.is-spotlight{transform:none}.ss-player:hover img,.ss-player.is-spotlight img{transform:none}}
+
+.ss-showcase{display:grid;grid-template-columns:minmax(0,1fr) 256px;gap:18px;align-items:start}
+.ss-showcase>.ss-stage{min-width:0}
+.ss-sidebar{min-width:0;border:1px solid #ffffff18;border-radius:12px;background:#101b26;padding:12px;position:sticky;top:90px}
+.ss-sidebar .ss-selector-header{flex-direction:column;align-items:stretch;gap:12px;padding:4px 0 14px}
+.ss-sidebar .ss-selector-header>div{justify-content:space-between}
+.ss-sidebar .ss-selector-header button:first-child{flex:1}
+.ss-sidebar .ss-team-selector{flex-direction:column;max-height:min(620px,calc(100dvh - 230px));overflow-y:auto;overflow-x:hidden;scroll-snap-type:y proximity;margin:0;padding:0 3px 0 0}
+.ss-sidebar .ss-team-selector>button{flex:0 0 auto;width:100%;min-height:68px;padding:10px;gap:10px}
+.ss-sidebar .ss-team-selector>button[aria-pressed=true]{box-shadow:inset 3px 0 #e0bc7c}
+.ss-showcase .ss-bottom{align-items:flex-start;flex-direction:column;gap:14px}
+.ss-showcase .ss-actions{justify-content:flex-start}
+@media(min-width:901px){.ss-showcase .ss-player{min-width:0}.ss-showcase .ss-player-info{left:10px;right:6px}.ss-showcase .ss-player-info strong{font-size:clamp(15px,1.8vw,25px);overflow-wrap:anywhere}}
+@media(max-width:1100px) and (min-width:901px){.ss-showcase{grid-template-columns:minmax(0,1fr) 220px;gap:12px}.ss-showcase .ss-stage{padding:18px}.ss-showcase .ss-team-title h2{font-size:25px}.ss-showcase .ss-team-header{flex-wrap:wrap}.ss-showcase .ss-recruiting{margin-left:68px}.ss-sidebar{padding:10px}}
+@media(max-width:900px){.ss-showcase{grid-template-columns:minmax(0,1fr)}.ss-sidebar{position:static;padding:12px}.ss-sidebar .ss-selector-header{flex-direction:row;align-items:center;padding:0 0 12px;gap:10px}.ss-sidebar .ss-selector-header>div{justify-content:flex-end}.ss-sidebar .ss-team-selector{flex-direction:row;max-height:none;overflow-y:hidden;overflow-x:auto;scroll-snap-type:x proximity;padding:0 0 6px}.ss-sidebar .ss-team-selector>button{flex:0 0 180px;width:auto}.ss-sidebar .ss-selector-header button:first-child{flex:initial}}
+
+/* Squad editorial: continuous lineup, clear portrait labels, restrained detail. */
+.ss-showcase .ss-stage{background:#111a23;border-color:#ffffff1c;border-radius:14px;padding:22px;box-shadow:0 12px 32px #0002}
+.ss-backdrop{opacity:.12}.ss-backdrop img{filter:blur(0);object-position:center 30%}
+.ss-team-header{padding-bottom:18px;margin-bottom:0;border-bottom:1px solid #ffffff14;gap:14px}
+.ss-team-logo{width:58px;height:58px;padding:8px;background:#ffffff08;border:1px solid #ffffff12;border-radius:12px}
+.ss-team-logo img{padding:7px}.ss-team-title>span{font-size:9px;letter-spacing:1.1px;color:#9baab6}
+.ss-showcase .ss-team-title h2{font-size:clamp(23px,2.5vw,34px);font-weight:750;letter-spacing:-1px;margin-top:6px}
+.ss-recruiting{background:#ffffff06;color:#cedbd3;font-size:10px;border-radius:20px;padding:7px 10px}
+.ss-lineup-top{display:flex;align-items:center;justify-content:space-between;padding:18px 0 12px;margin:0;font-size:9px;color:#94a5b3;letter-spacing:1px;gap:12px}
+.ss-lineup-top b{color:#e5cda4;font-weight:600;margin-right:10px}.ss-lineup-top>span:last-child{font-size:10px;letter-spacing:0}.ss-lineup-top>span:last-child>span{margin:0 7px;color:#526270}
+.ss-showcase .ss-lineup{gap:2px;padding:0 0 10px;margin:0;scroll-snap-type:x mandatory}
+.ss-showcase .ss-player,.ss-showcase .ss-player:nth-child(even){flex:1 0 calc((100% - 8px)/5);min-width:0;height:340px;margin:0;border:0;border-radius:0;background:#22303c;transform:none}
+.ss-showcase .ss-player:first-child{border-radius:8px 0 0 8px}.ss-showcase .ss-player:last-child{border-radius:0 8px 8px 0}
+.ss-showcase .ss-player-photo{inset:0 0 65px}.ss-player-photo img{object-position:50% 15%}
+.ss-player-shade{background:linear-gradient(180deg,#09121b6b,transparent 26%,transparent 42%,#101922 81%)}
+.ss-player-top{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;align-items:center;gap:4px}
+.ss-player-top .ss-role{font-size:8px;letter-spacing:.6px;margin:0;padding:5px 6px;border:1px solid #ffffff20;border-radius:4px;background:#101922c9;color:#eee5d5;line-height:1}
+.ss-player-top .ss-player-index{position:static;font-size:9px;color:#f0f1f2;opacity:.7}
+.ss-portrait-captain{position:absolute;right:10px;top:44px;display:grid;place-items:center;width:19px;height:19px;border:1px solid #dec28d88;border-radius:50%;font-size:9px;font-weight:700;color:#f5dba9;background:#151e29cc}
+.ss-showcase .ss-player-info{left:12px;right:10px;bottom:12px}
+.ss-showcase .ss-player-info strong{font-size:clamp(16px,1.7vw,23px);letter-spacing:-.6px;line-height:1.2}
+.ss-player-info small{font-size:10px;color:#a6b2bc;margin-top:4px;line-height:1.4}
+.ss-player-explore{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:14px;padding-top:9px;border-top:1px solid #ffffff17;font-size:9px;color:#a2b0bb}
+.ss-showcase .ss-player:hover,.ss-showcase .ss-player.is-spotlight{box-shadow:inset 0 -3px #dfbf83;transform:none}
+.ss-showcase .ss-player.is-spotlight .ss-player-explore{color:#e9cc99}.ss-showcase .ss-lineup.has-spotlight .ss-player:not(.is-spotlight){filter:none}
+.ss-showcase .ss-player:focus-visible{outline:2px solid #edcd94;outline-offset:-3px}
+.ss-player-detail{background:#ffffff04;border:1px solid #ffffff14;border-left:3px solid #d8b579;border-radius:5px;margin:0 0 14px;padding:12px 15px}
+.ss-player-detail>div>small{margin-top:3px}.ss-subs{padding:8px 0 14px;margin:0;gap:8px}.ss-subs>span{font-size:9px;letter-spacing:1px}.ss-subs button{background:transparent;border-color:#ffffff17;border-radius:6px}
+.ss-showcase .ss-bottom{display:grid;grid-template-columns:1fr;gap:12px;padding-top:16px}.ss-bottom .td-metrics{justify-content:flex-start;gap:32px}.ss-bottom .td-metrics strong{font-size:22px}.ss-actions{padding-top:4px}
+@media(min-width:901px) and (max-width:1100px){.ss-showcase .ss-stage{padding:16px}.ss-showcase .ss-player,.ss-showcase .ss-player:nth-child(even){height:300px}.ss-player-top{left:6px;right:6px}.ss-showcase .ss-player-info{left:8px;right:7px}.ss-player-explore{font-size:8px}.ss-player-top .ss-role{font-size:7px}}
+@media(max-width:900px){.ss-showcase .ss-player,.ss-showcase .ss-player:nth-child(even){flex:0 0 27%;min-width:150px;height:325px}}
+@media(max-width:600px){.ss-showcase .ss-stage{padding:16px 12px;border-radius:10px}.ss-team-header{gap:10px;padding-bottom:14px}.ss-team-logo{width:44px;height:44px;border-radius:9px}.ss-team-title>span{font-size:8px;letter-spacing:.5px}.ss-showcase .ss-team-title h2{font-size:24px}.ss-recruiting{margin-left:54px;font-size:9px}.ss-lineup-top{padding:14px 0 10px;font-size:8px;letter-spacing:.5px}.ss-lineup-top b{margin-right:5px}.ss-lineup-top>span:last-child{font-size:9px;max-width:none}.ss-showcase .ss-lineup{margin:0 -12px;padding:0 12px 10px;scroll-padding-left:12px}.ss-showcase .ss-player,.ss-showcase .ss-player:nth-child(even){flex:0 0 46%;min-width:145px;height:290px}.ss-showcase .ss-player-info strong{font-size:21px}.ss-showcase .ss-player-info{left:12px;bottom:12px}.ss-player-explore{font-size:9px}.ss-bottom .td-metrics{gap:24px}.ss-bottom .td-metrics strong{font-size:20px}.ss-subs>span{font-size:8px}}
+@media(prefers-reduced-motion:reduce){.ss-player-photo img{transition:none}}
+
+/* Team-color broadcast banner and portrait stage. */
+.ss-showcase .ss-arena{padding:0;background:#121724;border:1px solid #ffffff20;overflow:hidden;border-radius:16px;box-shadow:0 16px 44px #0003}
+.ss-banner{position:relative;isolation:isolate;min-height:210px;padding:20px 22px 34px;display:flex;flex-direction:column;justify-content:space-between;gap:28px;background:linear-gradient(115deg,color-mix(in srgb,var(--team) 72%,#111725),#171e30);overflow:hidden}
+.ss-banner:after{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(0deg,#121724 0%,#12172422 65%),linear-gradient(90deg,#111725b0,transparent 80%)}
+.ss-banner:before{content:'';position:absolute;right:14%;top:-90px;width:140px;height:400px;transform:rotate(25deg);border-left:1px solid #ffffff25;border-right:36px solid #ffffff0c;z-index:-1}
+.ss-banner-image{position:absolute;inset:0;z-index:-2}.ss-banner-image img{object-position:center 35%;opacity:.8}
+.ss-banner-wordmark{position:absolute;right:12px;bottom:0;font-size:clamp(90px,10vw,150px);font-weight:900;line-height:1;letter-spacing:-8px;opacity:.12;color:#fff;z-index:-1;white-space:nowrap;pointer-events:none}
+.ss-banner-kicker{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:8px;letter-spacing:1.6px;color:#f2f3ff}
+.ss-arena .ss-recruiting{margin:0;background:#11172590;border:1px solid #ffffff30;color:#fff;padding:6px 10px;letter-spacing:0;font-size:9px;backdrop-filter:blur(8px)}
+.ss-arena .ss-team-header{border:0;padding:0;margin:0;flex-wrap:nowrap;gap:14px}
+.ss-arena .ss-team-logo{width:66px;height:66px;background:#111725a6;border:1px solid #ffffff45;border-radius:14px;box-shadow:0 5px 18px #0003;backdrop-filter:blur(8px)}
+.ss-arena .ss-team-title>span{color:#d7dcea;font-size:9px;letter-spacing:1.3px}
+.ss-showcase .ss-arena .ss-team-title h2{font-size:clamp(27px,3vw,40px);color:#fff;line-height:1.05;margin-top:8px;font-weight:850;letter-spacing:-1.3px;text-shadow:0 2px 15px #0004}
+.ss-banner-rank{border-left:1px solid #ffffff30;padding-left:18px;color:#fff}.ss-banner-rank small{display:block;font-size:8px;letter-spacing:1.5px;opacity:.7}.ss-banner-rank strong{display:block;font-size:31px;letter-spacing:-1px;margin-top:4px}
+.ss-arena .ss-lineup-top{padding:0 22px 14px;margin-top:-4px;position:relative;color:#aeb9cc}.ss-arena .ss-lineup-top b{color:color-mix(in srgb,var(--team) 40%,white)}
+.ss-showcase .ss-arena .ss-lineup{padding:0 22px 16px;margin:0;gap:7px;scroll-padding-left:22px}
+.ss-showcase .ss-arena .ss-player,.ss-showcase .ss-arena .ss-player:nth-child(even){flex:1 0 calc((100% - 28px)/5);height:325px;border:1px solid #ffffff18;border-radius:9px;background:linear-gradient(150deg,color-mix(in srgb,var(--team) 32%,#20293b),#161c2c);transition:border-color .2s,box-shadow .2s}
+.ss-arena .ss-player-photo{inset:0 0 60px}.ss-arena .ss-player-photo img{object-position:50% 12%}
+.ss-arena .ss-player-shade{background:linear-gradient(180deg,#10152233,transparent 35%,#151c2c55 56%,#151c2c 82%)}
+.ss-arena .ss-player-top{left:8px;right:8px}.ss-arena .ss-player-top .ss-role{color:#e1deff;background:#37305acc;border-color:#b1a2ff66;font-size:8px}
+.ss-arena .ss-role[data-role=JUNGLE]{color:#b6f3d9;background:#174936d9;border-color:#4fd2a455}
+.ss-arena .ss-role[data-role=MID]{color:#c3dcff;background:#243f69d9;border-color:#6aaaff55}
+.ss-arena .ss-role[data-role=GOLD]{color:#ffe0a0;background:#574222d9;border-color:#efbb5955}
+.ss-arena .ss-role[data-role=ROAM]{color:#ffc5d7;background:#582a40d9;border-color:#ed81aa55}
+.ss-showcase .ss-arena .ss-player-info{left:10px;right:10px;bottom:13px}.ss-arena .ss-player-info small{color:#b0bace}
+.ss-arena .ss-player-explore{color:#bdc6d8;border-color:#ffffff12}.ss-arena .ss-player-explore svg{color:color-mix(in srgb,var(--team) 35%,white)}
+.ss-showcase .ss-arena .ss-player:hover,.ss-showcase .ss-arena .ss-player.is-spotlight{border-color:color-mix(in srgb,var(--team) 55%,white);box-shadow:inset 0 -3px var(--team)}
+.ss-arena .ss-player.is-spotlight .ss-player-explore{color:color-mix(in srgb,var(--team) 35%,white)}
+.ss-arena .ss-player-detail{margin:0 22px 14px;border-left-color:var(--team);background:color-mix(in srgb,var(--team) 12%,#171e2b)}
+.ss-arena .ss-subs{margin:0 22px;padding:0 0 16px}.ss-showcase .ss-arena .ss-bottom{margin:0 22px;padding:16px 0 20px;border-top:1px solid #ffffff15}
+.ss-arena .ss-bottom .td-metrics strong{color:#f2f3fa}.ss-arena .ss-bottom .td-metrics>div:first-child strong{color:#98e3c2}
+.ss-arena .ss-actions .td-primary{background:color-mix(in srgb,var(--team) 45%,white);color:#111827;border:1px solid transparent;box-shadow:none}
+.ss-arena .td-trophies{margin:0!important;padding:12px 22px;background:#ffffff04;border-top:1px solid #ffffff0d}
+.ss-sidebar .ss-team-selector>button[aria-pressed=true]{background:color-mix(in srgb,var(--team) 16%,#131f2a);border-color:color-mix(in srgb,var(--team) 55%,white);box-shadow:inset 3px 0 var(--team);color:#f0f2fa}
+@media(max-width:1100px) and (min-width:901px){.ss-showcase .ss-arena .ss-player,.ss-showcase .ss-arena .ss-player:nth-child(even){height:295px}.ss-banner{padding-left:16px;padding-right:16px}.ss-showcase .ss-arena .ss-lineup{padding-left:16px;padding-right:16px;gap:5px}.ss-arena .ss-player-top .ss-role{font-size:7px}.ss-arena .ss-team-logo{width:52px;height:52px}.ss-banner-rank{padding-left:10px}.ss-banner-rank strong{font-size:25px}}
+@media(max-width:900px){.ss-showcase .ss-arena .ss-player,.ss-showcase .ss-arena .ss-player:nth-child(even){flex:0 0 27%;min-width:150px;height:320px}}
+@media(max-width:600px){.ss-banner{min-height:180px;padding:15px 14px 28px;gap:26px}.ss-banner-kicker{font-size:7px;letter-spacing:.8px}.ss-arena .ss-recruiting{font-size:8px;padding:5px 8px}.ss-arena .ss-team-header{gap:10px}.ss-arena .ss-team-logo{width:46px;height:46px;border-radius:10px}.ss-showcase .ss-arena .ss-team-title h2{font-size:25px;letter-spacing:-.8px}.ss-arena .ss-team-title>span{font-size:8px;letter-spacing:.6px}.ss-banner-rank{padding-left:10px}.ss-banner-rank strong{font-size:24px}.ss-banner-rank small{font-size:7px}.ss-banner-wordmark{font-size:100px;letter-spacing:-5px}.ss-arena .ss-lineup-top{padding:0 14px 12px;font-size:8px}.ss-showcase .ss-arena .ss-lineup{padding:0 14px 14px;scroll-padding-left:14px}.ss-showcase .ss-arena .ss-player,.ss-showcase .ss-arena .ss-player:nth-child(even){flex:0 0 46%;min-width:145px;height:290px}.ss-arena .ss-player-detail{margin:0 14px 14px}.ss-arena .ss-subs{margin:0 14px}.ss-showcase .ss-arena .ss-bottom{margin:0 14px;padding-bottom:16px}.ss-arena .td-trophies{padding:12px 14px}}
+@media(prefers-reduced-motion:reduce){.ss-showcase .ss-arena .ss-player{transition:none}}
+`;

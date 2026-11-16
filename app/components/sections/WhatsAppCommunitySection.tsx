@@ -1,300 +1,102 @@
 'use client';
 
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  MessageCircle,
-  Users,
-  ShieldCheck,
-  Copy,
-  Check,
-  ExternalLink,
-  QrCode,
-  Sparkles,
-  Trophy,
-  Flame,
-  ChevronRight,
-  X,
-  Radio,
-} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowUpRight, Copy, Check, QrCode, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 const WHATSAPP_COMMUNITY_URL = 'https://chat.whatsapp.com/JJnIPabbxCmB3R7abTRjWs';
+const QR_URL = `https://api.qrserver.com/v1/create-qr-code/?size=256x256&margin=16&data=${encodeURIComponent(WHATSAPP_COMMUNITY_URL)}`;
+
+// WhatsApp brand mark, unmodified geometry and colour.
+// Source: https://commons.wikimedia.org/wiki/File:WhatsApp_Logo_green.svg
+// The source credits WhatsApp / Meta Brand Resources.
+function WhatsAppLogo({ size = 36 }: { size?: number }) {
+  return (<svg width={size} height={size} aria-hidden="true" focusable="false" viewBox="0 0 360 362" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path fillRule="evenodd" clipRule="evenodd" d="M307.546 52.5655C273.709 18.685 228.706 0.0171895 180.756 0C81.951 0 1.53846 80.404 1.50408 179.235C1.48689 210.829 9.74646 241.667 25.4319 268.844L0 361.736L95.0236 336.811C121.203 351.096 150.683 358.616 180.679 358.625H180.756C279.544 358.625 359.966 278.212 360 179.381C360.017 131.483 341.392 86.4547 307.546 52.5741V52.5655ZM180.756 328.354H180.696C153.966 328.346 127.744 321.16 104.865 307.589L99.4242 304.358L43.034 319.149L58.0834 264.168L54.5423 258.53C39.6304 234.809 31.749 207.391 31.7662 179.244C31.8006 97.1036 98.6334 30.2707 180.817 30.2707C220.61 30.2879 258.015 45.8015 286.145 73.9665C314.276 102.123 329.755 139.562 329.738 179.364C329.703 261.513 262.871 328.346 180.756 328.346V328.354ZM262.475 216.777C257.997 214.534 235.978 203.704 231.869 202.209C227.761 200.713 224.779 199.966 221.796 204.452C218.814 208.939 210.228 219.029 207.615 222.011C205.002 225.002 202.389 225.372 197.911 223.128C193.434 220.885 179.003 216.158 161.891 200.902C148.578 189.024 139.587 174.362 136.975 169.875C134.362 165.389 136.7 162.965 138.934 160.739C140.945 158.728 143.412 155.505 145.655 152.892C147.899 150.279 148.638 148.406 150.133 145.423C151.629 142.432 150.881 139.82 149.764 137.576C148.646 135.333 139.691 113.287 135.952 104.323C132.316 95.5909 128.621 96.777 125.879 96.6309C123.266 96.5019 120.284 96.4762 117.293 96.4762C114.302 96.4762 109.454 97.5935 105.346 102.08C101.238 106.566 89.6691 117.404 89.6691 139.441C89.6691 161.478 105.716 182.785 107.959 185.776C110.202 188.767 139.544 234.001 184.469 253.408C195.153 258.023 203.498 260.782 210.004 262.845C220.731 266.257 230.494 265.776 238.212 264.624C246.816 263.335 264.71 253.786 268.44 243.326C272.17 232.866 272.17 223.893 271.053 222.028C269.936 220.163 266.945 219.037 262.467 216.794L262.475 216.777Z" fill="#25D366" />
+  </svg>
+  );
+}
 
 export function WhatsAppCommunitySection() {
   const [copied, setCopied] = useState(false);
-  const [showQRModal, setShowQRModal] = useState(false);
+  const [showQR, setShowQR] = useState(false);
+  const [qrFailed, setQrFailed] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // WhatsApp group stats — separate from platform user count
-  const WHATSAPP_MEMBER_COUNT = '280+';
-  const WHATSAPP_TEAM_COUNT = '12';
-  const TODAY_JOINED = 8;
+  useEffect(() => () => { if (resetTimer.current) clearTimeout(resetTimer.current); }, []);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (showQR && !dialog?.open) dialog?.showModal();
+    if (!showQR && dialog?.open) dialog.close();
+    if (!showQR) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [showQR]);
 
-  const handleCopyLink = async () => {
+  const copyInvite = async () => {
     try {
       await navigator.clipboard.writeText(WHATSAPP_COMMUNITY_URL);
       setCopied(true);
-      toast.success('WhatsApp Invite Link Copied!', {
-        description: 'Share it with your squad or paste into WhatsApp.',
-      });
-      setTimeout(() => setCopied(false), 2500);
+      toast.success('Invite link copied');
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => setCopied(false), 2500);
     } catch {
-      toast.error('Failed to copy invite link');
+      toast.error('Could not copy the link. Open the community and share its invite.');
     }
   };
 
-  const handleJoinClick = () => {
-    window.open(WHATSAPP_COMMUNITY_URL, '_blank', 'noopener,noreferrer');
-  };
-
-  const userCountDisplay = WHATSAPP_MEMBER_COUNT;
-  const teamCountDisplay = WHATSAPP_TEAM_COUNT;
-
   return (
-    <section id="whatsapp" className="scroll-mt-20 relative bg-[#030508] py-10 lg:py-14 overflow-hidden border-y border-white/5">
-      {/* ── Ambient Background Glows ── */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-[400px] h-[400px] bg-[#25D366]/[0.08] rounded-full blur-[120px] mix-blend-screen" />
-        <div className="absolute bottom-0 right-1/4 w-[300px] h-[300px] bg-emerald-500/[0.08] rounded-full blur-[100px] mix-blend-screen" />
-        <div
-          className="absolute inset-0 opacity-[0.015]"
-          style={{
-            backgroundImage:
-              'linear-gradient(rgba(37,211,102,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(37,211,102,0.3) 1px, transparent 1px)',
-            backgroundSize: '48px 48px',
-          }}
-        />
-      </div>
-
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* ── Main Banner Container ── */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-50px' }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-          className="relative rounded-2xl bg-gradient-to-b from-[#0a1610] via-[#060c09] to-[#040806] border border-[#25D366]/20 shadow-[0_0_50px_rgba(37,211,102,0.08)] overflow-hidden"
-        >
-          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[#25D366] to-transparent opacity-50" />
-          
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 p-5 sm:p-8 lg:p-10 items-center">
-            
-            {/* ── Left Content Column ── */}
-            <div className="lg:col-span-7 space-y-4 sm:space-y-5">
-              
-              {/* Pulse Badge */}
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#25D366]/10 border border-[#25D366]/25 backdrop-blur-md">
-                <div className="relative flex items-center justify-center">
-                  <div className="w-2 h-2 rounded-full bg-[#25D366]" />
-                  <div className="absolute w-3.5 h-3.5 rounded-full bg-[#25D366] animate-ping opacity-60" />
-                </div>
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#25D366]">
-                  Official WhatsApp Community
-                </span>
-                <span className="text-white/20">|</span>
-                <span className="text-[10px] font-bold text-emerald-300/70 flex items-center gap-1">
-                  <Radio size={10} className="text-[#25D366] animate-pulse" /> Live LFG & Scrims
-                </span>
-              </div>
-
-              {/* Title */}
-              <div>
-                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white uppercase tracking-tight leading-[1.1]">
-                  Join The{' '}
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#25D366] via-emerald-300 to-teal-200 drop-shadow-[0_0_20px_rgba(37,211,102,0.3)]">
-                    Botsville Squad
-                  </span>
-                </h2>
-                <p className="mt-2.5 text-sm text-emerald-100/60 font-medium leading-relaxed max-w-md">
-                  Connect with over <strong className="text-white">{userCountDisplay} Ghanaian MLBB gamers</strong> across <strong className="text-white">{teamCountDisplay} active teams</strong>. Find Mythic teammates, get tournament updates, and book daily scrims!
-                </p>
-              </div>
-
-              {/* Feature Cards Grid */}
-              <div className="grid grid-cols-3 gap-2 pt-1">
-                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-[#25D366]/35 hover:bg-[#25D366]/5 transition-all group">
-                  <div className="w-8 h-8 rounded-lg bg-[#25D366]/[0.12] border border-[#25D366]/25 flex items-center justify-center text-[#25D366] mb-2 group-hover:scale-110 transition-transform">
-                    <Trophy size={15} />
-                  </div>
-                  <h4 className="text-[11px] font-black text-white uppercase tracking-wider">Tournaments</h4>
-                  <p className="text-[10px] text-white/40 mt-0.5 leading-snug">
-                    Live: ARMAGEDDON: Battlegrounds
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-[#25D366]/35 hover:bg-[#25D366]/5 transition-all group">
-                  <div className="w-8 h-8 rounded-lg bg-[#25D366]/[0.12] border border-[#25D366]/25 flex items-center justify-center text-[#25D366] mb-2 group-hover:scale-110 transition-transform">
-                    <Users size={15} />
-                  </div>
-                  <h4 className="text-[11px] font-black text-white uppercase tracking-wider">Squad LFG</h4>
-                  <p className="text-[10px] text-white/40 mt-0.5 leading-snug">Find Mythic & Glory teammates.</p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-[#25D366]/35 hover:bg-[#25D366]/5 transition-all group">
-                  <div className="w-8 h-8 rounded-lg bg-[#25D366]/[0.12] border border-[#25D366]/25 flex items-center justify-center text-[#25D366] mb-2 group-hover:scale-110 transition-transform">
-                    <Flame size={15} />
-                  </div>
-                  <h4 className="text-[11px] font-black text-white uppercase tracking-wider">Scrims</h4>
-                  <p className="text-[10px] text-white/40 mt-0.5 leading-snug">Daily lobbies & giveaways.</p>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
-                <button
-                  onClick={handleJoinClick}
-                  className="group relative flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#25D366] to-[#128C7E] hover:from-[#20ba59] hover:to-[#0f7a6e] text-black font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-[0_0_25px_rgba(37,211,102,0.3)] hover:shadow-[0_0_35px_rgba(37,211,102,0.5)] hover:scale-[1.02] active:scale-95"
-                >
-                  <MessageCircle size={16} fill="black" />
-                  <span>Join WhatsApp Group</span>
-                  <ExternalLink size={12} className="group-hover:translate-x-0.5 transition-transform" />
-                </button>
-
-                <button
-                  onClick={handleCopyLink}
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-white font-bold text-xs uppercase tracking-wider transition-all active:scale-95"
-                >
-                  {copied ? <Check size={14} className="text-[#25D366]" /> : <Copy size={14} className="text-white/60" />}
-                  <span>{copied ? 'Copied!' : 'Copy Link'}</span>
-                </button>
-
-                <button
-                  onClick={() => setShowQRModal(true)}
-                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-[#25D366]/35 text-emerald-400 font-bold text-xs uppercase tracking-wider transition-all active:scale-95"
-                  title="Scan QR Code on Phone"
-                >
-                  <QrCode size={14} />
-                  <span className="hidden sm:inline">QR Code</span>
-                </button>
-              </div>
-            </div>
-
-            {/* ── Right Column: WhatsApp Phone Card Preview ── */}
-            <div className="lg:col-span-5 flex justify-center">
-              <div className="relative w-full max-w-xs">
-                <div className="absolute -inset-3 bg-gradient-to-tr from-[#25D366]/15 via-emerald-500/[0.08] to-transparent rounded-[2rem] blur-2xl pointer-events-none" />
-
-                <div className="relative rounded-2xl bg-[#0c1317] border border-white/[0.08] p-4 shadow-2xl overflow-hidden space-y-3">
-                  
-                  {/* Header */}
-                  <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.08]">
-                    <div className="flex items-center gap-2.5">
-                      <div className="relative w-10 h-10 rounded-xl bg-[#25D366] flex items-center justify-center shadow-[0_0_15px_rgba(37,211,102,0.3)]">
-                        <MessageCircle size={20} fill="black" className="text-black" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1">
-                          <h3 className="text-xs font-black text-white uppercase tracking-wide">Botsville MLBB GH</h3>
-                          <ShieldCheck size={11} className="text-[#25D366]" />
-                        </div>
-                        <p className="text-[10px] text-[#25D366] font-bold">
-                          280+ members · Active
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Live Chat Stream */}
-                  <div className="space-y-2 p-2.5 rounded-xl bg-[#080d0f] border border-white/5 text-xs">
-                    <div className="bg-[#005c4b] text-white p-2.5 rounded-xl rounded-tl-sm shadow-md space-y-1">
-                      <div className="flex items-center justify-between text-[9px] text-emerald-300 font-mono">
-                        <span className="font-bold">👑 Admin · Coordinator</span>
-                        <span>LIVE</span>
-                      </div>
-                      <p className="font-medium leading-relaxed text-[11px]">
-                        🔥 <strong className="text-amber-300">ARMAGEDDON: BATTLEGROUNDS 🏆</strong>
-                        <br />
-                        Join for registrations &amp; custom lobbies! Tap below 👇
-                      </p>
-                    </div>
-
-                    <div className="bg-white/5 border border-white/[0.08] text-emerald-100/90 p-2.5 rounded-xl rounded-tr-sm ml-auto max-w-[88%] space-y-0.5">
-                      <div className="flex items-center justify-between text-[9px] text-white/40 font-mono">
-                        <span>KingSlayer (JUNGLE)</span>
-                        <span>New</span>
-                      </div>
-                      <p className="text-[10px]">Joined Botsville! Ready for scrims ⚔️</p>
-                    </div>
-
-                    <div className="text-center py-0.5">
-                      <span className="px-2.5 py-0.5 rounded-full bg-white/5 text-[9px] font-mono text-emerald-400/70 border border-white/5">
-                        ✨ +{TODAY_JOINED} players joined today
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Join Trigger */}
-                  <div
-                    onClick={handleJoinClick}
-                    className="cursor-pointer p-3 rounded-xl bg-gradient-to-r from-[#25D366]/[0.18] to-emerald-500/[0.08] border border-[#25D366]/30 hover:border-[#25D366] transition-all group flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-[#25D366] text-black flex items-center justify-center font-black">
-                        <Sparkles size={13} fill="black" />
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-black text-white uppercase tracking-wide">Click to Join</p>
-                        <p className="text-[9px] text-emerald-300/70 truncate max-w-[140px]">chat.whatsapp.com/JJnIPab...</p>
-                      </div>
-                    </div>
-                    <ChevronRight size={14} className="text-[#25D366] group-hover:translate-x-0.5 transition-transform" />
-                  </div>
-
-                </div>
-              </div>
-            </div>
-
+    <section id="whatsapp" className="bwa-section" aria-labelledby="bwa-title">
+      <style>{styles}</style>
+      <div className="bwa-container">
+        <div className="bwa-card">
+          <div className="bwa-content">
+            <div className="bwa-label"><WhatsAppLogo size={22} /><span>THE BOTSVILLE COMMUNITY</span></div>
+            <h2 id="bwa-title">Good games start with <span>good company.</span></h2>
+            <p>Find your next squad, arrange scrims and catch tournament updates with Ghana’s MLBB community.</p>
+            <ul className="bwa-topics" aria-label="Community topics"><li>Find teammates</li><li>Scrim invites</li><li>Tournament updates</li></ul>
           </div>
-        </motion.div>
-      </div>
-
-      {/* ── Modal for Desktop QR Code Scanning ── */}
-      <AnimatePresence>
-        {showQRModal && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="relative w-full max-w-sm bg-[#0c1317] border border-[#25D366]/40 rounded-3xl p-6 text-center shadow-2xl text-white space-y-5"
-            >
-              <button
-                onClick={() => setShowQRModal(false)}
-                className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors"
-              >
-                <X size={18} />
-              </button>
-
-              <div className="w-12 h-12 rounded-2xl bg-[#25D366]/20 border border-[#25D366]/50 mx-auto flex items-center justify-center text-[#25D366]">
-                <QrCode size={26} />
-              </div>
-
-              <div>
-                <h3 className="text-lg font-black uppercase tracking-wider">Scan to Join WhatsApp</h3>
-                <p className="text-xs text-white/60 mt-1">Open your phone camera or WhatsApp scanner to join instantly.</p>
-              </div>
-
-              {/* High-res generated QR Code */}
-              <div className="p-4 rounded-2xl bg-white inline-block shadow-inner">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(WHATSAPP_COMMUNITY_URL)}`}
-                  alt="Botsville WhatsApp Group QR Code"
-                  className="w-48 h-48 rounded-lg"
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  onClick={handleJoinClick}
-                  className="w-full py-3.5 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-black font-black text-xs uppercase tracking-widest transition-all shadow-md shadow-[#25D366]/20"
-                >
-                  Open Directly in Browser
-                </button>
-              </div>
-            </motion.div>
+          <div className="bwa-invite">
+            <div className="bwa-group">
+              <WhatsAppLogo size={34} />
+              <div><strong>Botsville MLBB Ghana</strong><span>Join the conversation on WhatsApp</span></div>
+            </div>
+            <a className="bwa-join" href={WHATSAPP_COMMUNITY_URL} target="_blank" rel="noopener noreferrer">
+              <span>Join the community</span><ArrowUpRight size={16} /><span className="bwa-sr"> (opens in a new tab)</span>
+            </a>
+            <div className="bwa-tools">
+              <button type="button" onClick={() => void copyInvite()}>{copied ? <Check size={13} /> : <Copy size={13} />}<span aria-live="polite">{copied ? 'Link copied' : 'Copy invite'}</span></button>
+              <span className="bwa-divider" aria-hidden="true" />
+              <button type="button" onClick={() => { setQrFailed(false); setShowQR(true); }} aria-haspopup="dialog"><QrCode size={14} />Scan to join</button>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      </div>
+      <dialog ref={dialogRef} className="bwa-dialog" aria-labelledby="bwa-qr-title" onCancel={() => setShowQR(false)} onClose={() => setShowQR(false)}
+        onClick={e => { if (e.target === e.currentTarget) setShowQR(false); }}>
+        <div className="bwa-dialog-inner">
+          <button className="bwa-close" type="button" aria-label="Close QR code" onClick={() => setShowQR(false)}><X size={18} /></button>
+          <WhatsAppLogo size={32} />
+          <h3 id="bwa-qr-title">Bring the chat to your phone.</h3>
+          <p>Scan with your camera to open the Botsville invite in WhatsApp.</p>
+          {showQR && (qrFailed ? <div className="bwa-qr-failed" role="status">The QR code couldn’t load. Use the invite button below.</div> :
+            /* Native img preserves the existing QR service without Next image host configuration. */
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img className="bwa-qr" src={QR_URL} width={224} height={224} alt="QR code for the Botsville WhatsApp community invite" onError={() => setQrFailed(true)} />)}
+          <a className="bwa-join" href={WHATSAPP_COMMUNITY_URL} target="_blank" rel="noopener noreferrer">Open WhatsApp<ArrowUpRight size={16} /><span className="bwa-sr"> (opens in a new tab)</span></a>
+        </div>
+      </dialog>
     </section>
   );
 }
+
+const styles = `
+.bwa-section{background:#0a0c10;color:#eeeFE9;padding:24px 0;scroll-margin-top:72px;font-family:Arial,Helvetica,sans-serif}
+.bwa-section *{box-sizing:border-box}.bwa-container{max-width:1180px;margin:auto;padding:0 24px}.bwa-card{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:40px;padding:28px 32px;border:1px solid #ffffff12;border-radius:12px;background:#101318}.bwa-content{align-self:center;min-width:0}.bwa-label{display:flex;align-items:center;gap:10px;color:#a3aaa7;font-size:9px;letter-spacing:1.6px;font-weight:600}.bwa-label svg{flex-shrink:0}.bwa-content h2{font-size:clamp(21px,2.2vw,28px);line-height:1.2;letter-spacing:-.8px;font-weight:700;margin:14px 0 10px;max-width:470px}.bwa-content h2 span{display:block}.bwa-content p{font-size:12px;line-height:1.7;color:#adb3b0;max-width:420px;margin:0}.bwa-topics{display:flex;flex-wrap:wrap;gap:6px 16px;list-style:none;padding:0;margin:16px 0 0;color:#969f99;font-size:10px}.bwa-topics li{display:flex;align-items:center;gap:7px}.bwa-topics li:before{content:'';width:3px;height:3px;background:#75897d;border-radius:50%}.bwa-invite{align-self:center;border-left:1px solid #ffffff12;padding-left:28px}.bwa-group{display:flex;align-items:center;gap:12px;margin-bottom:18px}.bwa-group>svg{flex-shrink:0}.bwa-group strong{display:block;font-size:12px;line-height:1.5;font-weight:600}.bwa-group span{display:block;font-size:10px;color:#9ca69f;line-height:1.5;margin-top:3px}.bwa-join{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;background:#25d366;border:1px solid #25d366;border-radius:6px;padding:12px 15px;text-decoration:none;color:#052c16;font-size:11px;font-weight:700;transition:background .15s}.bwa-join:hover{background:#43df7d;border-color:#43df7d}.bwa-tools{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:6px}.bwa-tools button{display:inline-flex;align-items:center;gap:6px;min-height:44px;background:none;border:0;padding:0 2px;color:#aeb7b0;font:inherit;font-size:10px;cursor:pointer}.bwa-tools button:hover{color:#fff}.bwa-divider{height:11px;width:1px;background:#ffffff20}.bwa-section :is(a,button):focus-visible{outline:2px solid #8ee7af;outline-offset:4px}.bwa-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.bwa-dialog{padding:0;border:1px solid #ffffff20;border-radius:14px;background:#11161a;color:#eef1eb;width:min(350px,calc(100% - 32px));max-height:calc(100dvh - 32px);margin:auto;overflow:auto}.bwa-dialog::backdrop{background:#000b;backdrop-filter:blur(4px)}.bwa-dialog-inner{padding:28px 24px 24px;position:relative;text-align:center}.bwa-dialog-inner>svg{margin:auto;display:block}.bwa-close{position:absolute;top:8px;right:8px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:0;background:none;color:#b5bfb6;cursor:pointer}.bwa-dialog h3{font-size:19px;letter-spacing:-.5px;line-height:1.3;margin:16px 0 8px}.bwa-dialog p{font-size:12px;line-height:1.6;color:#a4afa8;margin:0 auto 20px;max-width:250px}.bwa-qr{display:block;width:224px;max-width:100%;height:auto;aspect-ratio:1;margin:0 auto 20px;background:#fff;border-radius:4px}.bwa-qr-failed{font-size:12px;line-height:1.6;padding:24px 0;color:#d3d8d1}
+@media(max-width:850px){.bwa-card{gap:24px;padding:24px;grid-template-columns:minmax(0,1fr) 260px}.bwa-invite{padding-left:20px}.bwa-content h2{font-size:23px}.bwa-topics{gap:7px 12px}}
+@media(max-width:620px){.bwa-section{padding:16px 0}.bwa-container{padding:0 16px}.bwa-card{grid-template-columns:minmax(0,1fr);gap:20px;padding:22px 20px;border-radius:10px}.bwa-label{font-size:8px;letter-spacing:1.3px}.bwa-content h2{font-size:23px;margin:14px 0 10px;max-width:310px}.bwa-content p{font-size:11px;max-width:360px}.bwa-topics{font-size:9px;gap:8px 12px;margin-top:14px}.bwa-invite{border-left:0;border-top:1px solid #ffffff12;padding:16px 0 0}.bwa-group{margin-bottom:14px;gap:10px}.bwa-group>svg{width:28px;height:28px}.bwa-group strong{font-size:11px}.bwa-group span{font-size:9px}.bwa-tools{margin-top:4px}.bwa-dialog-inner{padding:28px 20px 20px}}
+@media(prefers-reduced-motion:reduce){.bwa-section *{transition:none!important}}
+`;

@@ -1,15 +1,10 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Image from 'next/image';
-import { Eye, Bell, Swords, LayoutGrid, Shield, Crown, Info, Archive, ChevronDown } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowUpRight, ChevronLeft, ChevronRight, Shield, Swords } from 'lucide-react';
 import StartingFiveModal from './StartingFiveModal';
 
-/* ────────────────────────────────────────────────────────── */
-/*  Types & Types (Keep original logic)                       */
-/* ────────────────────────────────────────────────────────── */
-// ... (Types remain identical to your provided file)
 type MatchTeam = { id?: string; name: string; tag: string; logo: string | null };
 type PlayerData = { id: string; ign: string; role: string; photo: string | null; isSubstitute: boolean; user?: { photo: string | null }; };
 type ScheduleMatch = { id: string; time: string; scheduledAt: string; elapsed: string | null; teamA: MatchTeam & { isEliminated?: boolean }; teamB: MatchTeam & { isEliminated?: boolean }; status: 'LIVE' | 'UPCOMING' | 'COMPLETED' | 'FORFEITED' | 'DISPUTED'; scoreA: number; scoreB: number; stage: string; lobby?: 'LOBBY_A' | 'LOBBY_B'; playDay?: number; isChallenge?: boolean; flyerUrl?: string | null; flyerType?: string | null; streamUrl?: string | null; };
@@ -42,12 +37,16 @@ const useRealtimeMatches = () => {
   const [activeTournamentId, setActiveTournamentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const initialSelectionDone = useRef(false);
+  const requestId = useRef(0);
+  const activeIdRef = useRef(activeTournamentId);
+  activeIdRef.current = activeTournamentId;
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchTournaments = async () => {
       try {
         const res = await fetch('/api/tournaments?limit=20', { cache: 'no-store' });
-        if (!res.ok) return;
+        if (!res.ok) throw new Error('Could not load tournaments');
         const data = await res.json();
         const statusOrder: Record<string, number> = {
           LIVE: 0,
@@ -73,16 +72,17 @@ const useRealtimeMatches = () => {
           setActiveTournamentId(prioritize.id);
           initialSelectionDone.current = true;
         }
-      } catch (err) { console.error(err); } finally { setLoading(false); }
+      } catch { setError('Could not load tournaments. Please refresh to try again.'); } finally { setLoading(false); }
     };
     fetchTournaments();
   }, []);
 
   const loadMatches = useCallback(async () => {
     if (!activeTournamentId) return;
+    const request = ++requestId.current;
     try {
       const mRes = await fetch(`/api/tournaments/${activeTournamentId}/matches`, { cache: 'no-store' });
-      if (!mRes.ok) return;
+      if (!mRes.ok) throw new Error('Could not load matches');
       const mData: ApiMatch[] = await mRes.json();
       const mapped: ScheduleMatch[] = (Array.isArray(mData) ? mData : []).map((m) => ({
         id: m.id,
@@ -124,12 +124,23 @@ const useRealtimeMatches = () => {
         return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
       });
 
-      setMatches(mapped);
-    } catch (err) { console.error(err); }
+      if (request === requestId.current && activeIdRef.current === activeTournamentId) { setMatches(mapped); setError(''); }
+    } catch { if (request === requestId.current && activeIdRef.current === activeTournamentId) setError('Could not refresh matches. Please try again.'); }
+    finally { if (request === requestId.current && activeIdRef.current === activeTournamentId) setLoading(false); }
   }, [activeTournamentId]);
 
+  const [prevTournamentId, setPrevTournamentId] = useState(activeTournamentId);
+  if (prevTournamentId !== activeTournamentId) {
+    setPrevTournamentId(activeTournamentId);
+    if (activeTournamentId) {
+      setMatches([]);
+      setLoading(true);
+      setError('');
+    }
+  }
+
   useEffect(() => {
-    loadMatches();
+    void loadMatches();
     const iv = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         void loadMatches();
@@ -138,861 +149,195 @@ const useRealtimeMatches = () => {
     return () => clearInterval(iv);
   }, [loadMatches]);
 
-  return { matches, tournaments, activeTournamentId, setActiveTournamentId, loading };
+  return { matches, tournaments, activeTournamentId, setActiveTournamentId, loading, error, retry: loadMatches };
 };
 
-/* ────────────────────────────────────────────────────────── */
-/*  UI Components                                             */
-/* ────────────────────────────────────────────────────────── */
 
-const StatusBadge = ({ status, isLive }: { status: string, isLive: boolean }) => {
-  const colors: Record<string, string> = {
-    LIVE: 'text-red-500 bg-red-500/10 border-red-500/20',
-    UPCOMING: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
-    COMPLETED: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
-  };
+function TeamLogo({ team }: { team: MatchTeam }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const isFailed = !team.logo || failedSrc === team.logo;
   return (
-    <div className={`px-2 py-0.5 rounded-sm border text-[9px] font-black uppercase tracking-tighter ${colors[status] || 'text-white/40 bg-white/5 border-white/10'}`}>
-      <span className="flex items-center gap-1.5">
-        {isLive && <span className="w-1 h-1 rounded-full bg-red-500 animate-pulse" />}
-        {status}
-      </span>
+    <span className="mc-team-logo">
+      {team.logo && !isFailed ? (
+        <Image
+          key={team.logo}
+          src={team.logo}
+          alt=""
+          fill
+          sizes="48px"
+          className="mc-logo-image"
+          onError={() => setFailedSrc(team.logo!)}
+        />
+      ) : (
+        <Shield size={24} />
+      )}
+    </span>
+  );
+}
+const statusLabel = (s: ScheduleMatch['status']) => ({ LIVE: 'Live now', UPCOMING: 'Upcoming', COMPLETED: 'Final', FORFEITED: 'Forfeited', DISPUTED: 'Disputed' }[s]);
+const stageGroup = (stage: string) => !stage ? 'Other' : /grand final/i.test(stage) ? 'Grand Finals' : /group/i.test(stage) ? 'Group Stage' : 'Playoffs';
+
+function MatchTile({ match: m, featured = false, onOpen }: { match: ScheduleMatch; featured?: boolean; onOpen: () => void }) {
+  const [mediaFailed, setMediaFailed] = useState(false);
+  const hasScore = m.status !== 'UPCOMING';
+  return <button type="button" onClick={onOpen} className={`mc-match ${featured ? 'mc-featured' : ''} ${m.status === 'LIVE' ? 'mc-live' : ''}`}
+    aria-label={`${m.teamA.name} versus ${m.teamB.name}, ${statusLabel(m.status)}. View match and lineups`}>
+    {featured && m.flyerUrl && !mediaFailed && <div className="mc-backdrop" aria-hidden="true">{m.flyerType === 'VIDEO' ? <video src={m.flyerUrl} muted playsInline preload="metadata" onError={() => setMediaFailed(true)} /> : <Image src={m.flyerUrl} alt="" fill sizes="(max-width: 760px) 100vw, 1100px" onError={() => setMediaFailed(true)} />}</div>}
+    <div className="mc-match-top"><span className={`mc-status mc-status-${m.status.toLowerCase()}`}>{m.status === 'LIVE' && <i />}{statusLabel(m.status)}</span><span>{featured ? 'FEATURED MATCH' : m.stage}{m.isChallenge ? ' · Challenge' : ''}</span><span>{formatMatchDate(m.scheduledAt)} · {m.time}</span></div>
+    <div className="mc-versus">
+      <div className="mc-team"><TeamLogo team={m.teamA} /><span><strong>{m.teamA.name}</strong><small>{m.teamA.tag}{m.teamA.isEliminated ? ' · Eliminated' : ''}</small></span></div>
+      <div className="mc-score">{hasScore ? <><b className={m.status === 'COMPLETED' && m.scoreA > m.scoreB ? 'mc-winner' : ''}>{m.scoreA}</b><span>:</span><b className={m.status === 'COMPLETED' && m.scoreB > m.scoreA ? 'mc-winner' : ''}>{m.scoreB}</b></> : <span className="mc-vs">VS</span>}</div>
+      <div className="mc-team mc-team-b"><TeamLogo team={m.teamB} /><span><strong>{m.teamB.name}</strong><small>{m.teamB.tag}{m.teamB.isEliminated ? ' · Eliminated' : ''}</small></span></div>
     </div>
-  );
+    <div className="mc-match-bottom"><span>{featured ? m.stage : m.lobby?.replace('_', ' ') || 'Match details'}{featured && m.lobby ? ` / ${m.lobby.replace('_', ' ')}` : ''}{m.elapsed && m.status === 'LIVE' ? ` · ${m.elapsed}` : ''}</span><span>{m.status === 'LIVE' && m.streamUrl ? 'Watch & lineups' : 'View lineups'}<ArrowUpRight size={13} /></span></div>
+  </button>;
+}
+
+const MATCHES_PER_PAGE = 6;
+
+const getPageNumbers = (current: number, total: number): (number | string)[] => {
+  if (total <= 5) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 3) {
+    return [1, 2, 3, 4, '...', total];
+  }
+  if (current >= total - 2) {
+    return [1, '...', total - 3, total - 2, total - 1, total];
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total];
 };
 
-const MatchFlyerCard = ({ match, onClick }: { match: ScheduleMatch, onClick: () => void }) => {
-  const isCompleted = match.status === 'COMPLETED';
-  const isLive = match.status === 'LIVE';
-  const isUpcoming = match.status === 'UPCOMING';
-  const isVideo = match.flyerType === 'VIDEO';
-  const aWins = isCompleted && match.scoreA > match.scoreB;
-  const bWins = isCompleted && match.scoreB > match.scoreA;
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      onClick={onClick}
-      className="group relative w-full rounded-3xl overflow-hidden cursor-pointer"
-      style={{ aspectRatio: '16/7' }}
-    >
-      {/* ── FLYER BACKGROUND ── */}
-      <div className="absolute inset-0 z-0">
-        {isVideo ? (
-          <video
-            src={match.flyerUrl!}
-            autoPlay loop muted playsInline
-            className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-[1.03]"
-          />
-        ) : (
-          <Image
-            src={match.flyerUrl!}
-            alt="Match Flyer"
-            fill
-            className="object-cover transition-transform duration-1000 group-hover:scale-[1.03]"
-            priority
-          />
-        )}
-
-        {/* Gradient layers */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/10" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/20 to-transparent" />
-        {isLive && (
-          <div className="absolute inset-0 bg-red-900/10 mix-blend-color-dodge animate-pulse" />
-        )}
-      </div>
-
-      {/* ── TOP HUD ── */}
-      <div className="absolute top-0 left-0 right-0 z-20 p-5 sm:p-7 flex items-start justify-between">
-        {/* Stage pill */}
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-1.5 bg-black/70 backdrop-blur-xl border border-white/10 rounded-full text-[9px] font-black uppercase tracking-[0.2em] text-white/70">
-            {match.stage || 'Match'}
-          </span>
-          {match.playDay && (
-            <span className="px-3 py-1.5 bg-black/70 backdrop-blur-xl border border-white/10 rounded-full text-[9px] font-black uppercase tracking-[0.2em] text-white/50">
-              Day {match.playDay}
-            </span>
-          )}
-        </div>
-
-        {/* Live / Status badge */}
-        {isLive ? (
-          <span className="flex items-center gap-2 px-4 py-1.5 bg-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)] rounded-full text-[9px] font-black uppercase tracking-widest text-white">
-            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-            LIVE NOW
-          </span>
-        ) : isCompleted ? (
-          <span className="px-4 py-1.5 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full text-[9px] font-black uppercase tracking-widest text-white/60">
-            FINAL
-          </span>
-        ) : (
-          <span className="px-4 py-1.5 bg-[#e8a000]/15 backdrop-blur-xl border border-[#e8a000]/30 rounded-full text-[9px] font-black uppercase tracking-widest text-[#e8a000]">
-            {formatMatchDate(match.scheduledAt)} · {match.time}
-          </span>
-        )}
-      </div>
-
-      {/* ── BOTTOM TEAM STRIP ── */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 p-5 sm:p-7">
-        <div className="flex items-end justify-between">
-
-          {/* Team A */}
-          <div className="flex items-center gap-3 sm:gap-4 flex-1">
-            <div className={`relative w-12 h-12 sm:w-16 sm:h-16 rounded-2xl border-2 p-1 backdrop-blur-md flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
-              aWins ? 'border-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.5)] bg-yellow-400/10' :
-              isLive ? 'border-red-500/50 bg-black/60' :
-              'border-white/15 bg-black/60'
-            }`}>
-              {match.teamA.logo ? (
-                <div className="relative w-full h-full">
-                  <Image src={match.teamA.logo} alt="" fill className="object-contain" />
-                </div>
-              ) : (
-                <Shield className="w-7 h-7 text-white/30" />
-              )}
-              {aWins && (
-                <div className="absolute -top-2 -right-2">
-                  <Crown size={14} className="text-yellow-400" />
-                </div>
-              )}
-            </div>
-            <div>
-              <p className={`font-black uppercase tracking-tight text-sm sm:text-lg leading-none ${isCompleted && !aWins ? 'text-white/30' : 'text-white'}`}>
-                {match.teamA.name}
-              </p>
-              <p className="text-[10px] font-bold text-white/30 mt-1">{match.teamA.tag}</p>
-            </div>
-          </div>
-
-          {/* Score / VS Center */}
-          <div className="flex flex-col items-center gap-2 px-4 sm:px-8 flex-shrink-0">
-            {isCompleted || isLive ? (
-              <div className="flex items-center gap-3 sm:gap-5">
-                <span className={`text-3xl sm:text-5xl font-black tabular-nums leading-none ${aWins ? 'text-yellow-300' : isLive ? 'text-white' : 'text-white/50'}`}>
-                  {match.scoreA}
-                </span>
-                <span className="text-white/20 text-2xl font-light">:</span>
-                <span className={`text-3xl sm:text-5xl font-black tabular-nums leading-none ${bWins ? 'text-yellow-300' : isLive ? 'text-white' : 'text-white/50'}`}>
-                  {match.scoreB}
-                </span>
-              </div>
-            ) : (
-              <div className="relative flex items-center justify-center w-16 h-10 sm:w-20 sm:h-12">
-                <div className="absolute inset-0 bg-white/5 backdrop-blur-md rounded-xl border border-white/10" />
-                <span className="relative text-sm sm:text-base font-black italic text-white/50 tracking-widest">VS</span>
-              </div>
-            )}
-            {isUpcoming && (
-              <p className="text-[9px] font-mono text-[#e8a000]/70">{match.time}</p>
-            )}
-          </div>
-
-          {/* Team B */}
-          <div className="flex items-center gap-3 sm:gap-4 flex-1 flex-row-reverse">
-            <div className={`relative w-12 h-12 sm:w-16 sm:h-16 rounded-2xl border-2 p-1 backdrop-blur-md flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
-              bWins ? 'border-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.5)] bg-yellow-400/10' :
-              isLive ? 'border-red-500/50 bg-black/60' :
-              'border-white/15 bg-black/60'
-            }`}>
-              {match.teamB.logo ? (
-                <div className="relative w-full h-full">
-                  <Image src={match.teamB.logo} alt="" fill className="object-contain" />
-                </div>
-              ) : (
-                <Shield className="w-7 h-7 text-white/30" />
-              )}
-              {bWins && (
-                <div className="absolute -top-2 -left-2">
-                  <Crown size={14} className="text-yellow-400" />
-                </div>
-              )}
-            </div>
-            <div className="text-right">
-              <p className={`font-black uppercase tracking-tight text-sm sm:text-lg leading-none ${isCompleted && !bWins ? 'text-white/30' : 'text-white'}`}>
-                {match.teamB.name}
-              </p>
-              <p className="text-[10px] font-bold text-white/30 mt-1">{match.teamB.tag}</p>
-            </div>
-          </div>
-
-        </div>
-
-        {/* Hover CTA bar */}
-        <div className="mt-4 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
-          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/20" />
-          <span className="text-[9px] font-black uppercase tracking-widest text-white/40 flex items-center gap-1.5">
-            <Eye size={10} />
-            View Match · Starting Five · Stats
-          </span>
-          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-white/20" />
-        </div>
-      </div>
-
-      {/* Glowing edges on hover */}
-      <div className="absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/0 group-hover:ring-[#e8a000]/30 transition-all duration-500 pointer-events-none" />
-    </motion.div>
-  );
-};
-
-
-const MatchCard = ({ match, onClick }: { match: ScheduleMatch, onClick: () => void }) => {
-  const isCompleted = match.status === 'COMPLETED';
-  const isLive = match.status === 'LIVE';
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      onClick={onClick}
-      className="group relative bg-[#0d0d12] border border-white/5 hover:border-[#e8a000]/30 transition-all duration-300 cursor-pointer overflow-hidden"
-    >
-      {/* Dynamic Background Glow for Live Matches */}
-      {isLive && (
-        <div className="absolute inset-0 bg-linear-to-r from-red-500/5 to-transparent pointer-events-none" />
-      )}
-
-      <div className="flex flex-col lg:flex-row items-stretch">
-        {/* Time Slot */}
-        <div className="lg:w-24 bg-white/[0.02] border-b lg:border-b-0 lg:border-r border-white/5 flex flex-row lg:flex-col items-center justify-between lg:justify-center p-3 lg:p-0">
-          <span className="text-[10px] font-bold text-[#e8a000]/70 lg:mb-0.5">{formatMatchDate(match.scheduledAt)}</span>
-          <span className="text-sm font-black text-white italic">{match.time}</span>
-          <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.2em] lg:mt-1">{match.stage.split(' - ')[0]}</span>
-        </div>
-
-        {/* Match Content */}
-        <div className="flex-1 p-4 lg:p-6 flex items-center justify-between gap-4">
-          {/* Team A */}
-          <div className="flex-1 flex flex-row-reverse lg:flex-row items-center justify-end gap-3 lg:gap-5">
-            <div className="text-right">
-              <h4 className={`text-xs lg:text-sm font-black uppercase tracking-tight truncate max-w-[80px] lg:max-w-none ${isCompleted && match.scoreA < match.scoreB ? 'text-white/30' : 'text-white'}`}>
-                {match.teamA.name}
-              </h4>
-              <p className="text-[10px] font-bold text-[#e8a000]/60">{match.teamA.tag}</p>
-            </div>
-            <div className={`w-10 h-10 lg:w-14 lg:h-14 rounded-full p-1 border-2 transition-transform group-hover:scale-110 ${isCompleted && match.scoreA > match.scoreB ? 'border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'border-white/5'}`}>
-              <div className="w-full h-full rounded-full bg-white/5 overflow-hidden flex items-center justify-center relative">
-                {match.teamA.logo ? <Image src={match.teamA.logo} alt="" fill className="object-cover" /> : <Shield size={20} className="text-white/10" />}
-              </div>
-            </div>
-          </div>
-
-          {/* VS / Score Section */}
-          <div className="flex flex-col items-center gap-2 min-w-[60px] lg:min-w-[100px]">
-            {isCompleted || isLive ? (
-              <div className="flex items-center gap-2 lg:gap-4">
-                <span className={`text-xl lg:text-3xl font-black italic tabular-nums ${isCompleted && match.scoreA > match.scoreB ? 'text-emerald-400' : 'text-white'}`}>{match.scoreA}</span>
-                <span className="text-white/10 text-xl font-light">:</span>
-                <span className={`text-xl lg:text-3xl font-black italic tabular-nums ${isCompleted && match.scoreB > match.scoreA ? 'text-emerald-400' : 'text-white'}`}>{match.scoreB}</span>
-              </div>
-            ) : (
-              <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center mb-1">
-                <span className="text-[10px] font-black text-white/20 italic">VS</span>
-              </div>
-            )}
-            <StatusBadge status={match.status} isLive={isLive} />
-          </div>
-
-          {/* Team B */}
-          <div className="flex-1 flex items-center justify-start gap-3 lg:gap-5">
-            <div className={`w-10 h-10 lg:w-14 lg:h-14 rounded-full p-1 border-2 transition-transform group-hover:scale-110 ${isCompleted && match.scoreB > match.scoreA ? 'border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'border-white/5'}`}>
-              <div className="w-full h-full rounded-full bg-white/5 overflow-hidden flex items-center justify-center relative">
-                {match.teamB.logo ? <Image src={match.teamB.logo} alt="" fill className="object-cover" /> : <Shield size={20} className="text-white/10" />}
-              </div>
-            </div>
-            <div>
-              <h4 className={`text-xs lg:text-sm font-black uppercase tracking-tight truncate max-w-[80px] lg:max-w-none ${isCompleted && match.scoreB < match.scoreA ? 'text-white/30' : 'text-white'}`}>
-                {match.teamB.name}
-              </h4>
-              <p className="text-[10px] font-bold text-[#e8a000]/60">{match.teamB.tag}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Button */}
-        <div className="lg:w-20 border-t lg:border-t-0 lg:border-l border-white/5 flex items-center justify-center p-3 lg:p-0">
-          {isLive ? (
-            <div className="p-3 rounded-full bg-red-500 text-white shadow-lg animate-pulse">
-              <Eye size={18} />
-            </div>
-          ) : (
-            <div className="text-white/20 group-hover:text-[#e8a000] transition-colors">
-              <Bell size={18} />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Lobby Badge - Floating */}
-      {match.lobby && (
-        <div className="absolute top-0 right-0 p-1">
-          <span className="text-[7px] font-black bg-white/5 text-white/40 px-1.5 py-0.5 uppercase border border-white/5">
-            {match.lobby.replace('_', ' ')}
-          </span>
-        </div>
-      )}
-    </motion.div>
-  );
-};
-
-/* ────────────────────────────────────────────────────────── */
-/*  Main Component                                            */
-/* ────────────────────────────────────────────────────────── */
 export const MatchSchedule = () => {
-  const { matches, tournaments, activeTournamentId, setActiveTournamentId, loading } = useRealtimeMatches();
-  const [activeTab, setActiveTab] = useState('ALL');
-  const [activeStage, setActiveStage] = useState<string>('');
-  const [activeDay, setActiveDay] = useState<number>(1);
+  const { matches, tournaments, activeTournamentId, setActiveTournamentId, loading, error, retry } = useRealtimeMatches();
+  const [activeStage, setActiveStage] = useState('ALL');
+  const [activeDay, setActiveDay] = useState<number | null>(null);
+  const [activeStatus, setActiveStatus] = useState('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedMatch, setSelectedMatch] = useState<ScheduleMatch | null>(null);
   const [teamAPlayers, setTeamAPlayers] = useState<PlayerData[]>([]);
   const [teamBPlayers, setTeamBPlayers] = useState<PlayerData[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(false);
+  const [playersError, setPlayersError] = useState('');
+  const rosterRequest = useRef(0);
+  const scheduleRef = useRef<HTMLElement>(null);
+  useEffect(() => () => { rosterRequest.current++; }, []);
+  const stages = useMemo(() => ['Group Stage', 'Playoffs', 'Grand Finals', 'Other'].filter(stage => matches.some(m => stageGroup(m.stage) === stage)), [matches]);
+  const stageMatches = matches.filter(m => activeStage === 'ALL' || stageGroup(m.stage) === activeStage);
+  const days = Array.from(new Set(stageMatches.map(m => m.playDay || 0))).sort((a, b) => a - b);
+  const filteredMatches = stageMatches.filter(m => (activeDay === null || (m.playDay || 0) === activeDay) && (activeStatus === 'ALL' || m.status === activeStatus));
+  const featured = filteredMatches.find(m => m.status === 'LIVE') || filteredMatches.find(m => /grand final/i.test(m.stage)) || filteredMatches.find(m => m.flyerUrl) || filteredMatches[0];
+  const remaining = filteredMatches.filter(m => m.id !== featured?.id);
+  const totalPages = Math.max(1, Math.ceil(remaining.length / MATCHES_PER_PAGE));
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedMatches = remaining.slice((safePage - 1) * MATCHES_PER_PAGE, safePage * MATCHES_PER_PAGE);
+  const startIndex = (safePage - 1) * MATCHES_PER_PAGE + 1;
+  const endIndex = Math.min(safePage * MATCHES_PER_PAGE, remaining.length);
+  const pageNumbers = getPageNumbers(safePage, totalPages);
+  const liveCount = matches.filter(m => m.status === 'LIVE').length;
 
-  const isGrandFinal = (stage: string) => stage.toLowerCase().includes('grand final');
-
-  const parsedStages = useMemo(() => {
-    const stages = new Set<string>();
-    matches.forEach(m => {
-      if (!m.stage) {
-        stages.add('Other');
-      } else if (m.stage.toLowerCase().includes('group')) {
-        stages.add('Group Stage');
-      } else if (isGrandFinal(m.stage)) {
-        stages.add('Grand Finals');
-      } else {
-        stages.add('Playoffs');
-      }
-    });
-    return Array.from(stages).sort((a, b) => {
-      const order = ['Group Stage', 'Playoffs', 'Grand Finals', 'Other'];
-      return order.indexOf(a) - order.indexOf(b);
-    });
-  }, [matches]);
-
-  const matchesInStage = useMemo(() => {
-    if (!activeStage) return matches;
-    return matches.filter(m => {
-      if (activeStage === 'Group Stage') return m.stage?.toLowerCase().includes('group');
-      if (activeStage === 'Grand Finals') return m.stage && isGrandFinal(m.stage);
-      if (activeStage === 'Other') return !m.stage;
-      if (activeStage === 'Playoffs') return m.stage && !m.stage.toLowerCase().includes('group') && !isGrandFinal(m.stage);
-      return true;
-    });
-  }, [matches, activeStage]);
-
-  const days = useMemo<number[]>(
-    () => Array.from(new Set(matchesInStage.map((m) => m.playDay || 0))).sort((a, b) => a - b),
-    [matchesInStage]
-  );
-
-  const dayScrollRef = useRef<HTMLDivElement>(null);
-
-  const formatDayDate = (value?: string) => {
-    if (!value) return '';
-    const d = new Date(value);
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const changeTournament = (id: string) => {
+    setActiveTournamentId(id);
+    setActiveStage('ALL');
+    setActiveDay(null);
+    setActiveStatus('ALL');
+    setCurrentPage(1);
   };
 
-  const daysInfo = useMemo<{
-    day: number;
-    dayMatches: ScheduleMatch[];
-    isLive: boolean;
-    isToday: boolean;
-    hasUpcoming: boolean;
-    isCompleted: boolean;
-    earliestUpcomingTime: number;
-    firstScheduledAt?: string;
-    dateLabel: string;
-  }[]>(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
-
-    return days.map((day: number) => {
-      const dayMatches = matchesInStage.filter((m) => (m.playDay || 0) === day);
-      const isLive = dayMatches.some((m) => m.status === 'LIVE');
-      const isToday = dayMatches.some((m) => {
-        if (!m.scheduledAt) return false;
-        return (
-          new Date(m.scheduledAt).toISOString().slice(0, 10) === todayStr ||
-          new Date(m.scheduledAt).toDateString() === new Date().toDateString()
-        );
-      });
-      const hasUpcoming = dayMatches.some((m) => m.status === 'UPCOMING');
-      const isCompleted =
-        dayMatches.length > 0 &&
-        dayMatches.every((m) => m.status === 'COMPLETED' || m.status === 'FORFEITED');
-
-      const upcomingMatchTimes = dayMatches
-        .filter((m) => m.status === 'UPCOMING')
-        .map((m) => new Date(m.scheduledAt).getTime())
-        .sort((a: number, b: number) => a - b);
-
-      const firstScheduledAt = dayMatches[0]?.scheduledAt;
-
-      return {
-        day,
-        dayMatches,
-        isLive,
-        isToday,
-        hasUpcoming,
-        isCompleted,
-        earliestUpcomingTime: upcomingMatchTimes[0] ?? Infinity,
-        firstScheduledAt,
-        dateLabel: formatDayDate(firstScheduledAt),
-      };
-    });
-  }, [days, matchesInStage]);
-
-  useEffect(() => {
-    if (parsedStages.length > 0 && !parsedStages.includes(activeStage)) {
-      // Auto-select stage with LIVE matches, or the last stage (furthest along)
-      const liveMatch = matches.find(m => m.status === 'LIVE');
-      if (liveMatch) {
-        if (liveMatch.stage?.toLowerCase().includes('group')) setActiveStage('Group Stage');
-        else if (liveMatch.stage) setActiveStage('Playoffs');
-        else setActiveStage('Other');
-      } else {
-        setActiveStage(parsedStages[parsedStages.length - 1]);
-      }
-    }
-  }, [parsedStages, matches, activeStage]);
-
-  useEffect(() => {
-    if (days.length === 0 || daysInfo.length === 0) return;
-
-    // Smart Prioritization:
-    // 1. LIVE match day
-    const liveDay = daysInfo.find(d => d.isLive)?.day;
-    if (liveDay !== undefined) {
-      setActiveDay(liveDay);
-      return;
-    }
-
-    // 2. TODAY's match day
-    const todayDay = daysInfo.find(d => d.isToday)?.day;
-    if (todayDay !== undefined) {
-      setActiveDay(todayDay);
-      return;
-    }
-
-    // 3. Nearest UPCOMING matches day (closest to now)
-    const upcomingDays = daysInfo
-      .filter(d => d.hasUpcoming && d.earliestUpcomingTime !== Infinity)
-      .sort((a, b) => a.earliestUpcomingTime - b.earliestUpcomingTime);
-
-    if (upcomingDays.length > 0) {
-      setActiveDay(upcomingDays[0].day);
-      return;
-    }
-
-    // 4. If all finished, show the latest completed day (most recent results)
-    const completedDays = daysInfo.filter(d => d.isCompleted);
-    if (completedDays.length === daysInfo.length && completedDays.length > 0) {
-      setActiveDay(completedDays[completedDays.length - 1].day);
-      return;
-    }
-
-    // 5. Fallback
-    if (!days.includes(activeDay)) {
-      setActiveDay(days[0]);
-    }
-  }, [daysInfo, days, activeStage]);
-
-  useEffect(() => {
-    if (dayScrollRef.current) {
-      const activeBtn = dayScrollRef.current.querySelector(`[data-day="${activeDay}"]`);
-      if (activeBtn) {
-        activeBtn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-      }
-    }
-  }, [activeDay]);
-
-  const filteredMatches = matchesInStage.filter(m => {
-    // For playoff matches that have no playDay, skip day filtering entirely
-    const hasPlayDay = matchesInStage.some(x => x.playDay);
-    const isDay = !hasPlayDay || m.playDay === activeDay;
-    const isTab = activeTab === 'ALL' || m.status === activeTab;
-    return isDay && isTab;
-  });
-
-  // Hero flyer layout computation (used in render)
-  const heroMatch = filteredMatches.find(m => m.flyerUrl);
-  const restMatches = filteredMatches.filter(m => m !== heroMatch);
-
-  const handleMatchClick = async (match: ScheduleMatch) => {
-    setSelectedMatch(match);
-    setLoadingPlayers(true);
-    try {
-      const [resA, resB] = await Promise.all([
-        match.teamA.id ? fetch(`/api/teams/${match.teamA.id}/players`) : null,
-        match.teamB.id ? fetch(`/api/teams/${match.teamB.id}/players`) : null,
-      ]);
-      if (resA?.ok) setTeamAPlayers(await resA.json());
-      if (resB?.ok) setTeamBPlayers(await resB.json());
-    } catch (err) { console.error(err); } finally { setLoadingPlayers(false); }
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+    scheduleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
 
-  return (
-    <section className="relative bg-[#050508] text-white py-10 lg:py-16 overflow-hidden">
-      {/* Background Decor */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[500px] bg-[#e8a000]/5 blur-[120px] rounded-full pointer-events-none" />
-
-      <div className="max-w-6xl mx-auto px-4 relative z-10">
-
-        {/* Header Section */}
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-8">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-8 h-[2px] bg-[#e8a000]" />
-              <span className="text-[#e8a000] text-[10px] font-black uppercase tracking-[0.4em]">Battle Log</span>
+  const openMatch = async (match: ScheduleMatch) => {
+    const request = ++rosterRequest.current;
+    setSelectedMatch(match); setTeamAPlayers([]); setTeamBPlayers([]); setPlayersError(''); setLoadingPlayers(true);
+    const fetchPlayers = async (id?: string) => {
+      if (!id) return [];
+      const res = await fetch(`/api/teams/${id}/players`);
+      if (!res.ok) throw new Error('Roster request failed');
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error('Invalid roster response');
+      return data as PlayerData[];
+    };
+    const results = await Promise.allSettled([fetchPlayers(match.teamA.id), fetchPlayers(match.teamB.id)]);
+    if (request !== rosterRequest.current) return;
+    if (results[0].status === 'fulfilled') setTeamAPlayers(results[0].value);
+    if (results[1].status === 'fulfilled') setTeamBPlayers(results[1].value);
+    if (results.some(r => r.status === 'rejected')) setPlayersError('Some player details could not load. Close and reopen this match to retry.');
+    setLoadingPlayers(false);
+  };
+  return <section ref={scheduleRef} className="mc-section" aria-labelledby="mc-title">
+    <style>{styles}</style>
+    <div className="mc-shell">
+      <div className="mc-header"><div><span className="mc-eyebrow">BOTSVILLE / COMPETITION</span><h2 id="mc-title">Every match. <span>Every moment.</span></h2></div>
+        <label className="mc-tournament"><span>Tournament</span><select aria-label="Choose tournament" value={activeTournamentId || ''} onChange={e => changeTournament(e.target.value)} disabled={!tournaments.length}>{!tournaments.length && <option value="">{loading ? 'Loading…' : 'No tournaments'}</option>}{tournaments.map(t => <option key={t.id} value={t.id}>{t.name}{['COMPLETED', 'CANCELLED'].includes(t.status) ? ' · Archive' : ''}</option>)}</select></label>
+      </div>
+      <div className="mc-toolbar"><div className="mc-stages" role="group" aria-label="Tournament stage">{['ALL', ...stages].map(stage => <button type="button" key={stage} aria-pressed={activeStage === stage} onClick={() => { setActiveStage(stage); setActiveDay(null); setCurrentPage(1); }}>{stage === 'ALL' ? 'All stages' : stage}</button>)}</div><span className="mc-live-count">{liveCount ? <><i />{liveCount} live</> : 'Match centre'}</span></div>
+      <div className="mc-filters"><div className="mc-days" role="group" aria-label="Match day"><button type="button" aria-pressed={activeDay === null} onClick={() => { setActiveDay(null); setCurrentPage(1); }}>All days</button>{days.map(day => <button type="button" key={day} aria-pressed={activeDay === day} onClick={() => { setActiveDay(day); setCurrentPage(1); }}>{day ? `Day ${String(day).padStart(2, '0')}` : 'Unassigned'}</button>)}</div><select aria-label="Filter match status" value={activeStatus} onChange={e => { setActiveStatus(e.target.value); setCurrentPage(1); }}>{['ALL', 'LIVE', 'UPCOMING', 'COMPLETED', 'FORFEITED', 'DISPUTED'].map(s => <option key={s} value={s}>{s === 'ALL' ? 'All matches' : statusLabel(s as ScheduleMatch['status'])}</option>)}</select></div>
+      {error && <div className="mc-error" role="alert">{error}{activeTournamentId && <button type="button" onClick={() => void retry()}>Retry</button>}</div>}
+      {loading ? <div className="mc-loading" role="status">Loading matches…</div> : featured ? <div className="mc-matches">
+        {safePage === 1 && <MatchTile key={featured.id} match={featured} featured onOpen={() => void openMatch(featured)} />}
+        {remaining.length > 0 && <div className="mc-list-heading"><span>ON THE SCHEDULE{totalPages > 1 ? ` · PAGE ${safePage} OF ${totalPages}` : ''}</span><span>{remaining.length} matches total</span></div>}
+        <div className="mc-match-grid">{pagedMatches.map(m => <MatchTile key={m.id} match={m} onOpen={() => void openMatch(m)} />)}</div>
+        {totalPages > 1 && (
+          <nav className="mc-pagination" aria-label="Match schedule pagination">
+            <div className="mc-pagination-info">
+              Showing <strong>{startIndex}–{endIndex}</strong> of <strong>{remaining.length}</strong> matches
             </div>
-            <h2 className="text-3xl lg:text-4xl font-black uppercase tracking-tighter leading-none">
-              Tournament{' '}
-              <span className="text-outline-white text-transparent">Timeline</span>
-            </h2>
-          </div>
-
-          <div className="flex flex-col items-start lg:items-end gap-3">
-            {(() => {
-              const activeTournaments = tournaments.filter(t => t.status !== 'COMPLETED' && t.status !== 'CANCELLED');
-              const completedTournaments = tournaments.filter(t => t.status === 'COMPLETED' || t.status === 'CANCELLED');
-              const selectedIsCompleted = completedTournaments.some(t => t.id === activeTournamentId);
-
-              return (
-                <>
-                  {/* Active tournament toggles */}
-                  {activeTournaments.length > 0 && (
-                    <div className="flex p-1 bg-white/5 rounded-full border border-white/10 flex-wrap">
-                      {activeTournaments.map(t => (
-                        <button
-                          key={t.id}
-                          onClick={() => setActiveTournamentId(t.id)}
-                          className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
-                            activeTournamentId === t.id
-                              ? t.status === 'LIVE' || t.status === 'ONGOING'
-                                ? 'bg-red-500 text-white shadow-[0_0_16px_rgba(239,68,68,0.4)]'
-                                : 'bg-[#e8a000] text-black'
-                              : 'text-white/40 hover:text-white'
-                          }`}
-                        >
-                          {(t.status === 'LIVE' || t.status === 'ONGOING') && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
-                          {t.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Past tournaments — archive shelf */}
-                  {completedTournaments.length > 0 && (
-                    <details className="group relative" open={selectedIsCompleted}>
-                      <summary className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer select-none list-none transition-all ${
-                        selectedIsCompleted
-                          ? 'bg-white/10 border-white/20 text-white'
-                          : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:border-white/20'
-                      }`}>
-                        <Archive size={11} className={selectedIsCompleted ? 'text-[#e8a000]' : ''} />
-                        <span className="text-[9px] font-black uppercase tracking-widest">
-                          {selectedIsCompleted
-                            ? completedTournaments.find(t => t.id === activeTournamentId)?.name
-                            : 'Past Tournaments'}
-                        </span>
-                        <ChevronDown size={10} className="ml-1 transition-transform duration-300 group-open:rotate-180" />
-                      </summary>
-
-                      {/* Dropdown */}
-                      <div className="absolute right-0 top-full mt-2 z-50 min-w-[200px] bg-[#0d0d12]/95 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
-                        <div className="px-3 pt-3 pb-2 border-b border-white/5">
-                          <p className="text-[8px] font-black uppercase tracking-[0.3em] text-white/30 flex items-center gap-1.5">
-                            <Archive size={9} /> Archived Tournaments
-                          </p>
-                        </div>
-                        <div className="py-1 max-h-52 overflow-y-auto no-scrollbar">
-                          {completedTournaments.map((t, i) => (
-                            <button
-                              key={t.id}
-                              onClick={() => setActiveTournamentId(t.id)}
-                              className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 transition-all hover:bg-white/5 ${
-                                activeTournamentId === t.id ? 'text-white' : 'text-white/40'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="text-[8px] text-white/20 font-mono w-4 text-right flex-shrink-0">#{completedTournaments.length - i}</span>
-                                <span className="text-[11px] font-bold uppercase tracking-wide">{t.name}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                <span className="px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-wider bg-white/5 border border-white/10 text-white/30">
-                                  ENDED
-                                </span>
-                                {activeTournamentId === t.id && (
-                                  <div className="w-1.5 h-1.5 rounded-full bg-[#e8a000]" />
-                                )}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </details>
-                  )}
-                </>
-              );
-            })()}
-            <p className="text-white/20 text-[10px] font-bold uppercase tracking-[0.2em] flex items-center gap-2">
-              <Info size={12} className="text-[#e8a000]" />
-              Syncing with global game servers
-            </p>
-          </div>
-        </div>
-
-        {/* --- Unified Mission Control (Filters) --- */}
-        <div className="sticky top-4 z-40 mb-8 bg-[#0a0a0f]/80 backdrop-blur-md border border-white/5 p-2 rounded-2xl shadow-2xl flex flex-col gap-2">
-
-          {/* Stage Selection */}
-          {parsedStages.length > 1 && (
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 mb-2 border-b border-white/5 px-2">
-              {parsedStages.map(stage => (
-                <button
-                  key={stage}
-                  onClick={() => setActiveStage(stage)}
-                  className={`whitespace-nowrap px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
-                    activeStage === stage
-                      ? stage === 'Grand Finals'
-                        ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
-                        : 'bg-white/10 text-white border border-white/20'
-                      : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'
-                  }`}
-                >
-                  {stage === 'Grand Finals' && <Crown size={11} className={activeStage === 'Grand Finals' ? 'text-yellow-400' : ''} />}
-                  {stage}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 px-2">
-
-            {/* Days Horizontal Scroll */}
-            <div ref={dayScrollRef} className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full md:max-w-[65%] py-1">
-              {daysInfo.map(({ day, isLive, isToday, dateLabel }) => {
-                const isSelected = activeDay === day;
-                return (
-                  <button
-                    key={day}
-                    data-day={day}
-                    onClick={() => setActiveDay(day)}
-                    className={`relative flex flex-col items-center min-w-[72px] py-1.5 px-2 rounded-xl transition-all shrink-0 ${
-                      isSelected
-                        ? 'bg-[#e8a000] text-black shadow-[0_0_20px_rgba(232,160,0,0.3)] scale-[1.02]'
-                        : isLive
-                        ? 'bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20'
-                        : isToday
-                        ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/20'
-                        : 'bg-white/[0.03] hover:bg-white/[0.08] text-white/50 border border-white/5'
-                    }`}
-                  >
-                    {/* Top Tiny Badge */}
-                    <div className="flex items-center gap-1 mb-0.5">
-                      {isLive ? (
-                        <span className="flex items-center gap-0.5 text-[8px] font-black uppercase text-red-400">
-                          <span className="w-1 h-1 rounded-full bg-red-500 animate-ping" /> LIVE
-                        </span>
-                      ) : isToday ? (
-                        <span className={`text-[8px] font-black uppercase tracking-wider ${isSelected ? 'text-black font-black' : 'text-[#e8a000]'}`}>
-                          TODAY
-                        </span>
-                      ) : (
-                        <span className={`text-[8px] font-black uppercase tracking-widest ${isSelected ? 'text-black/70' : 'text-white/30'}`}>
-                          DAY
-                        </span>
-                      )}
-                    </div>
-
-                    <span className="text-base font-black leading-none">
-                      {day < 10 ? `0${day}` : day}
-                    </span>
-
-                    {dateLabel && (
-                      <span className={`text-[9px] font-mono mt-1 font-bold ${isSelected ? 'text-black/80 font-black' : 'text-white/40'}`}>
-                        {dateLabel}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Status Switcher */}
-            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/5 w-full md:w-auto">
-              {['ALL', 'LIVE', 'COMPLETED'].map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black transition-all ${activeTab === tab ? 'bg-white/10 text-white' : 'text-white/30'}`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-          </div>
-        </div>
-
-        {/* --- Matches List --- */}
-        <div className="space-y-4">
-          <AnimatePresence mode="popLayout">
-            {loading ? (
-              <div key="loading" className="space-y-4">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="h-32 w-full bg-white/5 animate-pulse border border-white/5 rounded-xl" />
-                ))}
-              </div>
-            ) : activeStage === 'Grand Finals' && filteredMatches.length > 0 ? (
-              <motion.div key="grand-finals" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-                {filteredMatches.map((m) =>
-                  m.flyerUrl ? (
-                    /* If a Grand Finals match has a flyer, use the premium billboard */
-                    <MatchFlyerCard key={m.id} match={m} onClick={() => handleMatchClick(m)} />
+            <div className="mc-pagination-controls">
+              <button
+                type="button"
+                className="mc-page-btn mc-page-prev"
+                disabled={safePage === 1}
+                onClick={() => handlePageChange(safePage - 1)}
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={13} />
+                <span>Prev</span>
+              </button>
+              <div className="mc-page-numbers">
+                {pageNumbers.map((p, idx) =>
+                  typeof p === 'number' ? (
+                    <button
+                      key={p}
+                      type="button"
+                      className={`mc-page-num ${safePage === p ? 'is-active' : ''}`}
+                      aria-current={safePage === p ? 'page' : undefined}
+                      onClick={() => handlePageChange(p)}
+                    >
+                      {p}
+                    </button>
                   ) : (
-                    /* Classic cinematic Grand Finals scorecard */
-                    <div key={m.id} className="relative">
-                      <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
-                        <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/10 via-transparent to-amber-500/5" />
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-yellow-500/10 blur-[100px] rounded-full" />
-                      </div>
-                      <div className="relative border border-yellow-500/20 rounded-3xl overflow-hidden">
-                        {/* Header */}
-                        <div className="text-center pt-10 pb-6 px-8 border-b border-yellow-500/10">
-                          <div className="flex items-center justify-center gap-3 mb-2">
-                            <div className="w-8 h-[1px] bg-yellow-500/50" />
-                            <Crown size={20} className="text-yellow-400" />
-                            <div className="w-8 h-[1px] bg-yellow-500/50" />
-                          </div>
-                          <p className="text-yellow-400/70 text-[10px] font-black uppercase tracking-[0.5em] mb-1">Championship Match</p>
-                          <h3 className="text-4xl lg:text-6xl font-black uppercase tracking-tighter text-white">Grand Finals</h3>
-                        </div>
-                        {(() => {
-                          const isCompleted = m.status === 'COMPLETED';
-                          const isLive = m.status === 'LIVE';
-                          const aWins = isCompleted && m.scoreA > m.scoreB;
-                          const bWins = isCompleted && m.scoreB > m.scoreA;
-                          return (
-                            <div onClick={() => handleMatchClick(m)} className="cursor-pointer px-8 py-10">
-                              {isLive && (
-                                <div className="flex items-center justify-center gap-2 mb-8">
-                                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                  <span className="text-red-400 text-[11px] font-black uppercase tracking-widest">Live Now</span>
-                                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                </div>
-                              )}
-                              <div className="flex items-center justify-center gap-4 lg:gap-12">
-                                {/* Team A */}
-                                <div className={`flex-1 flex flex-col items-center gap-4 transition-opacity ${isCompleted && !aWins ? 'opacity-40' : ''}`}>
-                                  <div className={`w-20 h-20 lg:w-28 lg:h-28 rounded-2xl border-2 p-1 transition-all ${aWins ? 'border-yellow-400 shadow-[0_0_40px_rgba(234,179,8,0.4)]' : 'border-white/10'}`}>
-                                    <div className="w-full h-full rounded-xl bg-white/5 flex items-center justify-center overflow-hidden relative">
-                                      {m.teamA.logo ? <Image src={m.teamA.logo} alt="" fill className="object-cover" /> : <Shield size={40} className="text-white/20" />}
-                                    </div>
-                                  </div>
-                                  {aWins && <Crown size={18} className="text-yellow-400" />}
-                                  <div className="text-center">
-                                    <p className="text-lg lg:text-2xl font-black uppercase tracking-tight text-white">{m.teamA.name}</p>
-                                    <p className="text-[11px] font-bold text-yellow-500/60">{m.teamA.tag}</p>
-                                  </div>
-                                </div>
-                                {/* Score */}
-                                <div className="flex flex-col items-center gap-3 min-w-[80px]">
-                                  {isCompleted || isLive ? (
-                                    <div className="flex items-center gap-3 lg:gap-6">
-                                      <span className={`text-4xl lg:text-6xl font-black tabular-nums ${aWins ? 'text-yellow-300' : 'text-white'}`}>{m.scoreA}</span>
-                                      <span className="text-white/20 text-2xl">:</span>
-                                      <span className={`text-4xl lg:text-6xl font-black tabular-nums ${bWins ? 'text-yellow-300' : 'text-white'}`}>{m.scoreB}</span>
-                                    </div>
-                                  ) : (
-                                    <div className="flex flex-col items-center gap-1">
-                                      <Swords size={28} className="text-yellow-500/50" />
-                                      <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">vs</span>
-                                    </div>
-                                  )}
-                                  <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${isLive ? 'bg-red-500/10 border-red-500/30 text-red-400' : isCompleted ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : 'bg-white/5 border-white/10 text-white/40'}`}>
-                                    {isLive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse mr-1" />}
-                                    {m.status}
-                                  </div>
-                                  <p className="text-[9px] text-white/20 font-bold uppercase tracking-widest">{m.time} · {formatMatchDate(m.scheduledAt)}</p>
-                                </div>
-                                {/* Team B */}
-                                <div className={`flex-1 flex flex-col items-center gap-4 transition-opacity ${isCompleted && !bWins ? 'opacity-40' : ''}`}>
-                                  <div className={`w-20 h-20 lg:w-28 lg:h-28 rounded-2xl border-2 p-1 transition-all ${bWins ? 'border-yellow-400 shadow-[0_0_40px_rgba(234,179,8,0.4)]' : 'border-white/10'}`}>
-                                    <div className="w-full h-full rounded-xl bg-white/5 flex items-center justify-center overflow-hidden relative">
-                                      {m.teamB.logo ? <Image src={m.teamB.logo} alt="" fill className="object-cover" /> : <Shield size={40} className="text-white/20" />}
-                                    </div>
-                                  </div>
-                                  {bWins && <Crown size={18} className="text-yellow-400" />}
-                                  <div className="text-center">
-                                    <p className="text-lg lg:text-2xl font-black uppercase tracking-tight text-white">{m.teamB.name}</p>
-                                    <p className="text-[11px] font-bold text-yellow-500/60">{m.teamB.tag}</p>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
+                    <span key={`ellipsis-${idx}`} className="mc-page-ellipsis">
+                      &hellip;
+                    </span>
                   )
                 )}
-              </motion.div>
-            ) : filteredMatches.length > 0 ? (
-              <motion.div key="match-layout" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                {/* Hero Billboard — first match with a flyer */}
-                {heroMatch && (
-                  <MatchFlyerCard match={heroMatch} onClick={() => handleMatchClick(heroMatch)} />
-                )}
-
-                {/* Remaining matches */}
-                {restMatches.length > 0 && (
-                  <div className="space-y-3">
-                    {heroMatch && (
-                      <div className="flex items-center gap-3 py-2">
-                        <div className="h-px flex-1 bg-white/5" />
-                        <span className="text-[9px] font-black uppercase tracking-[0.3em] text-white/20">More Matches</span>
-                        <div className="h-px flex-1 bg-white/5" />
-                      </div>
-                    )}
-                    {restMatches.map((m) =>
-                      m.flyerUrl ? (
-                        <MatchFlyerCard key={m.id} match={m} onClick={() => handleMatchClick(m)} />
-                      ) : (
-                        <MatchCard key={m.id} match={m} onClick={() => handleMatchClick(m)} />
-                      )
-                    )}
-                  </div>
-                )}
-              </motion.div>
-            ) : (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-20 flex flex-col items-center justify-center text-center opacity-40">
-                <LayoutGrid size={48} className="mb-4 text-[#e8a000]" />
-                <h3 className="text-xl font-black uppercase tracking-widest">No Sector Activity</h3>
-                <p className="text-xs">No matches found for the selected criteria</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-      </div>
-
-      {/* Starting Five Modal (Original logic preserved) */}
-      <AnimatePresence>
-        {selectedMatch && (
-          <StartingFiveModal
-            match={selectedMatch}
-            teamAPlayers={teamAPlayers}
-            teamBPlayers={teamBPlayers}
-            loading={loadingPlayers}
-            onClose={() => setSelectedMatch(null)}
-          />
+              </div>
+              <button
+                type="button"
+                className="mc-page-btn mc-page-next"
+                disabled={safePage === totalPages}
+                onClick={() => handlePageChange(safePage + 1)}
+                aria-label="Next page"
+              >
+                <span>Next</span>
+                <ChevronRight size={13} />
+              </button>
+            </div>
+          </nav>
         )}
-      </AnimatePresence>
-    </section>
-  );
+      </div> : <div className="mc-empty"><Swords size={24} /><h3>No matches to show</h3><p>{tournaments.length ? 'Try another day, stage or match status.' : 'Fixtures will appear here once a tournament schedule is published.'}</p></div>}
+      <div className="mc-footer"><span>{filteredMatches.length} {filteredMatches.length === 1 ? 'match' : 'matches'} shown{totalPages > 1 ? ` · Page ${safePage} of ${totalPages}` : ''}</span><span>Scores refresh every minute<ChevronRight size={12} /></span></div>
+    </div>
+    {selectedMatch && <StartingFiveModal key={selectedMatch.id} match={matches.find(m => m.id === selectedMatch.id) || selectedMatch} teamAPlayers={teamAPlayers} teamBPlayers={teamBPlayers} loading={loadingPlayers} error={playersError} onClose={() => { rosterRequest.current++; setSelectedMatch(null); }} />}
+  </section>;
 };
+
+const styles = `
+.mc-section{background:#0a0c10;color:#ebeee8;padding:32px 0;font-family:Arial,Helvetica,sans-serif}.mc-section *{box-sizing:border-box}.mc-shell{max-width:1180px;padding:0 24px;margin:auto}.mc-header{display:flex;align-items:end;justify-content:space-between;gap:24px;margin-bottom:22px}.mc-eyebrow{font-size:9px;letter-spacing:1.7px;color:#b3a27e}.mc-header h2{font-size:28px;letter-spacing:-1px;line-height:1.2;margin:9px 0 0;font-weight:700}.mc-header h2 span{color:#8e9697}.mc-tournament{display:flex;flex-direction:column;gap:6px;max-width:320px;min-width:220px}.mc-tournament>span{font-size:9px;color:#949d9e}.mc-section select{font-family:inherit;font-size:11px;color:#e3e7df;border:1px solid #ffffff20;border-radius:6px;background:#14181d;min-height:40px;padding:8px 30px 8px 12px;max-width:100%}.mc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #ffffff16}.mc-stages,.mc-days{display:flex;overflow-x:auto;min-width:0;scrollbar-width:thin;gap:16px}.mc-section button{font:inherit;cursor:pointer}.mc-stages button{white-space:nowrap;padding:14px 0;border:0;border-bottom:2px solid transparent;background:none;color:#9ba4a4;font-size:11px}.mc-stages button[aria-pressed=true]{color:#ebbd64;border-bottom-color:#ebbd64}.mc-live-count{display:flex;align-items:center;gap:6px;font-size:10px;color:#a1aaa7;white-space:nowrap}.mc-live-count i,.mc-status i{display:inline-block;width:5px;height:5px;border-radius:50%;background:#f57572}.mc-filters{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:14px 0}.mc-days{gap:6px}.mc-days button{min-height:36px;padding:0 12px;border:1px solid transparent;border-radius:5px;background:none;color:#9fa9a8;white-space:nowrap;font-size:10px}.mc-days button[aria-pressed=true]{background:#eab64b12;border-color:#eab64b35;color:#edc87e}.mc-filters select{font-size:10px;min-height:36px;flex-shrink:0}.mc-match{position:relative;isolation:isolate;display:block;width:100%;padding:15px 18px;background:#11161c;border:1px solid #ffffff12;border-radius:9px;color:#e7ebe6;text-align:left;overflow:hidden;transition:border-color .2s,background .2s}.mc-match:hover{border-color:#eab64b60;background:#171d23}.mc-match-top,.mc-match-bottom{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:9px;color:#929e9e}.mc-match-top>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.mc-match-top>span:last-child{white-space:nowrap}.mc-status{display:flex;align-items:center;gap:6px;color:#a7b3b0;font-size:9px;white-space:nowrap}.mc-status-live{color:#ff9690}.mc-status-upcoming{color:#ddc28b}.mc-status-disputed{color:#e7b28e}.mc-versus{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:16px;padding:23px 0}.mc-team{display:flex;align-items:center;gap:12px;min-width:0}.mc-team-b{flex-direction:row-reverse;text-align:right}.mc-team>span:last-child{min-width:0}.mc-team strong{display:block;font-size:12px;font-weight:600;line-height:1.35;overflow-wrap:anywhere}.mc-team small{display:block;font-size:9px;color:#939f9d;margin-top:5px;line-height:1.4}.mc-team-logo{position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#84908f}.mc-logo-image{object-fit:contain}.mc-score{display:flex;align-items:center;justify-content:center;gap:9px;min-width:62px;font-variant-numeric:tabular-nums}.mc-score b{font-size:26px;font-weight:700}.mc-score>span{color:#718080;font-size:16px}.mc-score b.mc-winner{color:#eac476}.mc-score .mc-vs{font-size:11px;font-weight:700;letter-spacing:2px}.mc-match-bottom{border-top:1px solid #ffffff0e;padding-top:10px;font-size:9px}.mc-match-bottom>span:last-child{display:flex;align-items:center;gap:6px;color:#c5cec9}.mc-featured{padding:18px 24px;border-radius:10px;background:#141b22;border-color:#ffffff20}.mc-featured:before{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:#e9b95d}.mc-featured.mc-live:before{background:#ed807b}.mc-backdrop{position:absolute;inset:0;z-index:-1}.mc-backdrop img,.mc-backdrop video{width:100%;height:100%;object-fit:cover}.mc-backdrop:after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,#0b1018ed,#0b1018a8,#0b1018ed)}.mc-featured .mc-versus{padding:30px 5%;gap:28px}.mc-featured .mc-team-logo{width:56px;height:56px}.mc-featured .mc-team strong{font-size:17px}.mc-featured .mc-score b{font-size:38px}.mc-featured .mc-score{gap:16px}.mc-featured .mc-match-bottom>span:last-child{color:#edc87e}.mc-list-heading{display:flex;justify-content:space-between;margin:20px 0 10px;color:#929d9a;font-size:9px;letter-spacing:1px}.mc-list-heading>span:last-child{letter-spacing:0}.mc-match-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mc-pagination{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:18px;padding-top:14px;border-top:1px solid #ffffff12;flex-wrap:wrap}.mc-pagination-info{font-size:10px;color:#929e9a;letter-spacing:.3px}.mc-pagination-info strong{color:#e2e5dd;font-weight:700}.mc-pagination-controls{display:flex;align-items:center;gap:6px}.mc-page-btn{display:inline-flex;align-items:center;gap:5px;background:#14181d;border:1px solid #ffffff18;border-radius:6px;color:#c5cec9;font-size:10.5px;font-weight:600;padding:6px 12px;min-height:32px;transition:all .2s}.mc-page-btn:hover:not(:disabled){background:#1c222a;border-color:#eab64b;color:#f7d984}.mc-page-btn:disabled{opacity:.35;cursor:not-allowed}.mc-page-numbers{display:flex;align-items:center;gap:4px}.mc-page-num{min-width:32px;height:32px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:#14181d;border:1px solid #ffffff12;color:#a6b0aa;font-size:11px;font-weight:700;transition:all .2s}.mc-page-num:hover:not(.is-active){background:#1c222a;color:#e2e5dd;border-color:#ffffff26}.mc-page-num.is-active{background:#eab64b;border-color:#eab64b;color:#12100a;box-shadow:0 2px 8px rgba(234,182,75,.25)}.mc-page-ellipsis{padding:0 4px;color:#636b68;font-size:11px}.mc-footer{display:flex;justify-content:space-between;color:#86918f;font-size:9px;padding-top:16px}.mc-footer>span:last-child{display:flex;align-items:center;gap:6px}.mc-loading,.mc-empty{padding:48px 20px;text-align:center;color:#a6b0aa;border:1px dashed #ffffff1a;border-radius:8px;font-size:12px}.mc-empty svg{margin:auto;color:#bbac8b}.mc-empty h3{font-size:16px;color:#e2e5dd;margin:12px 0 8px}.mc-empty p{font-size:11px;line-height:1.6}.mc-error{padding:12px;font-size:12px;background:#bc6c4014;color:#efc9aa;margin-bottom:12px}.mc-error button{background:none;border:0;color:#edc87e;margin-left:12px;text-decoration:underline}.mc-section :is(button,select):focus-visible{outline:2px solid #e8bd67;outline-offset:3px}
+@media(max-width:850px){.mc-match-grid{grid-template-columns:1fr}.mc-featured .mc-versus{padding:28px 0;gap:18px}}
+@media(max-width:600px){.mc-section{padding:24px 0}.mc-shell{padding:0 16px}.mc-header{display:block;margin-bottom:14px}.mc-header h2{font-size:24px}.mc-header h2 span{display:block}.mc-tournament{max-width:none;width:100%;margin-top:16px}.mc-tournament>span{display:none}.mc-stages{gap:18px}.mc-stages button{min-height:44px;font-size:10px}.mc-live-count{display:none}.mc-filters{flex-wrap:wrap;gap:8px;margin:10px 0}.mc-days{width:100%}.mc-days button{min-height:44px}.mc-filters select{min-height:40px;width:100%}.mc-match{padding:12px}.mc-match-top{font-size:8px;gap:8px}.mc-match-top>span:nth-child(2){display:none}.mc-versus,.mc-featured .mc-versus{gap:10px;padding:22px 0}.mc-team,.mc-team-b{flex-direction:column;text-align:center;gap:8px}.mc-team-logo,.mc-featured .mc-team-logo{width:42px;height:42px}.mc-team strong,.mc-featured .mc-team strong{font-size:11px}.mc-team small{font-size:8px;margin-top:3px}.mc-score b,.mc-featured .mc-score b{font-size:28px}.mc-featured .mc-score{gap:10px}.mc-featured{padding:16px 14px}.mc-featured .mc-team-logo{width:50px;height:50px}.mc-match-bottom{font-size:8px}.mc-pagination{flex-direction:column;align-items:center;gap:10px}.mc-pagination-controls{width:100%;justify-content:space-between}.mc-page-num{min-width:28px;height:28px;font-size:10px}.mc-page-btn{padding:5px 8px;font-size:9.5px;min-height:28px}.mc-footer{font-size:8px;gap:8px}.mc-featured .mc-team strong{font-size:12px}}
+@media(prefers-reduced-motion:reduce){.mc-section *{transition:none!important}}
+`;

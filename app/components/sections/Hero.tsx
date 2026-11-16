@@ -1,752 +1,854 @@
 'use client';
 
 import Image from 'next/image';
-import { motion, AnimatePresence, animate, useAnimationFrame } from 'framer-motion';
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useSession } from 'next-auth/react';
-import { ChevronRight, Shield, Users, Trophy, Zap, Play, Lock } from 'lucide-react';
+import { ArrowUpRight, ArrowRight, Check, Heart, Pause, Play, X } from 'lucide-react';
 import { useHero } from '../../contexts/HeroContext';
 import { getThumbnailUrl, getHeroImageUrl } from '@/lib/image-utils';
 
-// ─────────────────────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────────────────────
-type HeroCatalogItem = {
-  id: string;
-  key: string;
-  name: string;
-  imageUrl: string;
-};
+type HeroCatalogItem = { id: string; key: string; name: string; imageUrl: string };
+type HeroPanelStats = { season: string; teams: string; players: string; prize: string };
 
-type HeroPanelStats = {
-  season: string;
-  teams: string;
-  players: string;
-  prize: string;
-};
-
-type TickerTeam = {
-  rank: number;
-  name: string;
-  points: number;
-  logo: string;
-};
-
-const TEAMS: TickerTeam[] = [
-  { rank: 1, name: 'CERUS AL EGAN', points: 10145, logo: '/mlbb_logo.png' },
-  { rank: 2, name: 'AD57 AUY', points: 10003, logo: '/mlbb_logo.png' },
-  { rank: 3, name: 'AEDF AJAY', points: 9045, logo: '/mlbb_logo.png' },
-  { rank: 4, name: 'NOVA STRIKE', points: 8870, logo: '/mlbb_logo.png' },
-  { rank: 5, name: 'LEGION GH', points: 8610, logo: '/mlbb_logo.png' },
-  { rank: 6, name: 'DARK PACT', points: 8200, logo: '/mlbb_logo.png' },
-];
-
-// ─────────────────────────────────────────────────────────────
-// ANIMATED COUNTER
-// ─────────────────────────────────────────────────────────────
-const AnimatedNumber = ({ value }: { value: number }) => {
-  const [display, setDisplay] = useState('0');
-  useEffect(() => {
-    const c = animate(0, value, {
-      duration: 2, ease: 'easeOut', delay: 1,
-      onUpdate: v => setDisplay(Math.round(v).toLocaleString()),
-    });
-    return c.stop;
-  }, [value]);
-  return <>{display}</>;
-};
-
-// ─────────────────────────────────────────────────────────────
-// SAFE HERO IMAGE (Fallback handler + responsive sizes)
-// ─────────────────────────────────────────────────────────────
-const SafeHeroImage = ({
-  src,
-  fallbackSrc = '/stunchou.png',
-  alt,
-  fill = false,
-  sizes,
-  className,
-  priority = false,
-}: {
-  src: string;
-  fallbackSrc?: string;
-  alt: string;
-  fill?: boolean;
-  sizes?: string;
-  className?: string;
-  priority?: boolean;
-}) => {
-  const [currentSrc, setCurrentSrc] = useState(src || fallbackSrc);
-
-  useEffect(() => {
-    setCurrentSrc(src || fallbackSrc);
-  }, [src, fallbackSrc]);
+function SafeHeroImage({ src, alt, sizes, priority = false, className }: {
+  src: string; alt: string; sizes: string; priority?: boolean; className?: string;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const isFailed = !src || failedSrc === src;
 
   return (
     <Image
-      src={currentSrc}
+      key={src}
+      src={isFailed ? '/stunchou.png' : src}
       alt={alt}
-      fill={fill}
+      fill
       sizes={sizes}
-      className={className}
       priority={priority}
-      onError={() => {
-        if (currentSrc !== fallbackSrc) {
-          setCurrentSrc(fallbackSrc);
-        }
-      }}
+      className={className}
+      onError={() => setFailedSrc(src)}
     />
   );
+}
+
+function LoginRequiredModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (open && !dialog?.open) dialog?.showModal();
+    if (!open && dialog?.open) dialog.close();
+  }, [open]);
+  return <dialog ref={ref} onCancel={onClose} onClose={onClose}
+    onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    className="arena-login">
+    <div className="arena-login-inner">
+      <button type="button" autoFocus aria-label="Close login dialog" onClick={onClose} className="arena-close"><X size={20} /></button>
+      <span className="arena-eyebrow">YOUR NEXT CHAPTER</span>
+      <h2>Bring your team.</h2>
+      <p>Log in to register your team and enter the arena.</p>
+      <Link href="/login?callbackUrl=/register-team" onClick={onClose} className="arena-primary">Log in to continue <ArrowUpRight size={18} /></Link>
+    </div>
+  </dialog>;
+}
+
+type ArenaProps = {
+  heroImage: string; heroName: string; heroes: HeroCatalogItem[];
+  activeKey: string | null; selectedKey: string | null;
+  onSelect: (hero: HeroCatalogItem) => void; onSave: (hero: HeroCatalogItem) => void;
+  saving: boolean; stats: HeroPanelStats; hasTeam: boolean;
+  onRegister: (e: MouseEvent<HTMLAnchorElement>) => void;
+  auto: boolean; onToggleAuto: () => void; reducedMotion: boolean;
+  loading: boolean; saveError: string;
 };
 
-// ─────────────────────────────────────────────────────────────
-// TEAM TICKER
-// ─────────────────────────────────────────────────────────────
-const TeamTicker = () => {
-  const [tickerTeams, setTickerTeams] = useState<TickerTeam[]>(TEAMS);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const xRef = useRef(0);
+function ArenaHero(p: ArenaProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    fetch('/api/leaderboards/teams?limit=8', { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        const standings = Array.isArray(data?.standings) ? data.standings : [];
-        const mapped: TickerTeam[] = standings.map((s: { rank?: number; points?: number; team?: { name?: string; logo?: string } }, i: number) => ({
-          rank: s?.rank ?? i + 1,
-          name: s?.team?.name || `Team ${i + 1}`,
-          points: s?.points ?? 0,
-          logo: s?.team?.logo || '/mlbb_logo.png',
-        })).filter((t: TickerTeam) => t.name.length > 0);
-        if (mapped.length > 0) setTickerTeams(mapped);
-      })
-      .catch(() => undefined);
-  }, []);
+    const video = videoRef.current;
+    if (!video) return;
+    if (p.reducedMotion) {
+      video.pause();
+    } else {
+      void video.play().catch(() => { });
+    }
+  }, [p.reducedMotion]);
 
-  const dupe = [...tickerTeams, ...tickerTeams];
-
-  useAnimationFrame(() => {
-    const t = trackRef.current;
-    if (!t) return;
-    xRef.current -= 0.5;
-    if (Math.abs(xRef.current) >= t.scrollWidth / 2) xRef.current = 0;
-    t.style.transform = `translateX(${xRef.current}px)`;
-  });
+  const selected = p.heroes.find(h => h.key === p.activeKey);
+  const favorite = !!p.activeKey && p.activeKey === p.selectedKey;
+  const index = Math.max(0, p.heroes.findIndex(h => h.key === p.activeKey));
 
   return (
-    <div className="flex-1 overflow-hidden"
-      style={{ maskImage: 'linear-gradient(90deg, transparent 0%, black 8%, black 92%, transparent 100%)' }}>
-      <div ref={trackRef} className="flex gap-3 will-change-transform" style={{ width: 'max-content' }}>
-        {dupe.map((team, i) => (
-          <div key={i} className="flex items-center gap-2.5 px-4 py-2 shrink-0 rounded-sm"
-            style={{ border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.3)', minWidth: 190 }}>
-            <span
-              className="w-5 h-5 rounded-sm flex items-center justify-center text-[9px] font-black shrink-0"
-              style={{ background: team.rank <= 3 ? '#e8a000' : 'rgba(255,255,255,0.08)', color: team.rank <= 3 ? '#000' : 'rgba(255,255,255,0.5)' }}>
-              {team.rank}
-            </span>
-            <div className="relative w-5 h-5 rounded-sm overflow-hidden shrink-0">
-              <SafeHeroImage
-                src={getThumbnailUrl(team.logo)}
-                fallbackSrc="/mlbb_logo.png"
-                alt={team.name}
-                fill
-                sizes="20px"
-                className="object-cover"
-              />
-            </div>
-            <span className="text-[10px] font-black uppercase tracking-wide text-white/80 truncate flex-1">{team.name}</span>
-            <span className="text-[9px] font-mono shrink-0" style={{ color: team.rank <= 3 ? '#e8a000' : 'rgba(255,255,255,0.3)' }}>
-              <AnimatedNumber value={team.points} />
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+    <section className="bv-arena" aria-label="Botsville Mobile Legends arena">
+      <style>{arenaStyles}</style>
 
-// ─────────────────────────────────────────────────────────────
-// HERO SELECTOR DOCK
-// ─────────────────────────────────────────────────────────────
-const HeroDock = ({
-  heroes, activeKey, selectedKey, onSelectHero, onLockHero, isSaving,
-}: {
-  heroes: HeroCatalogItem[];
-  activeKey: string | null;
-  selectedKey: string | null;
-  onSelectHero: (h: HeroCatalogItem) => void;
-  onLockHero: (h: HeroCatalogItem) => void;
-  isSaving: boolean;
-}) => (
-  <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
-    {heroes.map((hero, idx) => {
-      const isActive = activeKey === hero.key;
-      const isFav = selectedKey === hero.key;
-      return (
-        <div
-          key={hero.id}
-          role="button"
-          tabIndex={0}
-          onClick={() => onSelectHero(hero)}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectHero(hero); }}
-          className="relative shrink-0 group cursor-pointer"
-          style={{ width: 72, aspectRatio: '3/4' }}
+      {/* Cinematic Background Video */}
+      <div className="arena-video-background" aria-hidden="true">
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          tabIndex={-1}
         >
-          {/* Frame */}
-          <div className="absolute inset-0 rounded overflow-hidden transition-all duration-300"
-            style={{
-              border: isActive ? '2px solid #e8a000' : '2px solid rgba(255,255,255,0.08)',
-              boxShadow: isActive ? '0 0 16px rgba(232,160,0,0.5)' : 'none',
-            }}>
-            <SafeHeroImage
-              src={getThumbnailUrl(hero.imageUrl)}
-              fallbackSrc="/stunchou.png"
-              alt={hero.name}
-              fill
-              sizes="72px"
-              className="object-cover object-top transition-transform duration-500 group-hover:scale-110"
-            />
-            {/* Gradient overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-            {/* Active glow */}
-            {isActive && (
-              <div className="absolute inset-0 bg-[#e8a000]/10" />
-            )}
-          </div>
-
-          {/* Favorite badge */}
-          {isFav && (
-            <div className="absolute top-1 left-1 z-10 bg-[#e8a000] rounded-sm px-0.5"
-              style={{ fontSize: 6, fontWeight: 900, color: '#000', letterSpacing: '0.1em' }}>
-              FAV
-            </div>
-          )}
-
-          {/* Index */}
-          <div className="absolute top-1 right-1 z-10 font-mono text-[8px] text-white/30">
-            {String(idx + 1).padStart(2, '0')}
-          </div>
-
-          {/* Name */}
-          <div className="absolute bottom-0 left-0 right-0 z-10 px-1 pb-1 text-center">
-            <p className="text-[7px] font-black uppercase tracking-wide text-white/90 truncate leading-none">{hero.name}</p>
-          </div>
-
-          {/* Lock button */}
-          {isActive && !isFav && (
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={(e) => { e.stopPropagation(); onLockHero(hero); }}
-              title="Save as favorite"
-              className="absolute -top-1.5 -right-1.5 z-20 w-5 h-5 rounded-full flex items-center justify-center cursor-pointer border-none outline-none"
-              style={{ background: '#e8a000', boxShadow: '0 0 8px #e8a000' }}
-            >
-              <Lock size={9} className="text-black" />
-            </button>
-          )}
-        </div>
-      );
-    })}
-  </div>
-);
-
-// ─────────────────────────────────────────────────────────────
-// LOGIN MODAL
-// ─────────────────────────────────────────────────────────────
-const LoginRequiredModal = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center px-4">
-      <button type="button" aria-label="Close" className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm overflow-hidden rounded-xl border border-[#e8a000]/30 bg-[#06060e] p-6 shadow-[0_0_60px_rgba(232,160,0,0.1)]">
-        <h2 className="text-white font-black text-sm tracking-widest uppercase mb-2">LOGIN REQUIRED</h2>
-        <p className="text-white/50 text-xs tracking-wide leading-relaxed mb-5">Please log in to register your tournament team.</p>
-        <div className="flex gap-2.5">
-          <Link href="/login?callbackUrl=/register-team" onClick={onClose}
-            className="flex-1 bg-[#e8a000] text-black text-[9px] font-black tracking-widest uppercase py-3 text-center rounded hover:bg-[#ffb700] transition-colors">
-            LOG IN
-          </Link>
-          <button type="button" onClick={onClose}
-            className="flex-1 border border-white/15 text-white text-[9px] font-black tracking-widest uppercase py-3 hover:bg-white/5 transition-colors cursor-pointer rounded">
-            CANCEL
-          </button>
-        </div>
+          <source src="/vid/hero.mp4" type="video/mp4" />
+        </video>
+        <div className="arena-video-shade" />
       </div>
-    </div>
-  );
-};
 
-// ─────────────────────────────────────────────────────────────
-// STAT CHIP
-// ─────────────────────────────────────────────────────────────
-const StatChip = ({ icon, label, value, gold = false, delay = 0 }: {
-  icon: React.ReactNode; label: string; value: string; gold?: boolean; delay?: number;
-}) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ delay, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-    className="flex items-center gap-2.5 px-3 py-2 rounded-lg backdrop-blur-md"
-    style={{
-      background: gold ? 'rgba(232,160,0,0.12)' : 'rgba(255,255,255,0.05)',
-      border: gold ? '1px solid rgba(232,160,0,0.3)' : '1px solid rgba(255,255,255,0.08)',
-    }}
-  >
-    <span style={{ color: gold ? '#e8a000' : 'rgba(255,255,255,0.5)' }}>{icon}</span>
-    <div className="flex flex-col leading-none">
-      <span className="text-[8px] uppercase tracking-widest font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>
-      <span className="text-sm font-black uppercase tracking-wide mt-0.5" style={{ color: gold ? '#e8a000' : '#fff' }}>{value}</span>
-    </div>
-  </motion.div>
-);
+      <div className="arena-shell">
+        {/* Hero Stage Content (Scaled, Balanced Proportions) */}
+        <div className="arena-stage">
+          {/* Left Column: Headline, Narrative & CTA */}
+          <div className="arena-copy">
+            <div className="arena-kicker">
+              <span className="arena-square" />
+              <span>BOTSVILLE GHANA</span>
+              <span className="arena-kicker-dot">•</span>
+              <span>{p.stats.season}</span>
+              <span className="arena-short-line" />
+            </div>
 
-// ─────────────────────────────────────────────────────────────
-// DESKTOP HERO  — Arena Broadcast
-// ─────────────────────────────────────────────────────────────
-const DesktopHero = ({
-  heroImage, heroName, heroCatalog, activeKey, selectedKey,
-  onSelectHero, onLockHero, isSaving, isGlitching, stats,
-  onRegisterClick, hasTeam, autoShowcaseActive, toggleAutoShowcase,
-}: {
-  heroImage: string; heroName: string; heroCatalog: HeroCatalogItem[];
-  activeKey: string | null; selectedKey: string | null;
-  onSelectHero: (h: HeroCatalogItem) => void; onLockHero: (h: HeroCatalogItem) => void;
-  isSaving: boolean; isGlitching: boolean; stats: HeroPanelStats;
-  onRegisterClick: (e: MouseEvent<HTMLAnchorElement>) => void;
-  hasTeam: boolean; autoShowcaseActive: boolean; toggleAutoShowcase: () => void;
-}) => (
-  <section className="hidden md:block relative w-full overflow-hidden" style={{ background: '#020408', minHeight: '100vh' }}>
+            <h1>MAKE<br />YOUR <em>MARK.</em></h1>
 
-    {/* ── FULL-BLEED VIDEO ── */}
-    <div className="absolute inset-0 z-0">
-      <video autoPlay loop muted playsInline preload="metadata"
-        className="w-full h-full object-cover object-center"
-        style={{ opacity: 0.75 }}>
-        <source src="/vid/hero.mp4" type="video/mp4" />
-      </video>
-      {/* Gradient fade: left-side content area darkens, right stays bright */}
-      <div className="absolute inset-0"
-        style={{ background: 'linear-gradient(90deg, rgba(2,4,8,0.92) 0%, rgba(2,4,8,0.55) 40%, rgba(2,4,8,0.1) 70%, rgba(2,4,8,0.0) 100%)' }} />
-      {/* Bottom gradient into rest of page */}
-      <div className="absolute bottom-0 left-0 right-0 h-40"
-        style={{ background: 'linear-gradient(to bottom, transparent 0%, #020408 100%)' }} />
-      {/* Top fade for navbar blend */}
-      <div className="absolute top-0 left-0 right-0 h-32"
-        style={{ background: 'linear-gradient(to bottom, rgba(2,4,8,0.6) 0%, transparent 100%)' }} />
-    </div>
+            <p className="arena-description">
+              Your squad. Your moment.<br />Take your place in Ghana&apos;s next great rivalry.
+            </p>
 
+            <div className="arena-actions">
+              <Link
+                href={p.hasTeam ? '/my-team' : '/register-team'}
+                onClick={p.hasTeam ? undefined : p.onRegister}
+                className="arena-primary"
+              >
+                <span>{p.hasTeam ? 'My team' : 'Enter the arena'}</span>
+                <ArrowUpRight size={15} />
+              </Link>
+              <Link href="/tournaments" className="arena-secondary">
+                <span>Explore tournaments</span>
+                <ArrowRight size={13} />
+              </Link>
+            </div>
 
-    {/* ── CONTENT LAYER ── */}
-    <div className="relative z-10 flex flex-col justify-between min-h-screen pt-24 pb-0">
-
-      {/* === TOP SECTION: two-column row === */}
-      <div className="px-12 xl:px-20 flex items-center gap-0 mt-8 flex-1">
-
-        {/* LEFT: Text content */}
-        <div className="flex flex-col gap-7 flex-1 min-w-0">
-
-          {/* Live badge */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2, duration: 0.6 }}
-            className="flex items-center gap-2.5"
-          >
-            <span className="flex items-center gap-1.5 text-[10px] font-mono font-black tracking-widest uppercase px-3 py-1.5 rounded"
-              style={{ background: 'rgba(232,160,0,0.15)', border: '1px solid rgba(232,160,0,0.35)', color: '#e8a000' }}>
-              <span className="w-1.5 h-1.5 rounded-full bg-[#e8a000] animate-pulse" />
-              GHANA ESPORTS LIVE
-            </span>
-            <span className="text-[10px] font-mono text-white/30 uppercase tracking-widest">BOTSVILLE.GG</span>
-          </motion.div>
-
-          {/* Main title */}
-          <div>
-            <motion.h1
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-              className="font-black uppercase leading-none text-white"
-              style={{
-                fontFamily: '"Barlow Condensed", "Anton", sans-serif',
-                fontSize: 'clamp(56px, 6vw, 100px)',
-                letterSpacing: '-0.02em',
-                lineHeight: 0.92,
-                textShadow: '0 0 80px rgba(232,160,0,0.25)',
-              }}
-            >
-              GHANA&apos;S #1<br />
-              <span style={{
-                background: 'linear-gradient(90deg, #e8a000 0%, #ffcc44 50%, #e8a000 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-              }}>
-                MLBB ARENA
-              </span>
-            </motion.h1>
-
-            <motion.p
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.55, duration: 0.7 }}
-              className="mt-4 text-sm xl:text-base font-medium leading-relaxed max-w-sm"
-              style={{ color: 'rgba(255,255,255,0.55)', letterSpacing: '0.01em' }}
-            >
-              Compete, climb the ranks, and claim glory in Mobile Legends tournaments across Ghana.
-            </motion.p>
+            <div className="arena-proof">
+              <div>
+                <strong>{p.stats.teams}</strong>
+                <span>Teams ranked</span>
+              </div>
+              <div>
+                <strong>{p.stats.players}</strong>
+                <span>Players listed</span>
+              </div>
+              <div className="arena-proof-note">
+                <span className="arena-square" />
+                <span>Built for the game.<br />Rooted in Ghana.</span>
+              </div>
+            </div>
           </div>
 
-          {/* Stat chips row */}
-          <div className="flex flex-wrap gap-2.5">
-            <StatChip icon={<Trophy size={14} />} label="Season" value={stats.season} gold delay={0.65} />
-            <StatChip icon={<Shield size={14} />} label="Teams" value={stats.teams} delay={0.75} />
-            <StatChip icon={<Users size={14} />} label="Players" value={stats.players} delay={0.85} />
-            <StatChip icon={<Zap size={14} />} label="Prize Pool" value={stats.prize} gold delay={0.95} />
-          </div>
+          {/* Right Column: Hero Spotlight Graphic */}
+          <div className="arena-art">
+            <div className="arena-gold-panel" aria-hidden="true">
+              <span>GH</span>
+            </div>
+            <div className="arena-orbit" aria-hidden="true" />
+            <span className="arena-art-note" aria-hidden="true">CHOOSE YOUR HERO. OWN YOUR STORY.</span>
+            <span className="arena-character-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
 
-          {/* CTA buttons */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.05, duration: 0.6 }}
-            className="flex items-center gap-3"
-          >
-            {hasTeam ? (
-              <Link href="/my-team"
-                className="group flex items-center gap-2 px-7 py-3.5 font-black uppercase tracking-widest text-sm rounded transition-all duration-300 hover:scale-[1.03]"
-                style={{ background: 'linear-gradient(90deg, #e8a000, #ffb700)', color: '#000' }}>
-                MY TEAM <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
-              </Link>
-            ) : (
-              <Link href="/register-team" onClick={onRegisterClick}
-                className="group flex items-center gap-2 px-7 py-3.5 font-black uppercase tracking-widest text-sm rounded transition-all duration-300 hover:scale-[1.03]"
-                style={{ background: 'linear-gradient(90deg, #e8a000, #ffb700)', color: '#000' }}>
-                REGISTER TEAM <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
-              </Link>
-            )}
-            <Link href="/tournaments"
-              className="group flex items-center gap-2 px-7 py-3.5 font-black uppercase tracking-widest text-sm rounded transition-all duration-300 hover:bg-white/10"
-              style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.85)' }}>
-              <Play size={14} /> VIEW TOURNAMENTS
-            </Link>
-          </motion.div>
-        </div>
-
-        {/* RIGHT: Hero character */}
-        <div className="shrink-0 self-stretch flex items-center" style={{ width: 'clamp(280px, 34vw, 520px)' }}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={heroImage}
-              className="relative w-full h-full pointer-events-none select-none"
-              style={{ minHeight: 320 }}
-              initial={{ opacity: 0, x: 30, scale: 0.96 }}
-              animate={{
-                opacity: isGlitching ? [0.5, 1, 0.3, 1] : 1,
-                x: 0,
-                scale: isGlitching ? [0.97, 1.04, 0.99, 1] : 1,
-                filter: isGlitching
-                  ? 'drop-shadow(-4px 0 #ff00ff) drop-shadow(4px 0 #00ffff) hue-rotate(60deg)'
-                  : 'drop-shadow(0 0 60px rgba(232,160,0,0.3)) drop-shadow(0 0 120px rgba(232,160,0,0.12))',
-              }}
-              exit={{ opacity: 0, x: 20, scale: 0.95 }}
-              transition={{ duration: isGlitching ? 0.3 : 0.7, ease: [0.22, 1, 0.36, 1] }}
-            >
+            <AnimatePresence mode="wait" initial={false}>
               <motion.div
-                className="relative w-full h-full opacity-60 hover:opacity-100 transition-opacity duration-700"
-                animate={{ y: [0, -12, 0] }}
-                transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                className="arena-character"
+                key={p.heroImage}
+                initial={{ opacity: 0, x: p.reducedMotion ? 0 : 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: p.reducedMotion ? 0 : -14 }}
+                transition={{ duration: p.reducedMotion ? 0 : 0.25 }}
               >
                 <SafeHeroImage
-                  src={heroImage}
-                  fallbackSrc="/stunchou.png"
-                  alt={heroName}
-                  fill
-                  sizes="(max-width: 1280px) 420px, 520px"
-                  className="object-contain object-center"
+                  src={p.heroImage}
+                  alt={p.heroName}
+                  sizes="(max-width: 760px) 90vw, 45vw"
                   priority
+                  className="arena-character-image"
                 />
               </motion.div>
-            </motion.div>
-          </AnimatePresence>
-        </div>
-
-      </div>
-
-      {/* === BOTTOM SECTION: Selector + Ticker === */}
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1.1, duration: 0.7 }}
-        className="mt-auto"
-      >
-        {/* Hero name + active hero label */}
-        <div className="px-12 xl:px-20 mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-[9px] font-mono uppercase tracking-widest text-white/30">[HERO SELECT]</span>
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={heroName}
-                initial={{ opacity: 0, x: 8 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -8 }}
-                transition={{ duration: 0.25 }}
-                className="text-xs font-black uppercase tracking-widest"
-                style={{ color: isGlitching ? '#ff00ff' : '#e8a000', fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: '0.15em' }}
-              >
-                {heroName}
-              </motion.span>
             </AnimatePresence>
-          </div>
-          <button
-            onClick={toggleAutoShowcase}
-            className="flex items-center gap-1.5 text-[8px] font-mono uppercase tracking-widest px-2.5 py-1 rounded transition-colors cursor-pointer"
-            style={{
-              border: '1px solid rgba(255,255,255,0.1)',
-              color: autoShowcaseActive ? '#10b981' : 'rgba(255,255,255,0.35)',
-              background: 'rgba(0,0,0,0.3)',
-            }}
-          >
-            <span className="w-1 h-1 rounded-full" style={{ background: autoShowcaseActive ? '#10b981' : 'rgba(255,255,255,0.3)' }} />
-            {autoShowcaseActive ? 'AUTO' : 'PAUSED'}
-          </button>
-        </div>
 
-        {/* Selector strip */}
-        <div className="px-12 xl:px-20 pb-4">
-          <HeroDock
-            heroes={heroCatalog} activeKey={activeKey} selectedKey={selectedKey}
-            onSelectHero={onSelectHero} onLockHero={onLockHero} isSaving={isSaving}
-          />
-        </div>
-
-        {/* Ticker bar */}
-        <div className="flex items-stretch overflow-hidden"
-          style={{
-            borderTop: '1px solid rgba(255,255,255,0.07)',
-            background: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(12px)',
-            height: 48,
-          }}>
-          {/* Label */}
-          <div className="flex items-center gap-2.5 px-5 shrink-0"
-            style={{ background: '#e8a000', minWidth: 160 }}>
-            <Image src="/mlbb_logo.png" alt="logo" width={16} height={16} className="object-contain brightness-0 shrink-0" />
-            <div className="flex flex-col leading-none">
-              <span className="text-[6px] font-black tracking-widest uppercase text-black/50 font-mono">LEADERBOARD</span>
-              <span className="text-[10px] font-black uppercase tracking-wide text-black font-mono">TOP TEAMS</span>
+            <div className="arena-character-caption">
+              <div>
+                <span className="arena-eyebrow">IN THE SPOTLIGHT</span>
+                <h2>{p.heroName}</h2>
+              </div>
+              <button
+                type="button"
+                className={`arena-favorite ${favorite ? 'is-favorite' : ''}`}
+                disabled={!selected || p.saving || favorite}
+                aria-label={favorite ? `${p.heroName} is your favorite` : `Save ${p.heroName} as your favorite`}
+                onClick={() => selected && p.onSave(selected)}
+              >
+                {favorite ? <Check size={14} /> : <Heart size={14} />}
+                <span>{p.saving ? 'Saving…' : favorite ? 'Your hero' : 'Make it yours'}</span>
+              </button>
             </div>
-            <svg viewBox="0 0 30 100" preserveAspectRatio="none"
-              className="absolute right-0 translate-x-full top-0 h-full w-6" style={{ color: '#e8a000', position: 'relative' }}>
-              <polygon points="30,0 30,100 0,100" fill="currentColor" />
-            </svg>
           </div>
-          <TeamTicker />
         </div>
-      </motion.div>
-    </div>
-  </section>
-);
 
-// ─────────────────────────────────────────────────────────────
-// MOBILE HERO  — Arena Broadcast (compact)
-// ─────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────
-// MOBILE HERO  — Arena Broadcast (compact)
-// ─────────────────────────────────────────────────────────────
-const MobileHero = ({
-  heroImage, heroName, heroCatalog, activeKey, selectedKey,
-  onSelectHero, onLockHero, isSaving, isGlitching, stats,
-  onRegisterClick, hasTeam, autoShowcaseActive, toggleAutoShowcase,
-}: {
-  heroImage: string; heroName: string; heroCatalog: HeroCatalogItem[];
-  activeKey: string | null; selectedKey: string | null;
-  onSelectHero: (h: HeroCatalogItem) => void; onLockHero: (h: HeroCatalogItem) => void;
-  isSaving: boolean; isGlitching: boolean; stats: HeroPanelStats;
-  onRegisterClick: (e: MouseEvent<HTMLAnchorElement>) => void;
-  hasTeam: boolean; autoShowcaseActive: boolean; toggleAutoShowcase: () => void;
-}) => (
-  <section className="md:hidden relative w-full overflow-hidden flex flex-col" style={{ background: '#020408' }}>
+        {/* Compact Hero Roster Selector Strip */}
+        <div className="arena-roster">
+          <div className="arena-roster-heading">
+            <span className="arena-eyebrow">PICK YOUR MAIN</span>
+            <p>A hero for every playstyle.</p>
+            {!p.reducedMotion && p.heroes.length > 1 && (
+              <button
+                type="button"
+                className="arena-autoplay"
+                onClick={p.onToggleAuto}
+                aria-pressed={p.auto}
+              >
+                {p.auto ? <Pause size={11} /> : <Play size={11} />}
+                <span>{p.auto ? 'Pause showcase' : 'Auto showcase'}</span>
+              </button>
+            )}
+          </div>
 
-    {/* ── VIDEO STAGE (top) ── */}
-    <div className="relative w-full" style={{ height: '45vw', minHeight: 180, maxHeight: 280 }}>
-      <video autoPlay loop muted playsInline preload="metadata"
-        className="absolute inset-0 w-full h-full object-cover object-center"
-        style={{ opacity: 0.8 }}>
-        <source src="/vid/hero.mp4" type="video/mp4" />
-      </video>
-
-      {/* Overlays */}
-      <div className="absolute inset-0"
-        style={{ background: 'linear-gradient(180deg, rgba(2,4,8,0.3) 0%, rgba(2,4,8,0.05) 40%, rgba(2,4,8,0.85) 100%)' }} />
-
-      {/* Top status */}
-      <div className="absolute top-4 left-4 right-4 z-10 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[9px] font-mono font-black tracking-widest uppercase px-2.5 py-1 rounded"
-          style={{ background: 'rgba(232,160,0,0.2)', border: '1px solid rgba(232,160,0,0.4)', color: '#e8a000' }}>
-          <span className="w-1 h-1 rounded-full bg-[#e8a000] animate-pulse" />
-          LIVE
-        </span>
-        <button
-          onClick={toggleAutoShowcase}
-          className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest px-2 py-1 rounded cursor-pointer"
-          style={{ border: '1px solid rgba(255,255,255,0.1)', color: autoShowcaseActive ? '#10b981' : 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.4)' }}
-        >
-          <span className="w-1 h-1 rounded-full" style={{ background: autoShowcaseActive ? '#10b981' : 'rgba(255,255,255,0.2)' }} />
-          {autoShowcaseActive ? 'AUTO' : 'PAUSED'}
-        </button>
-      </div>
-    </div>
-
-    {/* ── CONTENT BELOW VIDEO ── */}
-    <div className="flex flex-col gap-4 px-4 pt-4 pb-0" style={{ background: '#020408' }}>
-
-      {/* Title + Hero image row — vertically centered */}
-      <div className="flex items-center gap-4">
-        {/* Title on the left */}
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.6 }}
-          className="flex-1 font-black uppercase leading-none text-white"
-          style={{
-            fontFamily: '"Barlow Condensed", "Anton", sans-serif',
-            fontSize: 'clamp(32px, 10vw, 52px)',
-            letterSpacing: '-0.02em',
-            lineHeight: 0.93,
-          }}
-        >
-          GHANA&apos;S #1<br />
-          <span style={{
-            background: 'linear-gradient(90deg, #e8a000, #ffcc44)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          }}>
-            MLBB ARENA
-          </span>
-        </motion.h1>
-
-        {/* Hero image on the right — centered with headline */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={heroImage}
-            className="relative shrink-0 pointer-events-none select-none"
-            style={{ width: 'clamp(110px, 28vw, 180px)', aspectRatio: '3.5/4' }}
-            initial={{ opacity: 0, x: 20, scale: 0.95 }}
-            animate={{
-              opacity: isGlitching ? [0.4, 1, 0.3, 1] : 1,
-              x: 0,
-              scale: isGlitching ? [0.97, 1.05, 0.98, 1] : 1,
-              filter: isGlitching
-                ? 'drop-shadow(-3px 0 #ff00ff) drop-shadow(3px 0 #00ffff)'
-                : 'drop-shadow(0 0 20px rgba(232,160,0,0.4))',
-            }}
-            exit={{ opacity: 0, x: 10, scale: 0.95 }}
-            transition={{ duration: isGlitching ? 0.25 : 0.5 }}
-          >
-            <motion.div
-              className="relative w-full h-full"
-              animate={{ y: [0, -6, 0] }}
-              transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
-            >
-              <SafeHeroImage
-                src={heroImage}
-                fallbackSrc="/stunchou.png"
-                alt={heroName}
-                fill
-                sizes="180px"
-                className="object-contain object-center"
-                priority
-              />
-            </motion.div>
-          </motion.div>
-        </AnimatePresence>
-      </div>
-
-      {/* Hero name below title */}
-      <div className="flex items-center gap-2">
-        <span className="text-[8px] font-mono uppercase tracking-widest text-white/25">[HERO SELECT]</span>
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={heroName}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="text-[10px] font-mono font-black uppercase tracking-widest"
-            style={{ color: isGlitching ? '#ff00ff' : '#e8a000' }}
-          >
-            {heroName}
-          </motion.p>
-        </AnimatePresence>
-      </div>
-
-      {/* Stat chips — 2x2 grid */}
-      <div className="grid grid-cols-2 gap-2">
-        <StatChip icon={<Trophy size={12} />} label="Season" value={stats.season} gold delay={0.4} />
-        <StatChip icon={<Shield size={12} />} label="Teams" value={stats.teams} delay={0.45} />
-        <StatChip icon={<Users size={12} />} label="Players" value={stats.players} delay={0.5} />
-        <StatChip icon={<Zap size={12} />} label="Prize Pool" value={stats.prize} gold delay={0.55} />
-      </div>
-
-      {/* CTA */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.65 }}
-        className="flex gap-2.5"
-      >
-        {hasTeam ? (
-          <Link href="/my-team"
-            className="flex-1 flex items-center justify-center gap-1.5 py-3 font-black uppercase tracking-widest text-xs rounded"
-            style={{ background: 'linear-gradient(90deg,#e8a000,#ffb700)', color: '#000' }}>
-            MY TEAM <ChevronRight size={13} />
-          </Link>
-        ) : (
-          <Link href="/register-team" onClick={onRegisterClick}
-            className="flex-1 flex items-center justify-center gap-1.5 py-3 font-black uppercase tracking-widest text-xs rounded"
-            style={{ background: 'linear-gradient(90deg,#e8a000,#ffb700)', color: '#000' }}>
-            REGISTER <ChevronRight size={13} />
-          </Link>
-        )}
-        <Link href="/tournaments"
-          className="flex items-center justify-center gap-1.5 px-4 py-3 font-black uppercase tracking-widest text-xs rounded"
-          style={{ border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)' }}>
-          <Play size={12} />
-        </Link>
-      </motion.div>
-
-      {/* Hero dock label */}
-      <div className="flex items-center gap-2 border-t pt-3" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-        <span className="text-[8px] font-mono uppercase tracking-widest text-white/25">[HERO SELECT]</span>
-      </div>
-
-      {/* Hero dock */}
-      <HeroDock
-        heroes={heroCatalog} activeKey={activeKey} selectedKey={selectedKey}
-        onSelectHero={onSelectHero} onLockHero={onLockHero} isSaving={isSaving}
-      />
-
-      {/* Ticker */}
-      <div className="flex items-stretch overflow-hidden -mx-4"
-        style={{
-          borderTop: '1px solid rgba(255,255,255,0.07)',
-          background: 'rgba(0,0,0,0.5)',
-          height: 44,
-        }}>
-        <div className="flex items-center gap-2 px-3 shrink-0"
-          style={{ background: '#e8a000', minWidth: 100 }}>
-          <Image src="/mlbb_logo.png" alt="logo" width={14} height={14} className="object-contain brightness-0 shrink-0" />
-          <span className="text-[8px] font-black uppercase tracking-wide text-black font-mono">TOP TEAMS</span>
+          <div className="arena-hero-list" role="group" aria-label="Choose a hero">
+            {p.heroes.map((hero, i) => (
+              <button
+                type="button"
+                key={hero.id}
+                aria-pressed={hero.key === p.activeKey}
+                className={`arena-hero-option ${hero.key === p.activeKey ? 'is-active' : ''}`}
+                onClick={() => p.onSelect(hero)}
+              >
+                <span className="arena-option-image">
+                  <SafeHeroImage src={getThumbnailUrl(hero.imageUrl)} alt="" sizes="48px" />
+                </span>
+                <span className="arena-option-copy">
+                  <span className="arena-option-number">
+                    {String(i + 1).padStart(2, '0')}
+                    {hero.key === p.selectedKey && <Heart size={9} fill="currentColor" />}
+                  </span>
+                  <strong>{hero.name}</strong>
+                </span>
+              </button>
+            ))}
+            {!p.heroes.length && (
+              <p className="arena-empty">
+                {p.loading ? 'Loading hero roster…' : 'Explore tournaments while heroes load.'}
+              </p>
+            )}
+          </div>
         </div>
-        <TeamTicker />
-      </div>
-    </div>
-  </section>
-);
 
-// ─────────────────────────────────────────────────────────────
-// EXPORT MAIN
-// ─────────────────────────────────────────────────────────────
+        {p.saveError && <p className="arena-error" role="alert">{p.saveError}</p>}
+
+        {/* Footer Sub-Bar */}
+        <div className="arena-footer">
+          <span>FIND YOUR TEAM. BUILD YOUR LEGACY.</span>
+          <Link href="/tournaments">
+            <span>The competition starts here</span>
+            <ArrowUpRight size={11} />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const arenaStyles = `
+.bv-arena {
+  --arena-gold: #eab64b;
+  --arena-ink: #0a0b0f;
+  position: relative;
+  isolation: isolate;
+  background: var(--arena-ink);
+  color: #f3f1e9;
+  overflow: hidden;
+  font-family: Arial, Helvetica, sans-serif;
+  padding: 68px 0 0;
+}
+.bv-arena *, .arena-login * { box-sizing: border-box; }
+.bv-arena a, .arena-login a { text-decoration: none; }
+.bv-arena button, .arena-login button { font: inherit; cursor: pointer; }
+.bv-arena button:disabled { cursor: default; opacity: .6; }
+.bv-arena a:focus-visible, .bv-arena button:focus-visible, .arena-login a:focus-visible, .arena-login button:focus-visible {
+  outline: 2px solid #f7d984;
+  outline-offset: 4px;
+}
+
+/* ── Cinematic Video Background ────────────────────────────── */
+.arena-video-background {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: #090a0e;
+  overflow: hidden;
+}
+.arena-video-background video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  opacity: 0.76;
+  filter: brightness(0.88) contrast(1.08) saturate(1.1);
+}
+.arena-video-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 65% 42%, rgba(10,12,16,0.18) 0%, rgba(10,12,16,0.65) 60%, #090a0e 100%),
+    linear-gradient(90deg, rgba(9,10,14,0.92) 0%, rgba(9,10,14,0.68) 45%, rgba(9,10,14,0.35) 100%),
+    linear-gradient(0deg, #090a0e 0%, transparent 40%, rgba(9,10,14,0.45) 100%);
+}
+
+.arena-shell {
+  width: min(1180px, 100%);
+  margin: auto;
+  padding: 0 4%;
+}
+
+.arena-eyebrow {
+  font-size: 9px;
+  letter-spacing: 1.6px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #cfcecb;
+}
+.arena-square {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  background: var(--arena-gold, #eab64b);
+  flex-shrink: 0;
+}
+
+/* ── Main Stage Grid (Tightened, Balanced) ─────────────────── */
+.arena-stage {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  position: relative;
+  min-height: 380px;
+  align-items: center;
+}
+.arena-copy {
+  position: relative;
+  z-index: 3;
+  padding: 24px 0 20px;
+  pointer-events: none;
+}
+.arena-copy a, .arena-copy button { pointer-events: auto; }
+.arena-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  color: #cfcecb;
+  text-transform: uppercase;
+}
+.arena-kicker-dot {
+  color: #eab64b;
+  opacity: 0.8;
+}
+.arena-short-line {
+  height: 1px;
+  width: 28px;
+  background: #eab64b;
+}
+.arena-copy h1 {
+  font-size: clamp(30px, 3.7vw, 48px);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  font-weight: 900;
+  margin: 14px 0 12px;
+}
+.arena-copy h1 em {
+  color: #eab64b;
+  font-style: normal;
+}
+.arena-description {
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: #9d9e97;
+  margin: 0;
+  max-width: 320px;
+}
+.arena-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.arena-primary {
+  background: #eab64b;
+  color: #12100a;
+  display: inline-flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 15px;
+  font-weight: 800;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  min-height: 36px;
+  border-radius: 8px;
+  border: 1px solid #eab64b;
+  box-shadow: 0 4px 14px rgba(234,182,75,0.22);
+  transition: all .2s;
+}
+.arena-primary:hover {
+  background: #f5cd79;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(234,182,75,0.32);
+}
+.arena-secondary {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  color: #e3e2dc;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  transition: all .2s;
+}
+.arena-secondary:hover {
+  color: #eab64b;
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(234,182,75,0.28);
+}
+.arena-proof {
+  display: flex;
+  gap: 18px;
+  margin-top: 22px;
+  align-items: center;
+}
+.arena-proof > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.arena-proof strong {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  color: #f7f6f0;
+}
+.arena-proof span {
+  font-size: 9px;
+  color: #82837e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.arena-proof .arena-proof-note {
+  flex-direction: row;
+  align-items: center;
+  border-left: 1px solid rgba(255,255,255,0.12);
+  padding-left: 18px;
+  gap: 9px;
+  line-height: 1.5;
+}
+
+/* ── Hero Spotlight Art (Clean Scale) ───────────────────────── */
+.arena-art {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  min-height: 350px;
+}
+.arena-gold-panel {
+  position: absolute;
+  inset: 16px -8% 20px 10%;
+  background: linear-gradient(145deg, rgba(234,182,75,0.12), rgba(234,182,75,0.02));
+  clip-path: polygon(20% 0, 100% 0, 100% 100%, 0 100%);
+  overflow: hidden;
+}
+.arena-gold-panel:after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(120deg, transparent 0 45px, rgba(27,27,27,0.06) 45px 46px);
+}
+.arena-gold-panel > span {
+  position: absolute;
+  right: -6%;
+  top: 10%;
+  font-size: clamp(140px, 16vw, 220px);
+  font-weight: 900;
+  letter-spacing: -0.08em;
+  color: rgba(243,222,181,0.05);
+  line-height: 1;
+}
+.arena-orbit {
+  position: absolute;
+  width: 68%;
+  aspect-ratio: 1;
+  border: 1px solid rgba(234,182,75,0.16);
+  border-radius: 50%;
+  top: 15%;
+  left: 16%;
+}
+.arena-character {
+  position: absolute;
+  inset: -6px -6% 0 -6%;
+  z-index: 2;
+}
+.arena-character-image {
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 14px 16px rgba(0,0,0,0.55));
+}
+.arena-art:after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: -10%;
+  height: 110px;
+  z-index: 2;
+  background: linear-gradient(transparent, #0a0b0f 92%);
+  pointer-events: none;
+}
+.arena-art-note {
+  position: absolute;
+  right: -4%;
+  top: 36px;
+  z-index: 1;
+  writing-mode: vertical-rl;
+  font-size: 7.5px;
+  letter-spacing: 1.8px;
+  color: #b0a790;
+}
+.arena-character-index {
+  position: absolute;
+  top: 36px;
+  left: 30%;
+  font-size: 10.5px;
+  color: #b0a790;
+  letter-spacing: 1.5px;
+  font-family: monospace;
+}
+.arena-character-caption {
+  position: absolute;
+  bottom: 24px;
+  left: 18%;
+  right: 0;
+  z-index: 4;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+.arena-character-caption .arena-eyebrow {
+  font-size: 7.5px;
+  color: #d0c5ab;
+  letter-spacing: 1.6px;
+}
+.arena-character-caption h2 {
+  font-size: clamp(16px, 1.8vw, 22px);
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+  text-transform: uppercase;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.arena-favorite {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(21,22,21,0.72);
+  backdrop-filter: blur(10px);
+  color: #f3f1e9;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 8px;
+  min-height: 32px;
+  padding: 6px 11px;
+  flex-shrink: 0;
+  transition: all .2s;
+}
+.arena-favorite:hover:not(:disabled) {
+  border-color: #eab64b;
+  color: #f7d984;
+}
+.arena-favorite span {
+  font-size: 9px;
+  font-weight: 700;
+}
+.arena-favorite.is-favorite {
+  color: #eab64b;
+  border-color: rgba(234,182,75,0.4);
+  background: rgba(234,182,75,0.1);
+}
+
+/* ── Hero Roster Selector Strip (Sleek, Compact) ───────────── */
+.arena-roster {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  align-items: center;
+}
+.arena-roster-heading p {
+  font-size: 9.5px;
+  color: #8c8e88;
+  margin: 3px 0 6px;
+}
+.arena-autoplay {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 3px 0;
+  background: none;
+  color: #b8b8b0;
+  font-size: 8.5px !important;
+  min-height: 24px;
+  transition: color .2s;
+}
+.arena-autoplay:hover { color: #eab64b; }
+.arena-hero-list {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 3px 2px 5px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(234,182,75,0.3) transparent;
+  scroll-snap-type: x proximity;
+}
+.arena-hero-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 104px;
+  max-width: 128px;
+  flex-shrink: 0;
+  background: rgba(22,23,27,0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 7px;
+  color: #9c9d96;
+  padding: 4px 6px;
+  text-align: left;
+  transition: all .2s;
+  scroll-snap-align: start;
+}
+.arena-hero-option:hover {
+  border-color: rgba(234,182,75,0.45);
+  background: rgba(30,31,36,0.9);
+  color: #f3f1e9;
+}
+.arena-hero-option.is-active {
+  border-color: #eab64b;
+  background: rgba(234,182,75,0.12);
+  color: #f7d984;
+  box-shadow: 0 0 10px rgba(234,182,75,0.15);
+}
+.arena-option-image {
+  position: relative;
+  width: 32px;
+  height: 38px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #1e1f23;
+}
+.arena-option-image img {
+  object-fit: cover;
+  object-position: top;
+}
+.arena-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 4px;
+  min-width: 0;
+}
+.arena-option-number {
+  font-size: 7.5px;
+  color: #8c8a80;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: monospace;
+}
+.arena-option-copy strong {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 78px;
+}
+.arena-empty { font-size: 10.5px; color: #a4a49c; }
+.arena-error { font-size: 10.5px; color: #f87171; }
+
+/* ── Footer Sub-Bar ────────────────────────────────────────── */
+.arena-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0 14px;
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  color: #82837d;
+}
+.arena-footer a {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #a8a89e;
+  letter-spacing: 0.5px;
+  transition: color .2s;
+}
+.arena-footer a:hover { color: #eab64b; }
+
+/* ── Modal ─────────────────────────────────────────────────── */
+.arena-login {
+  padding: 0;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: #121317;
+  color: #f3f1e9;
+  width: min(380px, calc(100% - 32px));
+  border-radius: 16px;
+  margin: auto;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.8);
+}
+.arena-login::backdrop {
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(6px);
+}
+.arena-login-inner {
+  padding: 28px 24px;
+  position: relative;
+}
+.arena-login h2 {
+  font-size: 22px;
+  letter-spacing: -0.5px;
+  margin: 14px 0 8px;
+}
+.arena-login p {
+  font-size: 12px;
+  color: #9ca3af;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+.arena-close {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  background: none;
+  border: 0;
+  color: #9ca3af;
+  padding: 6px;
+  border-radius: 6px;
+  transition: color .2s;
+}
+.arena-close:hover { color: #ffffff; }
+.arena-login .arena-eyebrow {
+  color: #eab64b;
+  font-size: 8px;
+}
+
+/* ── Responsive Queries ────────────────────────────────────── */
+@media (max-width: 1000px) {
+  .arena-copy h1 { font-size: clamp(28px, 4.2vw, 38px); }
+  .arena-stage { min-height: 340px; }
+  .arena-character-caption { left: 10%; right: -2%; }
+  .arena-favorite span { display: none; }
+  .arena-roster { grid-template-columns: 140px minmax(0, 1fr); gap: 12px; }
+}
+
+@media (max-width: 760px) {
+  .bv-arena { padding-top: 64px; }
+  .arena-shell { padding: 0 16px; }
+  .arena-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "kicker" "headline" "art" "description" "actions" "proof";
+    align-items: stretch;
+    min-height: 0;
+    padding-top: 18px;
+  }
+  /* Keep the DOM reading order; place the artwork early in the visual layout. */
+  .arena-copy { display: contents; }
+  .arena-kicker { grid-area: kicker; flex-wrap: wrap; font-size: 8px; gap: 7px; }
+  .arena-copy h1 {
+    grid-area: headline;
+    font-size: clamp(28px, 7.8vw, 38px);
+    margin: 12px 0 0;
+    line-height: 1;
+  }
+  .arena-description {
+    grid-area: description;
+    font-size: 11px;
+    line-height: 1.6;
+    max-width: none;
+    margin-top: 6px;
+  }
+  .arena-actions { grid-area: actions; margin-top: 12px; gap: 8px; }
+  .arena-primary, .arena-secondary { min-height: 44px; justify-content: center; }
+  .arena-primary { flex: 1 1 128px; }
+  .arena-secondary { flex: 1 1 145px; }
+  .arena-art {
+    grid-area: art;
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    height: clamp(230px, 65vw, 300px);
+    min-height: 0;
+    margin: 8px 0 0;
+    isolation: isolate;
+  }
+  .arena-character { inset: 0 0 48px; z-index: 2; }
+  .arena-character-image { object-fit: contain; object-position: center; }
+  .arena-gold-panel { inset: 8px 0 38px 0; }
+  .arena-gold-panel > span { font-size: 160px; right: 6%; top: 4%; }
+  .arena-orbit { width: min(64%, 210px); top: 5%; left: 18%; }
+  .arena-art-note { right: 4px; top: 24px; font-size: 7px; }
+  .arena-character-index { top: 16px; left: 8px; }
+  .arena-art:after { left: 0; right: 0; height: 48px; z-index: 3; }
+  .arena-character-caption { bottom: 0; left: 0; right: 0; min-height: 44px; align-items: center; }
+  .arena-character-caption > div { min-width: 0; }
+  .arena-character-caption h2 { font-size: 18px; }
+  .arena-favorite { min-height: 44px; padding: 8px 11px; }
+  .arena-favorite span { display: inline; }
+  .arena-proof { grid-area: proof; margin: 16px 0; gap: 20px; }
+  .arena-proof > div { flex-direction: row; align-items: baseline; gap: 6px; }
+  .arena-proof strong { font-size: 15px; }
+  .arena-proof span { font-size: 8px; }
+  .arena-proof .arena-proof-note { display: none; }
+  .arena-roster { display: block; padding: 8px 0 10px; }
+  .arena-roster-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; gap: 8px; }
+  .arena-roster-heading p { display: none; }
+  .arena-autoplay { min-height: 44px; }
+  .arena-hero-list { margin: 0 -16px; padding: 4px 16px 8px; }
+  .arena-hero-option { min-height: 48px; }
+  .arena-footer { flex-wrap: wrap; gap: 8px; font-size: 7px; }
+  .arena-footer > span { flex-basis: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bv-arena * { transition: none !important; scroll-behavior: auto !important; }
+  .arena-primary:hover { transform: none; }
+}
+`;
+
 export const Hero = () => {
   const { loading, heroCatalog, selectedKey, selectHero } = useHero();
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -755,12 +857,13 @@ export const Hero = () => {
   const [hasTeam, setHasTeam] = useState(false);
   const [isSavingHero, setIsSavingHero] = useState(false);
   const [activeCatalogIndex, setActiveCatalogIndex] = useState(0);
-  const [isGlitching, setIsGlitching] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const [saveError, setSaveError] = useState('');
   const [autoShowcaseActive, setAutoShowcaseActive] = useState(true);
   const [lastInteractionTime, setLastInteractionTime] = useState(Date.now());
 
   const [panelStats, setPanelStats] = useState<HeroPanelStats>({
-    season: 'S4', teams: '6', players: '120+', prize: '₵12.8K',
+    season: 'Arena', teams: '—', players: '—', prize: '—',
   });
 
   useEffect(() => {
@@ -811,17 +914,15 @@ export const Hero = () => {
   }, [heroCatalog, selectedKey]);
 
   useEffect(() => {
-    if (heroCatalog.length <= 1) return;
+    if (heroCatalog.length <= 1 || reducedMotion) return;
     const interval = setInterval(() => {
       const isIdle = Date.now() - lastInteractionTime > 10000;
       if (autoShowcaseActive && isIdle) {
-        setIsGlitching(true);
         setActiveCatalogIndex(prev => (prev + 1) % heroCatalog.length);
-        setTimeout(() => setIsGlitching(false), 350);
       }
     }, 6000);
     return () => clearInterval(interval);
-  }, [heroCatalog, autoShowcaseActive, lastInteractionTime]);
+  }, [heroCatalog, autoShowcaseActive, lastInteractionTime, reducedMotion]);
 
   const activeHero = useMemo(() =>
     heroCatalog.length === 0 ? null : heroCatalog[activeCatalogIndex] || heroCatalog[0],
@@ -834,16 +935,17 @@ export const Hero = () => {
   const handleSelectHero = (hero: HeroCatalogItem) => {
     const idx = heroCatalog.findIndex(h => h.key === hero.key);
     if (idx !== -1) {
-      setIsGlitching(true);
       setActiveCatalogIndex(idx);
       setLastInteractionTime(Date.now());
-      setTimeout(() => setIsGlitching(false), 350);
+      setAutoShowcaseActive(false);
     }
   };
 
   const handleLockFavorite = async (hero: HeroCatalogItem) => {
+    if (isSavingHero) return;
+    setSaveError('');
     try { setIsSavingHero(true); await selectHero(hero); }
-    catch { /* ignore */ }
+    catch { setSaveError('Could not save your hero. Please try again.'); }
     finally { setIsSavingHero(false); }
   };
 
@@ -856,41 +958,15 @@ export const Hero = () => {
     setLastInteractionTime(Date.now());
   };
 
-  const sharedProps = {
-    heroImage: activeImage, heroName: activeName, heroCatalog,
-    activeKey, selectedKey, onSelectHero: handleSelectHero,
-    onLockHero: handleLockFavorite, isSaving: isSavingHero,
-    isGlitching, stats: panelStats, onRegisterClick: handleRegisterClick,
-    hasTeam, autoShowcaseActive, toggleAutoShowcase,
-  };
-
   return (
     <>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&display=swap');`}</style>
-
-      {loading || heroCatalog.length === 0 ? (
-        <section className="relative w-full overflow-hidden flex items-center justify-center"
-          style={{ background: '#020408', minHeight: '100vh' }}>
-          <div className="absolute inset-0">
-            <video autoPlay loop muted playsInline preload="metadata"
-              className="w-full h-full object-cover" style={{ opacity: 0.4 }}>
-              <source src="/vid/hero.mp4" type="video/mp4" />
-            </video>
-            <div className="absolute inset-0 bg-[#020408]/60" />
-          </div>
-          <div className="relative z-10 flex items-center gap-2 font-mono text-[11px] tracking-widest uppercase"
-            style={{ color: '#e8a000' }}>
-            <span className="w-1.5 h-1.5 rounded-full bg-[#e8a000] animate-pulse" />
-            LOADING ARENA...
-          </div>
-        </section>
-      ) : (
-        <>
-          <MobileHero {...sharedProps} />
-          <DesktopHero {...sharedProps} />
-          <LoginRequiredModal open={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
-        </>
-      )}
+      <ArenaHero heroImage={activeImage} heroName={activeName} heroes={heroCatalog}
+        activeKey={activeKey} selectedKey={selectedKey} onSelect={handleSelectHero}
+        onSave={handleLockFavorite} saving={isSavingHero} stats={panelStats}
+        onRegister={handleRegisterClick} hasTeam={hasTeam}
+        auto={autoShowcaseActive && !reducedMotion} onToggleAuto={toggleAutoShowcase}
+        reducedMotion={!!reducedMotion} loading={loading} saveError={saveError} />
+      <LoginRequiredModal open={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
     </>
   );
 };
