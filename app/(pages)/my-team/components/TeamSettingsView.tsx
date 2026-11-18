@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { Camera, Shield, Save, Loader2, MapPin, Tag, UploadCloud, Image as ImageIcon, Trash2, Copy, Check, Key } from 'lucide-react';
 import { toast } from 'sonner';
 import { fileToCompressedDataUrl } from '@/lib/supabase';
@@ -122,11 +123,11 @@ export default function TeamSettingsView({
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8">
-      <div className="p-6 rounded-3xl bg-[#0f0f17] border border-white/10 shadow-2xl space-y-6">
+    <div className="w-full space-y-8">
+      <div className="p-4 sm:p-6 rounded-2xl bg-[#101a28] border border-white/10 shadow-2xl space-y-6">
         <div>
-          <h3 className="text-xl font-black uppercase tracking-wide text-white flex items-center gap-2">
-            <Shield className="text-amber-400" size={20} /> Squad Identity &amp; Customization
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Shield className="text-amber-400" size={20} /> Team identity
           </h3>
           <p className="text-zinc-400 text-xs mt-1">
             Update your squad name, clan tag, region, logo, and banner image.
@@ -134,7 +135,7 @@ export default function TeamSettingsView({
         </div>
 
         {/* ── Permanent Team Code Display ── */}
-        <div className="p-4 rounded-2xl bg-black/40 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="p-4 rounded-lg bg-black/40 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <p className="text-white text-xs font-black uppercase tracking-wide flex items-center gap-1.5">
               <Key size={14} className="text-amber-400" /> Permanent Team Code
@@ -154,7 +155,7 @@ export default function TeamSettingsView({
                   toast.success('Team Code copied to clipboard!');
                   setTimeout(() => setCopiedCode(false), 2000);
                 }}
-                className="p-1 rounded hover:bg-white/10 text-zinc-300 transition-colors"
+                className="min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-white/10 text-zinc-300 transition-colors"
                 title="Copy Team Code"
               >
                 {copiedCode ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
@@ -177,22 +178,23 @@ export default function TeamSettingsView({
                 onChange={(e) => setName(e.target.value)}
                 disabled={!isCaptain}
                 required
-                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 disabled:opacity-50"
+                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-base sm:text-sm text-white focus:outline-none focus:border-amber-400 disabled:opacity-50"
               />
             </div>
 
             <div>
               <label className="block text-xs font-bold uppercase text-zinc-400 mb-1.5 flex items-center gap-1.5">
-                <Tag size={14} /> Clan Tag (2-5 Chars)
+                <Tag size={14} /> Clan Tag (3–5 characters)
               </label>
               <input
                 type="text"
                 value={tag}
                 onChange={(e) => setTag(e.target.value.toUpperCase())}
                 disabled={!isCaptain}
+                minLength={3}
                 maxLength={5}
                 required
-                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 uppercase font-mono disabled:opacity-50"
+                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-base sm:text-sm text-white focus:outline-none focus:border-amber-400 uppercase font-mono disabled:opacity-50"
               />
             </div>
           </div>
@@ -206,7 +208,7 @@ export default function TeamSettingsView({
                 value={region}
                 onChange={(e) => setRegion(e.target.value)}
                 disabled={!isCaptain}
-                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 disabled:opacity-50"
+                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-base sm:text-sm text-white focus:outline-none focus:border-amber-400 disabled:opacity-50"
               >
                 {REGIONS.map((r) => (
                   <option key={r} value={r}>
@@ -221,9 +223,9 @@ export default function TeamSettingsView({
                 <Camera size={14} /> Squad Logo
               </label>
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                <div className="w-16 h-16 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden shrink-0 relative">
                   {logoUrl ? (
-                    <img src={logoUrl} alt="Squad Logo" className="w-full h-full object-cover" />
+                    <Image src={logoUrl} alt="Squad Logo" fill className="object-cover" unoptimized />
                   ) : (
                     <Shield size={24} className="text-white/20" />
                   )}
@@ -258,10 +260,10 @@ export default function TeamSettingsView({
             </p>
 
             {bannerUrl ? (
-              <div className="relative rounded-2xl overflow-hidden border border-white/10 aspect-[21/9] sm:aspect-[21/7] bg-black group">
-                <img src={bannerUrl} alt="Squad Banner Preview" className="w-full h-full object-cover" />
+              <div className="relative rounded-lg overflow-hidden border border-white/10 aspect-[21/9] sm:aspect-[21/7] bg-black group">
+                <Image src={bannerUrl} alt="Squad Banner Preview" fill className="object-cover" unoptimized />
                 {isCaptain && (
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                  <div className="absolute inset-0 bg-black/60 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
                     <label className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase rounded-xl cursor-pointer transition-colors flex items-center gap-2">
                       {uploadingBanner ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
                       <span>Change File</span>
@@ -285,7 +287,7 @@ export default function TeamSettingsView({
               </div>
             ) : (
               isCaptain && (
-                <label className="w-full h-32 bg-white/[0.02] hover:bg-white/[0.05] border-2 border-dashed border-white/15 hover:border-amber-400/50 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-all group">
+                <label className="w-full h-32 bg-white/[0.02] hover:bg-white/[0.05] border-2 border-dashed border-white/15 hover:border-amber-400/50 rounded-lg flex flex-col items-center justify-center gap-2 cursor-pointer transition-all group">
                   {uploadingBanner ? (
                     <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
                       <Loader2 size={18} className="animate-spin" /> Uploading Banner File...
@@ -316,7 +318,7 @@ export default function TeamSettingsView({
               <button
                 type="submit"
                 disabled={saving || uploadingLogo || uploadingBanner}
-                className="px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg disabled:opacity-50 transition-all"
+                className="px-6 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg disabled:opacity-50 transition-all"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 <span>Save Squad Settings</span>

@@ -1,3 +1,5 @@
+import { isTeamApplication, invitedRole } from '@/lib/team-invites';
+import { parseTeamRole, TeamActionError } from '@/lib/team-lineup';
 import { NextRequest } from "next/server";
 import type { Prisma } from "@/app/generated/prisma/client";
 import {
@@ -31,16 +33,6 @@ export async function GET(
       return apiError("Only team captain can view invites", 403);
     }
 
-    // Auto-expire outdated pending invites
-    await prisma.teamInvite.updateMany({
-      where: {
-        teamId: id,
-        status: InviteStatus.PENDING,
-        expiresAt: { lte: new Date() },
-      },
-      data: { status: InviteStatus.DECLINED },
-    });
-
     const where: Prisma.TeamInviteWhereInput = { teamId: id };
 
     
@@ -69,7 +61,7 @@ export async function GET(
         fromUser: {
           select: { id: true, ign: true, photo: true, mainRole: true },
         },
-        team: { select: { id: true, name: true, tag: true } },
+        team: { select: { id: true, name: true, tag: true, captainId: true } },
       },
       orderBy: { sentAt: "desc" },
     });
@@ -81,8 +73,9 @@ export async function GET(
       return true;
     });
 
-    return apiSuccess(filtered);
+    return apiSuccess(filtered.map(invite => ({ ...invite, kind: isTeamApplication(invite) ? 'APPLICATION' : 'INVITE', role: invitedRole(invite.message) })));
   } catch (error: unknown) {
+    if (error instanceof TeamActionError) return apiError(error.message, error.status);
     const message = error instanceof Error ? error.message : "Failed to fetch invites";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
     console.error("Get team invites error:", error);
@@ -102,6 +95,7 @@ export async function POST(
     const targetIGN = (body.toIGN || body.ign)?.trim();
     const role = body.role ? String(body.role).toUpperCase() : undefined;
     const { message } = body;
+    if (role) parseTeamRole(role);
 
     if (!targetIGN) {
       return apiError("Target IGN is required");
@@ -155,6 +149,7 @@ export async function POST(
         teamId: id,
         toIGN: { equals: targetUser.ign, mode: "insensitive" },
         status: InviteStatus.PENDING,
+        expiresAt: { gt: new Date() },
       },
     });
 
@@ -180,7 +175,7 @@ export async function POST(
       where: {
         teamId: id,
         toIGN: { equals: targetUser.ign, mode: "insensitive" },
-        status: { in: [InviteStatus.CANCELLED, InviteStatus.DECLINED, InviteStatus.EXPIRED] },
+        OR: [{ status: { not: InviteStatus.PENDING } }, { expiresAt: { lte: new Date() } }],
       },
     });
 
@@ -194,7 +189,7 @@ export async function POST(
         fromUserId: user.id,
         toIGN: targetUser.ign,
         toUserId: targetUser.id,
-        message: message || null,
+        message: [role ? 'Invited Role: ' + role : null, message].filter(Boolean).join(' ? ') || null,
         expiresAt,
         status: InviteStatus.PENDING,
       },
@@ -236,6 +231,7 @@ export async function POST(
       201
     );
   } catch (error: unknown) {
+    if (error instanceof TeamActionError) return apiError(error.message, error.status);
     const message = error instanceof Error ? error.message : "Failed to send invite";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
     console.error("Send invite error:", error);
@@ -271,7 +267,7 @@ export async function DELETE(
       where: { id: inviteId },
     });
 
-    if (!invite || invite.teamId !== id) {
+    if (!invite || invite.teamId !== id || invite.status !== 'PENDING') {
       return apiError("Invite not found", 404);
     }
 
@@ -303,6 +299,7 @@ export async function DELETE(
 
     return apiSuccess({ message: "Invite cancelled successfully" });
   } catch (error: unknown) {
+    if (error instanceof TeamActionError) return apiError(error.message, error.status);
     const message = error instanceof Error ? error.message : "Failed to cancel invite";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
     console.error("Cancel invite error:", error);

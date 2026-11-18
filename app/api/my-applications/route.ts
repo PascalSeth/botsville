@@ -1,3 +1,4 @@
+import { isTeamApplication } from '@/lib/team-invites';
 import { NextRequest } from "next/server";
 import { requireActiveUser, apiError, apiSuccess, formatHumanError } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
@@ -12,24 +13,19 @@ export async function GET() {
   try {
     const user = await requireActiveUser();
 
-    // Auto-expire outdated applications first
-    await prisma.teamInvite.updateMany({
-      where: {
-        fromUserId: user.id,
-        status: "PENDING",
-        expiresAt: { lte: new Date() },
-      },
-      data: { status: "DECLINED" },
-    });
-
     const applications = await prisma.teamInvite.findMany({
       where: {
         fromUserId: user.id,
+        team: { deletedAt: null },
         status: "PENDING",
         expiresAt: { gt: new Date() },
       },
       select: {
         id: true,
+        fromUserId: true,
+        fromUser: { select: { ign: true } },
+        toUserId: true,
+        toIGN: true,
         teamId: true,
         message: true,
         sentAt: true,
@@ -37,6 +33,7 @@ export async function GET() {
         team: {
           select: {
             id: true,
+            captainId: true,
             name: true,
             tag: true,
             logo: true,
@@ -47,7 +44,7 @@ export async function GET() {
       orderBy: { sentAt: "desc" },
     });
 
-    return apiSuccess({ applications });
+    return apiSuccess({ applications: applications.filter(isTeamApplication) });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return apiSuccess({ applications: [] });
@@ -73,14 +70,15 @@ export async function DELETE(request: NextRequest) {
     }
 
     const whereClause = id
-      ? { id, fromUserId: user.id }
+      ? { id, fromUserId: user.id, status: "PENDING" as const }
       : { teamId: teamId!, fromUserId: user.id, status: "PENDING" as const };
 
     const application = await prisma.teamInvite.findFirst({
       where: whereClause,
+      include: { fromUser: { select: { ign: true } }, team: { select: { captainId: true } } },
     });
 
-    if (!application) {
+    if (!application || !isTeamApplication(application)) {
       return apiError("Pending application not found", 404);
     }
 

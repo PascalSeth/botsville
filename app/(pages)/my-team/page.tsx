@@ -3,9 +3,8 @@
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Shield, User, Users, Plus, AlertCircle, X, Loader2, Trash2,
-  Crown, ArrowUpDown, Send, Trophy, Swords, UserCheck, Settings,
-  Sparkles, Camera, MapPin, Tag, Check, Copy, Clock, Mail
+  Shield, Users, X, Loader2, Swords, UserCheck, Settings,
+  Check, Clock, Mail, Gamepad2
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
@@ -13,10 +12,14 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { toast } from 'sonner';
 
+import TeamHero from './components/TeamHero';
 import TeamRosterView from './components/TeamRosterView';
 import TeamRecruitmentView from './components/TeamRecruitmentView';
 import TeamChallengeArenaView from './components/TeamChallengeArenaView';
 import TeamSettingsView from './components/TeamSettingsView';
+import TeamLeadershipView from './components/TeamLeadershipView';
+import styles from './my-team.module.css';
+import type { TeamRequest } from './components/team-types';
 
 interface Player {
   id: string;
@@ -64,6 +67,7 @@ interface TeamOption {
 }
 
 interface TeamInvite {
+  kind?: 'APPLICATION' | 'INVITE';
   id: string;
   sentAt?: string | null;
   createdAt?: string | null;
@@ -92,19 +96,17 @@ export function MyTeamContent() {
   const searchParams = useSearchParams();
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
+  const [teamLoadError, setTeamLoadError] = useState(false);
   const [activeTab, setActiveTab] = useState<'roster' | 'recruitment' | 'challenges' | 'settings'>('roster');
 
   // ── Sync Active Tab from URL Query Param (e.g. ?tab=recruitment) ──
   useEffect(() => {
     const tab = searchParams?.get('tab');
     if (tab && ['roster', 'recruitment', 'challenges', 'settings'].includes(tab)) {
-      setActiveTab(tab as any);
+      setActiveTab(tab as typeof activeTab);
     }
   }, [searchParams]);
 
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
-  const [copiedHeaderCode, setCopiedHeaderCode] = useState(false);
-  const [generatingCode, setGeneratingCode] = useState(false);
   const [challenges, setChallenges] = useState<MatchChallenge[]>([]);
   const [loadingChallenges, setLoadingChallenges] = useState(false);
   const [teamOptions, setTeamOptions] = useState<TeamOption[]>([]);
@@ -125,12 +127,12 @@ export function MyTeamContent() {
       color?: string | null;
     };
   }>>([]);
-  const [loadingMyApps, setLoadingMyApps] = useState(false);
+  const [, setLoadingMyApps] = useState(false);
   const [withdrawingAppId, setWithdrawingAppId] = useState<string | null>(null);
 
   // ── Received Invites (when squads invited the user) ──
-  const [receivedInvites, setReceivedInvites] = useState<Array<any>>([]);
-  const [loadingReceivedInvites, setLoadingReceivedInvites] = useState(false);
+  const [receivedInvites, setReceivedInvites] = useState<Array<TeamRequest & { team?: { name: string; tag: string; logo?: string | null } }>>([]);
+  const [, setLoadingReceivedInvites] = useState(false);
   const [respondingInviteId, setRespondingInviteId] = useState<string | null>(null);
 
   const fetchMyApplications = useCallback(async () => {
@@ -205,10 +207,11 @@ export function MyTeamContent() {
   };
 
   // ── Fetch User's Team ──────────────────────────────────────
-  const fetchMyTeam = useCallback(async () => {
+  const fetchMyTeam = useCallback(async (initial = false) => {
     try {
-      setLoading(true);
-      const res = await fetch('/api/my-team');
+      if (initial) setLoading(true);
+      setTeamLoadError(false);
+      const res = await fetch('/api/my-team', { cache: 'no-store' });
       if (res.ok) {
         const d = await res.json();
         const teamObj = d && (d.id ? d : d.team ? d.team : null);
@@ -219,11 +222,11 @@ export function MyTeamContent() {
           setTeam(null);
         }
       } else {
-        setTeam(null);
+        throw new Error('Unable to load team');
       }
     } catch {
-      toast.error('Failed to load team details');
-      setTeam(null);
+      setTeamLoadError(true);
+      toast.error('Failed to load team details. Please refresh and try again.');
     } finally {
       setLoading(false);
     }
@@ -231,7 +234,7 @@ export function MyTeamContent() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      fetchMyTeam();
+      fetchMyTeam(true);
       fetchMyApplications();
       fetchReceivedInvites();
     } else if (status === 'unauthenticated') {
@@ -241,7 +244,7 @@ export function MyTeamContent() {
 
   // ── Fetch Pending Applications/Invites ────────────────────
   const fetchInvites = useCallback(async () => {
-    if (!team?.id) return;
+    if (!team?.id || !team.isCaptain) { setInvites([]); return; }
     try {
       setLoadingInvites(true);
       const res = await fetch(`/api/teams/${team.id}/invites`, { cache: 'no-store' });
@@ -254,7 +257,7 @@ export function MyTeamContent() {
     } finally {
       setLoadingInvites(false);
     }
-  }, [team?.id]);
+  }, [team?.id, team?.isCaptain]);
 
 
   // ── Fetch Challenges ──────────────────────────────────────
@@ -298,66 +301,31 @@ export function MyTeamContent() {
   }, [team, fetchInvites, fetchChallenges, fetchTeamOptions]);
 
   // ── Invite Code Generator ─────────────────────────────────
-  const generateInviteCode = async () => {
-    if (!team) return;
-    setGeneratingCode(true);
-    try {
-      const res = await fetch(`/api/teams/${team.id}/invite-links`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maxUses: 10 }),
-      });
-      const d = await res.json();
-      if (res.ok && d.link?.code) {
-        setInviteCode(d.link.code);
-        toast.success('Generated Team Invite Code!');
-      }
-    } catch {
-      toast.error('Failed to generate invite code');
-    } finally {
-      setGeneratingCode(false);
-    }
-  };
 
   // ── Remove Player from Roster ─────────────────────────────
-  const handleRemovePlayer = async (playerId: string) => {
-    if (!team) return;
+  const handleRemovePlayer = async (playerId: string): Promise<boolean> => {
+    if (!team) return false;
     try {
-      const res = await fetch(`/api/teams/${team.id}/players/${playerId}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        toast.success('Player removed from squad');
-        fetchMyTeam();
-      } else {
-        toast.error(data.error || 'Failed to remove player');
-      }
-    } catch {
-      toast.error('Error removing player');
-    }
+      const res = await fetch('/api/teams/' + team.id + '/players/' + playerId, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to update membership');
+      toast.success('Player removed from squad');
+      await fetchMyTeam();
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to update membership'); return false; }
   };
-
   // ── Leave Team ───────────────────────────────────────────
-  const handleLeaveTeam = async (playerId: string) => {
-    if (!team) return;
+  const handleLeaveTeam = async (playerId: string): Promise<boolean> => {
+    if (!team) return false;
     try {
-      const res = await fetch(`/api/teams/${team.id}/players/${playerId}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        toast.success('You have left the squad');
-        setTeam(null);
-        fetchMyTeam();
-      } else {
-        toast.error(data.error || 'Failed to leave squad');
-      }
-    } catch {
-      toast.error('Error leaving squad');
-    }
+      const res = await fetch('/api/teams/' + team.id + '/players/' + playerId, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to update membership');
+      toast.success('You have left the squad');
+      await fetchMyTeam();
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to update membership'); return false; }
   };
-
   // ── Edit / Substitute Player (Role / Swap / Promotion / Photo) ──────
   const handleEditPlayer = async (
     playerId: string,
@@ -418,82 +386,43 @@ export function MyTeamContent() {
   };
 
   // ── Cancel Sent Invite ────────────────────────────────────
-  const handleCancelInvite = async (inviteId: string) => {
-    if (!team) return;
+  const handleCancelInvite = async (inviteId: string): Promise<boolean> => {
+    if (!team) return false;
     try {
-      const res = await fetch(`/api/teams/${team.id}/invites?inviteId=${inviteId}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        toast.success('Invite cancelled');
-        fetchInvites();
-      } else {
-        const err = await res.json();
-        toast.error(err.error || 'Failed to cancel invite');
-      }
-    } catch {
-      toast.error('Error cancelling invite');
-    }
+      const res = await fetch('/api/teams/' + team.id + '/invites?inviteId=' + inviteId, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to cancel invite');
+      toast.success('Invite cancelled');
+      await fetchInvites();
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Failed to cancel invite'); return false; }
   };
-
   // ── Toggle Recruiting ─────────────────────────────────────
-  const handleToggleRecruiting = async (val: boolean) => {
-    if (!team) return;
-    try {
-      const res = await fetch(`/api/teams/${team.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isRecruiting: val }),
-      });
-      if (res.ok) {
-        setTeam((prev) => (prev ? { ...prev, isRecruiting: val } : prev));
-        toast.success(val ? 'Recruitment opened!' : 'Recruitment paused');
-      }
-    } catch {
-      toast.error('Failed to update recruitment state');
-    }
+  const handleToggleRecruiting = async (isRecruiting: boolean): Promise<boolean> => {
+    try { await handleUpdateTeamSettings({ isRecruiting }); toast.success(isRecruiting ? 'Applications opened' : 'Applications paused'); return true; }
+    catch (error) { toast.error(error instanceof Error ? error.message : 'Failed to update recruitment'); return false; }
   };
-
   // ── Respond to Applicant Invite ───────────────────────────
-  const handleAcceptInvite = async (inviteId: string) => {
+  const handleAcceptInvite = async (inviteId: string, placement: { role: string; isSubstitute: boolean }): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/invites/${inviteId}/respond`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'accept' }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        toast.success('Applicant accepted to roster!');
-        fetchInvites();
-        fetchMyTeam();
-      } else {
-        toast.error(data?.error || 'Failed to accept applicant');
-      }
-    } catch {
-      toast.error('Failed to accept applicant');
-    }
+      const res = await fetch('/api/invites/' + inviteId + '/respond', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'accept', ...placement }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to respond to application');
+      toast.success(data.message || 'Application updated');
+      await Promise.all([fetchInvites(), fetchMyTeam()]);
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to respond to application'); return false; }
   };
-
-  const handleDeclineInvite = async (inviteId: string) => {
+  const handleDeclineInvite = async (inviteId: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/invites/${inviteId}/respond`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'decline' }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        toast.info('Application declined');
-        fetchInvites();
-      } else {
-        toast.error(data?.error || 'Failed to decline application');
-      }
-    } catch {
-      toast.error('Failed to decline application');
-    }
+      const res = await fetch('/api/invites/' + inviteId + '/respond', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'decline' }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to respond to application');
+      toast.success(data.message || 'Application updated');
+      await Promise.all([fetchInvites(), fetchMyTeam()]);
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to respond to application'); return false; }
   };
-
 
   // ── Send Challenge ────────────────────────────────────────
   const handleSendChallenge = async (challengedTeamId: string) => {
@@ -504,67 +433,6 @@ export function MyTeamContent() {
     });
     if (!res.ok) throw new Error('Challenge failed');
     fetchChallenges();
-  };
-
-  const [uploadingHeaderBanner, setUploadingHeaderBanner] = useState(false);
-  const [uploadingHeaderLogo, setUploadingHeaderLogo] = useState(false);
-
-  const handleHeaderBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !team) return;
-    setUploadingHeaderBanner(true);
-    try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const imageDataUrl = reader.result as string;
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: imageDataUrl, type: 'teams', bucket: 'images' }),
-        });
-        const data = await res.json();
-        if (res.ok && data.url) {
-          await handleUpdateTeamSettings({ banner: data.url });
-          toast.success('Team banner updated!');
-        } else {
-          toast.error(data.error || 'Upload failed');
-        }
-        setUploadingHeaderBanner(false);
-      };
-      reader.readAsDataURL(file);
-    } catch {
-      toast.error('Upload failed');
-      setUploadingHeaderBanner(false);
-    }
-  };
-
-  const handleHeaderLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !team) return;
-    setUploadingHeaderLogo(true);
-    try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const imageDataUrl = reader.result as string;
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: imageDataUrl, type: 'teams', bucket: 'images' }),
-        });
-        const data = await res.json();
-        if (res.ok && data.url) {
-          await handleUpdateTeamSettings({ logo: data.url });
-          toast.success('Squad logo updated!');
-        } else {
-          toast.error(data.error || 'Upload failed');
-        }
-        setUploadingHeaderLogo(false);
-      };
-      reader.readAsDataURL(file);
-    } catch {
-      toast.error('Upload failed');
-      setUploadingHeaderLogo(false);
-    }
   };
 
   // ── Respond to Challenge ──────────────────────────────────
@@ -580,54 +448,69 @@ export function MyTeamContent() {
 
   // ── Update Squad Settings ─────────────────────────────────
   const handleUpdateTeamSettings = async (updates: Partial<Team>) => {
-    if (!team) return;
-    const res = await fetch(`/api/teams/${team.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    setTeam((prev) => (prev ? { ...prev, ...updates } : prev));
+    if (!team) throw new Error('Team not loaded');
+    const res = await fetch('/api/teams/' + team.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unable to save team settings');
+    setTeam(prev => prev ? { ...prev, ...data.team, isCaptain: data.team.captainId === session?.user?.id } : prev);
   };
 
+  const handleTransferCaptaincy = async (captainId: string): Promise<boolean> => {
+    try {
+      await handleUpdateTeamSettings({ captainId });
+      setInvites([]);
+      await fetchMyTeam();
+      toast.success('Captaincy transferred. You are still on the team.');
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to transfer captaincy'); return false; }
+  };
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#07070c] flex flex-col items-center justify-center pt-28 md:pt-36 text-center">
+      <div className="min-h-screen bg-[#07070c] flex flex-col items-center justify-center pt-20 text-center">
         <Loader2 size={36} className="animate-spin text-amber-400 mb-3" />
         <p className="text-xs font-mono font-black uppercase tracking-widest text-zinc-500">Loading Squad Hub...</p>
       </div>
     );
   }
 
+  if (teamLoadError && !team) return <div className="min-h-screen bg-[#07070c] px-4 pt-24 text-center text-white"><p>Unable to load your team.</p><button className="mt-4 rounded-xl bg-amber-400 px-5 py-3 font-bold text-black" onClick={() => void fetchMyTeam(true)}>Try again</button></div>;
+
   // If user is not on a team, show Register / Join Squad Hero Banner & Active Applications/Invites
   if (!team) {
     return (
-      <div className="min-h-screen bg-[#07070c] text-white pt-28 md:pt-36 pb-20 px-4">
-        <div className="max-w-4xl mx-auto space-y-8">
+      <div className="min-h-screen bg-[#07070c] text-white pt-20 sm:pt-22 md:pt-24 pb-20 px-3 sm:px-4">
+        <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
           {/* Hero Banner */}
-          <div className="text-center space-y-8 p-10 rounded-3xl bg-gradient-to-b from-[#12121c] to-[#07070c] border border-white/10 shadow-2xl relative overflow-hidden">
-            <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto">
-              <Shield size={40} />
+          <div className="text-center space-y-5 sm:space-y-7 p-6 sm:p-10 rounded-2xl sm:rounded-3xl bg-gradient-to-b from-[#121824] via-[#0d1420] to-[#07070c] border border-amber-500/20 shadow-2xl relative overflow-hidden">
+            {/* Ambient cyber glow */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-72 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl sm:rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto shadow-lg shadow-amber-500/10">
+              <Shield size={36} className="text-amber-400" />
             </div>
 
-            <div className="space-y-3">
-              <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
+            <div className="space-y-2.5">
+              <span className="text-[10px] sm:text-xs font-mono font-bold uppercase tracking-widest text-amber-400/90 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full inline-block">
+                Botsville Ghana // Free Agent Hub
+              </span>
+              <h1 className="text-2xl sm:text-4xl font-black uppercase tracking-tight text-white">
                 You Are Not in a Squad
               </h1>
-              <p className="text-zinc-400 text-sm max-w-lg mx-auto leading-relaxed">
+              <p className="text-zinc-400 text-xs sm:text-sm max-w-lg mx-auto leading-relaxed">
                 Assemble your roster, register your clan tag, or apply to join an active squad competing in Botsville tournaments.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 pt-2">
               <Link
                 href="/register-team"
-                className="px-8 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider text-xs shadow-xl shadow-amber-500/20 transition-all flex items-center gap-2"
+                className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider text-xs shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2 min-h-[44px]"
               >
                 <Users size={16} /> Register New Squad
               </Link>
               <Link
                 href="/teams"
-                className="px-8 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-wider text-xs border border-white/10 transition-all flex items-center gap-2"
+                className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-wider text-xs border border-white/10 transition-all flex items-center justify-center gap-2 min-h-[44px]"
               >
                 <Swords size={16} /> Explore Active Teams
               </Link>
@@ -756,7 +639,7 @@ export function MyTeamContent() {
                     <div className="flex items-center gap-2 pt-3 border-t border-emerald-500/20">
                       <button
                         onClick={() => handleRespondReceivedInvite(inv.id, 'accept')}
-                        disabled={respondingInviteId === inv.id}
+                        disabled={Boolean(respondingInviteId)}
                         className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md disabled:opacity-50"
                       >
                         {respondingInviteId === inv.id ? (
@@ -769,7 +652,7 @@ export function MyTeamContent() {
 
                       <button
                         onClick={() => handleRespondReceivedInvite(inv.id, 'decline')}
-                        disabled={respondingInviteId === inv.id}
+                        disabled={Boolean(respondingInviteId)}
                         className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 border border-white/10 transition-all disabled:opacity-50"
                       >
                         <X size={13} />
@@ -787,238 +670,50 @@ export function MyTeamContent() {
   }
 
   const isCaptain = Boolean(team.isCaptain);
-  const incomingApplications = invites.filter((inv) => (inv.fromUserId || inv.fromUser?.id) !== team.captainId);
-  const sentInvites = invites.filter((inv) => (inv.fromUserId || inv.fromUser?.id) === team.captainId);
+  const incomingApplications = invites.filter(inv => inv.kind === 'APPLICATION');
+  const sentInvites = invites.filter(inv => inv.kind === 'INVITE');
+
+  const captain = team.players.find(player => player.user?.id === team.captainId);
+  const tabs = [
+    { key: 'roster', label: 'Lineup', mobileLabel: 'Lineup', detail: 'Players & positions', icon: Shield, badge: 0 },
+    { key: 'recruitment', label: 'Recruitment', mobileLabel: 'Recruit', detail: 'Build your squad', icon: UserCheck, badge: incomingApplications.length },
+    { key: 'challenges', label: 'Match lobby', mobileLabel: 'Matches', detail: 'Find your next rival', icon: Swords, badge: challenges.length },
+    { key: 'settings', label: 'Team settings', mobileLabel: 'Settings', detail: 'Identity & captaincy', icon: Settings, badge: 0 },
+  ] as const;
 
   return (
-    <div className="min-h-screen bg-[#07070c] text-white pt-24 pb-20">
-      {/* ── Squad Header Backdrop & Hero ───────────────────────── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-6">
-        <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#0d0d14] shadow-2xl">
-          {/* Cover Banner Backdrop */}
-          <div className="relative h-48 sm:h-64 w-full bg-gradient-to-r from-amber-950/40 via-zinc-900 to-black overflow-hidden group">
-            {team.banner ? (
-              <Image src={team.banner} alt={team.name} fill className="object-cover opacity-60" priority />
-            ) : (
-              <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-transparent to-amber-500/5" />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d14] via-[#0d0d14]/40 to-transparent" />
+    <div className={styles.shell}>
+      <div className={styles.frame}>
+        <TeamHero team={team} isCaptain={isCaptain} />
+        <div className={styles.workspace}>
+          <aside className={styles.sidebar}>
+            <div className={styles.sidebarLabel + ' ' + styles.eyebrow}>Control room</div>
+            <nav className={styles.tabs} aria-label="Team sections">
+              {tabs.map(tab => <button key={tab.key} aria-current={activeTab === tab.key ? 'page' : undefined} onClick={() => setActiveTab(tab.key)} className={styles.navItem + (activeTab === tab.key ? ' ' + styles.navActive : '')}>
+                <tab.icon size={17} strokeWidth={1.5} className="shrink-0" />
+                <span className={styles.navText}><strong><span className={styles.desktopNavLabel}>{tab.label}</span><span className={styles.mobileNavLabel}>{tab.mobileLabel}</span></strong><small>{tab.detail}</small></span>
+                {tab.badge > 0 && <span className={styles.navBadge}>{tab.badge}</span>}
+              </button>)}
+            </nav>
+            <div className={styles.sidebarFoot}>
+              <Gamepad2 size={24} strokeWidth={1} className="mb-4 text-slate-600" />
+              <p className={styles.eyebrow}>Your squad</p>
+              <p className="mt-3 text-xs font-semibold text-slate-300">{team.players.length} / 20 players</p>
+              <p className="mt-2 text-[10px] leading-relaxed text-slate-500">Captain: {captain?.ign || 'Assigned'}</p>
 
-            {/* Captain Banner File Upload Button Overlay */}
-            {isCaptain && (
-              <label className="absolute top-4 right-4 z-20 px-3.5 py-2 rounded-xl bg-black/60 hover:bg-black/80 border border-white/15 text-white text-xs font-bold uppercase tracking-wider cursor-pointer backdrop-blur-md transition-all flex items-center gap-2">
-                {uploadingHeaderBanner ? (
-                  <><Loader2 size={14} className="animate-spin text-amber-400" /> Uploading Banner...</>
-                ) : (
-                  <><Camera size={14} className="text-amber-400" /> Change Banner</>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleHeaderBannerUpload}
-                  disabled={uploadingHeaderBanner}
-                />
-              </label>
-            )}
-          </div>
-
-          {/* Banner Content Body */}
-          <div className="p-6 sm:p-8 -mt-16 sm:-mt-20 relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
-            <div className="flex flex-col sm:flex-row sm:items-end gap-5">
-              {/* Logo with Captain Upload Trigger */}
-              <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl bg-zinc-950 border-4 border-[#0d0d14] shadow-2xl overflow-hidden shrink-0 group/logo">
-                {team.logo ? (
-                  <Image src={team.logo} alt={team.name} fill className="object-cover" priority />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-zinc-900 text-amber-400 font-mono font-black text-2xl">
-                    {team.tag}
-                  </div>
-                )}
-
-                {isCaptain && (
-                  <label className="absolute inset-0 bg-black/70 opacity-0 group-hover/logo:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white gap-1 p-2 text-center">
-                    {uploadingHeaderLogo ? (
-                      <Loader2 size={20} className="animate-spin text-amber-400" />
-                    ) : (
-                      <>
-                        <Camera size={18} className="text-amber-400" />
-                        <span className="text-[9px] font-black uppercase tracking-wider">Change Logo</span>
-                      </>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleHeaderLogoUpload}
-                      disabled={uploadingHeaderLogo}
-                    />
-                  </label>
-                )}
-              </div>
-
-              {/* Team Titles & Identifiers */}
-              <div className="space-y-1.5 min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-mono font-black uppercase tracking-wider">
-                    [{team.tag}]
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-lg bg-white/5 border border-white/10 text-zinc-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
-                    <MapPin size={10} /> {team.region}
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
-                    ● {team.status}
-                  </span>
-                </div>
-
-                <h1 className="text-2xl sm:text-4xl font-black uppercase tracking-tight text-white truncate">
-                  {team.name}
-                </h1>
-
-                <p className="text-zinc-400 text-xs">
-                  {team.players.length} / 20 Registered Players ({team.players.filter((p) => !p.isSubstitute).length} Starters)
-                </p>
-              </div>
             </div>
-
-            {/* Quick Team Code Copy Pill & Captain Badge */}
-            <div className="flex flex-wrap items-center gap-3">
-              {team.teamCode && (
-                <div className="flex items-center gap-2 bg-black/70 border border-amber-500/30 px-3.5 py-1.5 rounded-xl">
-                  <span className="text-zinc-400 text-[10px] uppercase font-bold tracking-wider">Squad Code:</span>
-                  <span className="text-amber-400 font-mono font-black text-xs tracking-widest">{team.teamCode}</span>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(team.teamCode!);
-                      setCopiedHeaderCode(true);
-                      toast.success('Squad Join Code copied!');
-                      setTimeout(() => setCopiedHeaderCode(false), 2000);
-                    }}
-                    className="p-1 rounded hover:bg-white/10 text-zinc-300 transition-colors ml-0.5"
-                    title="Copy Squad Code"
-                  >
-                    {copiedHeaderCode ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                  </button>
-                </div>
-              )}
-              {isCaptain && (
-                <span className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
-                  <Crown size={14} /> Team Captain
-                </span>
-              )}
-            </div>
-          </div>
+          </aside>
+          <main className={styles.content}>
+            <AnimatePresence mode="wait">
+              <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: .18 }}>
+                {activeTab === 'roster' && <TeamRosterView team={team} isCaptain={isCaptain} currentUserId={session?.user?.id} onRemovePlayer={handleRemovePlayer} onEditPlayer={handleEditPlayer} onOpenRecruitment={() => setActiveTab('recruitment')} onOpenSettings={() => setActiveTab('settings')} />}
+                {activeTab === 'recruitment' && <TeamRecruitmentView teamId={team.id} players={team.players} isCaptain={isCaptain} isRecruiting={Boolean(team.isRecruiting)} onToggleRecruiting={handleToggleRecruiting} invites={incomingApplications} sentInvites={sentInvites} onAcceptInvite={handleAcceptInvite} onDeclineInvite={handleDeclineInvite} onInvitePlayer={handleInvitePlayer} onCancelInvite={handleCancelInvite} loadingInvites={loadingInvites} teamCode={team.teamCode} />}
+                {activeTab === 'challenges' && <TeamChallengeArenaView teamId={team.id} isCaptain={isCaptain} challenges={challenges} teamOptions={teamOptions} onSendChallenge={handleSendChallenge} onRespondChallenge={handleRespondChallenge} loadingChallenges={loadingChallenges} />}
+                {activeTab === 'settings' && <div className="space-y-8"><div><p className={styles.eyebrow}>04 / Team control</p><h2 className={styles.sectionTitle}>Team settings</h2><p className={styles.sectionSubtitle}>Your identity. Your captain. Your squad.</p></div><TeamLeadershipView team={team} isCaptain={isCaptain} currentUserId={session?.user?.id} onTransferCaptaincy={handleTransferCaptaincy} onLeaveTeam={handleLeaveTeam} /><TeamSettingsView team={team} isCaptain={isCaptain} onUpdateTeamSettings={handleUpdateTeamSettings} /></div>}
+              </motion.div>
+            </AnimatePresence>
+          </main>
         </div>
-      </div>
-
-      {/* ── Glassmorphic Sticky Hub Navigation Bar ────────────── */}
-      <div className="sticky top-20 z-40 bg-[#07070c]/90 backdrop-blur-xl border-y border-white/10 mb-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3 overflow-x-auto py-3 scrollbar-hide">
-            {[
-              { key: 'roster', label: 'Squad Roster', icon: Shield },
-              { key: 'recruitment', label: 'Applications & Trials', icon: UserCheck, badge: incomingApplications.length },
-              { key: 'challenges', label: 'Challenge Arena', icon: Swords, badge: challenges.length },
-              { key: 'settings', label: 'Identity & Customization', icon: Settings },
-            ].map((tab) => {
-              const active = activeTab === tab.key;
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key as any)}
-                  className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all duration-300 relative shrink-0 ${
-                    active
-                      ? 'bg-amber-500 text-black shadow-xl'
-                      : 'bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10 border border-white/5'
-                  }`}
-                >
-                  <Icon size={16} className={active ? 'text-black' : 'text-zinc-400'} />
-                  <span>{tab.label}</span>
-                  {tab.badge !== undefined && tab.badge > 0 && (
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold ${
-                        active ? 'bg-black/20 text-black' : 'bg-amber-500/20 text-amber-400'
-                      }`}
-                    >
-                      {tab.badge}
-                    </span>
-                  )}
-                  {active && (
-                    <motion.div
-                      layoutId="activeMyTeamTab"
-                      className="absolute inset-0 rounded-2xl border-2 border-white/40 pointer-events-none"
-                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Main Tab Content ──────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.25 }}
-          >
-            {activeTab === 'roster' && (
-              <TeamRosterView
-                team={team}
-                isCaptain={isCaptain}
-                currentUserId={session?.user?.id}
-                onRemovePlayer={handleRemovePlayer}
-                onLeaveTeam={handleLeaveTeam}
-                onEditPlayer={handleEditPlayer}
-                onInvitePlayer={handleInvitePlayer}
-                onGenerateTeamCode={generateInviteCode}
-                teamCode={team.teamCode || inviteCode}
-                generatingCode={generatingCode}
-                invites={sentInvites}
-                onCancelInvite={handleCancelInvite}
-              />
-            )}
-
-            {activeTab === 'recruitment' && (
-              <TeamRecruitmentView
-                isCaptain={isCaptain}
-                isRecruiting={Boolean(team.isRecruiting)}
-                onToggleRecruiting={handleToggleRecruiting}
-                invites={incomingApplications}
-                onAcceptInvite={handleAcceptInvite}
-                onDeclineInvite={handleDeclineInvite}
-                loadingInvites={loadingInvites}
-                teamCode={team.teamCode}
-              />
-            )}
-
-            {activeTab === 'challenges' && (
-              <TeamChallengeArenaView
-                teamId={team.id}
-                isCaptain={isCaptain}
-                challenges={challenges}
-                teamOptions={teamOptions}
-                onSendChallenge={handleSendChallenge}
-                onRespondChallenge={handleRespondChallenge}
-                loadingChallenges={loadingChallenges}
-              />
-            )}
-
-            {activeTab === 'settings' && (
-              <TeamSettingsView
-                team={team}
-                isCaptain={isCaptain}
-                onUpdateTeamSettings={handleUpdateTeamSettings}
-              />
-            )}
-          </motion.div>
-        </AnimatePresence>
       </div>
     </div>
   );
@@ -1028,7 +723,7 @@ export default function MyTeamPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#07070c] flex flex-col items-center justify-center pt-28 md:pt-36 text-center">
+        <div className="min-h-screen bg-[#07070c] flex flex-col items-center justify-center pt-20 text-center">
           <Loader2 size={36} className="animate-spin text-amber-400 mb-3" />
           <p className="text-xs font-mono font-black uppercase tracking-widest text-zinc-500">Loading Squad Hub...</p>
         </div>

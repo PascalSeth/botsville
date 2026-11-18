@@ -1,301 +1,94 @@
 'use client';
 
-import React, { useState } from 'react';
-import Image from 'next/image';
-import { UserCheck, UserPlus, Shield, Check, X, Loader2, Sparkles, Send, Users, Star, Trophy, Copy, Share2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Copy, Loader2, Search, Send, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { TEAM_ROLES } from '@/lib/team-lineup';
+import { invitedRole } from '@/lib/team-invites';
+import TeamActionDialog, { buttonClass, primaryClass, fieldClass } from './TeamActionDialog';
+import type { TeamPlayer, TeamRequest } from './team-types';
+import styles from '../my-team.module.css';
 
-interface TeamInvite {
-  id: string;
-  sentAt?: string | null;
-  createdAt?: string | null;
-  message?: string | null;
-  fromUserId?: string | null;
-  toUserId?: string | null;
-  fromUser?: {
-    id: string;
-    ign: string;
-    photo?: string | null;
-    player?: { role?: string } | null;
-    mainRole?: string | null;
-  } | null;
-  toUser?: {
-    id: string;
-    ign: string;
-    photo?: string | null;
-    mainRole?: string | null;
-  } | null;
-  toIGN?: string | null;
-  role?: string | null;
-  team?: { id?: string; name?: string } | null;
-}
-
-interface TeamRecruitmentViewProps {
+interface Props {
+  teamId: string;
+  players: TeamPlayer[];
   isCaptain: boolean;
   isRecruiting: boolean;
-  onToggleRecruiting: (val: boolean) => void;
-  invites: TeamInvite[];
-  onAcceptInvite: (inviteId: string) => void;
-  onDeclineInvite: (inviteId: string) => void;
+  onToggleRecruiting: (value: boolean) => Promise<boolean>;
+  invites: TeamRequest[];
+  sentInvites: TeamRequest[];
+  onAcceptInvite: (id: string, placement: { role: string; isSubstitute: boolean }) => Promise<boolean>;
+  onDeclineInvite: (id: string) => Promise<boolean>;
+  onInvitePlayer: (ign: string, role: string) => Promise<boolean>;
+  onCancelInvite: (id: string) => Promise<boolean>;
   loadingInvites: boolean;
   teamCode?: string | null;
 }
+interface FreeAgent { id: string; ign: string; mainRole: string | null; inTeam: boolean; hasPendingInvite: boolean }
 
-const ROLES = [
-  { key: 'EXP', label: 'EXP Lane', color: '#e8a000' },
-  { key: 'JUNGLE', label: 'Jungle', color: '#ef4444' },
-  { key: 'MID', label: 'Mid Lane', color: '#a855f7' },
-  { key: 'GOLD', label: 'Gold Lane', color: '#10b981' },
-  { key: 'ROAM', label: 'Roam', color: '#06b6d4' },
-];
+export default function TeamRecruitmentView({ teamId, players, isCaptain, isRecruiting, onToggleRecruiting, invites, sentInvites, onAcceptInvite, onDeclineInvite, onInvitePlayer, onCancelInvite, loadingInvites, teamCode }: Props) {
+  const [view, setView] = useState<'applications' | 'invites'>('applications');
+  const [review, setReview] = useState<TeamRequest | null>(null);
+  const [role, setRole] = useState('EXP');
+  const [sub, setSub] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [toggling, setToggling] = useState(false);
+  const [query, setQuery] = useState('');
+  const [inviteRole, setInviteRole] = useState('EXP');
+  const [agents, setAgents] = useState<FreeAgent[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [searchVersion, setSearchVersion] = useState(0);
+  const starters = players.filter(p => !p.isSubstitute);
+  const openRoles = TEAM_ROLES.filter(r => !starters.some(p => p.role === r));
+  const canStart = starters.length < 5 && openRoles.includes(role as typeof TEAM_ROLES[number]);
 
-export default function TeamRecruitmentView({
-  isCaptain,
-  isRecruiting,
-  onToggleRecruiting,
-  invites,
-  onAcceptInvite,
-  onDeclineInvite,
-  loadingInvites,
-  teamCode,
-}: TeamRecruitmentViewProps) {
-  const [selectedVacancies, setSelectedVacancies] = useState<string[]>(['JUNGLE', 'ROAM']);
-  const [copiedRecruitCode, setCopiedRecruitCode] = useState(false);
+  useEffect(() => {
+    if (!isCaptain || view !== 'invites') return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setSearching(true); setSearchError(false);
+      try {
+        const res = await fetch('/api/users/available?q=' + encodeURIComponent(query) + '&teamId=' + teamId, { signal: controller.signal });
+        if (!res.ok) throw new Error('Search failed');
+        const data = await res.json();
+        setAgents(data.users || []);
+      } catch { if (!controller.signal.aborted) setSearchError(true); }
+      finally { if (!controller.signal.aborted) setSearching(false); }
+    }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [query, teamId, isCaptain, view, searchVersion]);
 
-  const toggleRoleVacancy = (roleKey: string) => {
-    setSelectedVacancies((prev) =>
-      prev.includes(roleKey) ? prev.filter((r) => r !== roleKey) : [...prev, roleKey]
-    );
-    toast.success('Vacant role updated');
+  const send = async (ign: string) => {
+    if (busyId || !ign.trim()) return;
+    setBusyId('send:' + ign);
+    try { if (await onInvitePlayer(ign.trim(), inviteRole)) { setQuery(''); setSearchVersion(v => v + 1); } }
+    finally { setBusyId(null); }
   };
-
-  return (
-    <div className="space-y-8">
-      {/* Quick Direct Invite Banner */}
-      {teamCode && (
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-[#0f0f17] border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-              <Share2 size={18} />
-            </div>
-            <div>
-              <p className="text-white text-xs font-black uppercase tracking-wide">Direct Squad Access Code</p>
-              <p className="text-zinc-400 text-[11px] mt-0.5">
-                New recruits can enter this code during signup on Botsville to automatically join your squad roster.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 bg-black/60 border border-amber-500/30 px-4 py-2 rounded-xl shrink-0 self-start sm:self-auto">
-            <span className="text-zinc-400 text-[10px] uppercase font-bold">Code:</span>
-            <span className="text-amber-400 font-mono font-black text-sm tracking-widest">{teamCode}</span>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(teamCode);
-                setCopiedRecruitCode(true);
-                toast.success('Team Code copied! Share with new recruits.');
-                setTimeout(() => setCopiedRecruitCode(false), 2000);
-              }}
-              className="p-1 rounded hover:bg-white/10 text-zinc-300 transition-colors ml-1"
-              title="Copy Team Code"
-            >
-              {copiedRecruitCode ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Captain Recruitment Control Banner */}
-      <div className="p-6 rounded-3xl bg-gradient-to-r from-[#12121a] via-[#0d0d15] to-[#07070c] border border-white/10 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
-              <Sparkles size={12} /> Scout & Trial Hub
-            </span>
-            {isRecruiting ? (
-              <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-widest">
-                ● Accepting Applications
-              </span>
-            ) : (
-              <span className="px-3 py-1 rounded-full bg-zinc-500/10 border border-zinc-500/30 text-zinc-400 text-[10px] font-black uppercase tracking-widest">
-                Recruitment Paused
-              </span>
-            )}
-          </div>
-
-          <h3 className="text-2xl font-black uppercase tracking-tight text-white">
-            Squad Recruitment & Trials
-          </h3>
-          <p className="text-zinc-400 text-xs max-w-xl">
-            Post specific role vacancies to attract free agents or scout incoming trial applications directly to your inbox.
-          </p>
-        </div>
-
-        {isCaptain && (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => onToggleRecruiting(!isRecruiting)}
-              className={`px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all shadow-lg ${
-                isRecruiting
-                  ? 'bg-emerald-500 hover:bg-emerald-400 text-black'
-                  : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
-              }`}
-            >
-              {isRecruiting ? 'Pause Applications' : 'Open Recruitment'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Role Vacancies Configurations (What roles the team needs) */}
-      <div className="p-6 rounded-2xl bg-[#0f0f17] border border-white/10 space-y-4">
-        <div>
-          <h4 className="text-white font-black text-sm uppercase tracking-wide">
-            Seeking Role Vacancies
-          </h4>
-          <p className="text-zinc-400 text-xs mt-0.5">
-            Select the active positions your squad is currently scouting for free agents.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          {ROLES.map((r) => {
-            const isSeeking = selectedVacancies.includes(r.key);
-            return (
-              <button
-                key={r.key}
-                disabled={!isCaptain}
-                onClick={() => toggleRoleVacancy(r.key)}
-                className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 border ${
-                  isSeeking
-                    ? 'text-black shadow-md'
-                    : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'
-                }`}
-                style={{
-                  background: isSeeking ? r.color : undefined,
-                  borderColor: isSeeking ? r.color : undefined,
-                }}
-              >
-                <span>{r.label}</span>
-                {isSeeking ? <Check size={14} className="text-black" /> : <UserPlus size={14} />}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Applications & Scout Inbox */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-black uppercase tracking-widest text-zinc-300 flex items-center gap-2">
-            <UserCheck size={16} className="text-amber-400" /> Scout Inbox & Roster Applications ({invites.length})
-          </h4>
-        </div>
-
-        {loadingInvites ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-            <Loader2 size={28} className="animate-spin text-amber-400" />
-            <span className="text-xs font-mono font-black uppercase tracking-widest text-zinc-500">Loading Applications...</span>
-          </div>
-        ) : invites.length === 0 ? (
-          <div className="p-12 rounded-2xl border border-dashed border-white/10 bg-white/[0.01] text-center space-y-2">
-            <Users size={36} className="text-zinc-600 mx-auto" />
-            <p className="text-xs font-black uppercase tracking-widest text-zinc-400">No Pending Applications</p>
-            <p className="text-zinc-600 text-xs">When free agents apply for your squad, their application cards will appear here.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {invites.map((inv) => {
-              const applicant = inv.fromUser;
-              const roleMatch = inv.message?.match(/Preferred Role:\s*([A-Za-z]+)/i);
-              const heroMatch = inv.message?.match(/Signature Hero:\s*([^·"💬]+)/i);
-              const pitchMatch = inv.message?.match(/💬\s*"([^"]+)"/i);
-              const appliedRole = roleMatch ? roleMatch[1].toUpperCase() : (applicant?.mainRole || applicant?.player?.role || 'FLEX');
-              const signatureHero = heroMatch ? heroMatch[1].trim() : null;
-              const pitch = pitchMatch ? pitchMatch[1].trim() : (!roleMatch && inv.message ? inv.message : null);
-
-              const roleObj = ROLES.find(r => r.key === appliedRole);
-              const roleColor = roleObj?.color || '#e8a000';
-
-              return (
-                <div
-                  key={inv.id}
-                  className="p-5 rounded-2xl bg-gradient-to-b from-[#12121a] to-[#0a0a0e] border border-white/10 space-y-4 hover:border-white/20 transition-all shadow-xl flex flex-col justify-between"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 shrink-0">
-                        {applicant?.photo ? (
-                          <Image src={applicant.photo} alt={applicant.ign || 'Player'} fill className="object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-zinc-600 font-bold">
-                            {applicant?.ign?.slice(0, 2) || 'PL'}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <h5 className="text-white font-black text-sm uppercase tracking-wide truncate">
-                          {applicant?.ign || inv.toIGN || 'Applicant'}
-                        </h5>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span
-                            className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider"
-                            style={{
-                              backgroundColor: `${roleColor}25`,
-                              borderColor: `${roleColor}50`,
-                              borderWidth: 1,
-                              color: roleColor,
-                            }}
-                          >
-                            {appliedRole} Lane
-                          </span>
-                          {signatureHero && (
-                            <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 text-zinc-300">
-                              ⚡ {signatureHero}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {pitch && (
-                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
-                        <p className="text-[11px] text-zinc-300 italic leading-relaxed">
-                          &ldquo;{pitch}&rdquo;
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono">
-                      <span>Submitted: {inv.sentAt ? new Date(inv.sentAt).toLocaleDateString() : 'Recent'}</span>
-                      <span className="text-amber-400/80">Pending Review</span>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons for Captain */}
-                  {isCaptain && (
-                    <div className="flex items-center gap-2 pt-2 border-t border-white/5">
-                      <button
-                        onClick={() => onAcceptInvite(inv.id)}
-                        className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md"
-                      >
-                        <Check size={14} /> Accept
-                      </button>
-
-                      <button
-                        onClick={() => onDeclineInvite(inv.id)}
-                        className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 border border-white/10 transition-all"
-                      >
-                        <X size={14} /> Decline
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  const respond = async (accept: boolean) => {
+    if (!review || busyId) return;
+    setBusyId(review.id);
+    try {
+      const ok = accept ? await onAcceptInvite(review.id, { role, isSubstitute: sub }) : await onDeclineInvite(review.id);
+      if (ok) setReview(null);
+    } finally { setBusyId(null); }
+  };
+  if (!isCaptain) return <div className="rounded-lg border border-white/10 bg-[#0f0f17] p-8 text-sm text-zinc-400">Your captain manages applications and invitations. Recruitment is currently {isRecruiting ? 'open' : 'paused'}.</div>;
+  return <div className="space-y-6">
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className={styles.eyebrow}>02 / Recruitment center</p><h2 className={styles.sectionTitle}>Build your squad<span className="text-amber-300">.</span></h2><p className="mt-2 text-sm text-zinc-400">Review applications or invite registered players to your team.</p></div><button className={buttonClass} disabled={toggling} onClick={async () => { setToggling(true); try { await onToggleRecruiting(!isRecruiting); } finally { setToggling(false); } }}>{toggling && <Loader2 size={15} className="animate-spin" />}{isRecruiting ? 'Pause applications' : 'Open applications'}</button></div>
+    <div className="flex flex-col gap-4 rounded-lg border border-white/10 bg-[#101a28] p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-white">{isRecruiting ? 'Applications open' : 'Applications paused'} · {players.length}/20 players</p><p className="mt-1 text-xs text-zinc-400">{openRoles.length ? 'Open starting roles: ' + openRoles.join(', ') : 'Starting lineup full. Recruit substitutes for your bench.'}</p></div>{teamCode && <button className={buttonClass} aria-label="Copy signup team code" onClick={async () => { try { await navigator.clipboard.writeText(teamCode); toast.success('Signup team code copied'); } catch { toast.error('Could not copy code'); } }}><span className="text-xs text-zinc-400">Signup code</span><span className="font-mono text-amber-400">{teamCode}</span><Copy size={14} /></button>}</div>
+    <div className="flex flex-wrap gap-2" aria-label="Recruitment views"><button className={view === 'applications' ? primaryClass : buttonClass} aria-pressed={view === 'applications'} onClick={() => setView('applications')}><UserCheck size={16} />Applications ({invites.length})</button><button className={view === 'invites' ? primaryClass : buttonClass} aria-pressed={view === 'invites'} onClick={() => setView('invites')}><Send size={16} />Invitations ({sentInvites.length})</button></div>
+    {view === 'applications' ? <section className="space-y-3" aria-label="Incoming applications">
+      <p className="text-sm text-zinc-400">Review a player’s role and choose their place on the roster before accepting.</p>
+      {loadingInvites ? <p className="py-8 text-sm text-zinc-400">Loading applications…</p> : !invites.length ? <div className="rounded-lg border border-dashed border-white/10 p-10 text-center text-sm text-zinc-500">No pending applications.</div> : invites.map(inv => <div key={inv.id} className="flex flex-col justify-between gap-4 rounded-lg border border-white/10 bg-[#101a28] p-5 sm:flex-row sm:items-center"><div className="min-w-0"><h3 className="font-bold text-white">{inv.fromUser?.ign || inv.toIGN}</h3><p className="mt-1 text-xs text-amber-400">Preferred role: {inv.role || invitedRole(inv.message) || inv.fromUser?.mainRole || 'Not specified'}</p>{inv.message && <p className="mt-2 break-words text-sm leading-relaxed text-zinc-400">{inv.message}</p>}<p className="mt-2 text-xs text-zinc-500">Applied {inv.sentAt ? new Date(inv.sentAt).toLocaleDateString() : 'recently'}</p></div><button className={buttonClass + ' shrink-0'} disabled={Boolean(busyId)} onClick={() => { setReview(inv); const preferred = inv.role || invitedRole(inv.message) || inv.fromUser?.mainRole || 'EXP'; setRole(TEAM_ROLES.includes(preferred as typeof TEAM_ROLES[number]) ? preferred : 'EXP'); setSub(true); }}>Review application</button></div>)}
+    </section> : <div className="space-y-6">
+      <section className="space-y-4 rounded-lg border border-white/10 bg-[#101a28] p-5"><h3 className="font-bold text-white">Invite a player</h3><p className="text-sm text-zinc-400">The player must accept your invitation. An occupied role joins as a substitute.</p><form className="grid items-end gap-3 sm:grid-cols-[1fr_140px_auto]" onSubmit={e => { e.preventDefault(); void send(query); }}><label className="space-y-2 text-xs text-zinc-400"><span className="flex items-center gap-2"><Search size={14} /> Player IGN</span><input className={fieldClass} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search or enter an exact IGN" /></label><label className="space-y-2 text-xs text-zinc-400"><span>Invited role</span><select className={fieldClass} value={inviteRole} onChange={e => setInviteRole(e.target.value)}>{TEAM_ROLES.map(r => <option key={r}>{r}</option>)}</select></label><button type="submit" className={primaryClass} disabled={Boolean(busyId) || !query.trim() || players.length >= 20}>Send invite</button></form>
+        {searching && <p className="text-xs text-zinc-500">Finding players…</p>}{searchError ? <p className="text-sm text-red-300">Player search could not load. You can still invite by exact IGN.</p> : <div className="divide-y divide-white/5">{agents.slice(0, 8).map(agent => <div key={agent.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-zinc-200">{agent.ign}</p><p className="text-xs text-zinc-500">{agent.mainRole || 'Any role'} · {agent.inTeam ? 'Already on a team' : agent.hasPendingInvite ? 'Request pending' : 'Free agent'}</p></div><button className={buttonClass} disabled={Boolean(busyId) || agent.inTeam || agent.hasPendingInvite || players.length >= 20} onClick={() => void send(agent.ign)}>{busyId === 'send:' + agent.ign ? 'Sending…' : 'Invite'}</button></div>)}</div>}
+      </section>
+      <section className="space-y-3"><h3 className="font-bold text-white">Sent invitations</h3>{loadingInvites ? <p className="text-sm text-zinc-400">Loading invitations…</p> : !sentInvites.length ? <p className="rounded-md border border-dashed border-white/10 p-6 text-sm text-zinc-500">No pending invitations.</p> : sentInvites.map(inv => <div key={inv.id} className="flex items-center justify-between gap-3 rounded-md border border-white/10 p-4"><div><p className="text-sm font-semibold text-white">{inv.toUser?.ign || inv.toIGN}</p><p className="mt-1 text-xs text-zinc-400">{inv.role || invitedRole(inv.message) || 'Any role'} ? Awaiting player response</p></div><button className={buttonClass} disabled={Boolean(busyId)} onClick={async () => { setBusyId(inv.id); try { if (await onCancelInvite(inv.id)) setSearchVersion(v => v + 1); } finally { setBusyId(null); } }}>{busyId === inv.id ? 'Cancelling…' : 'Cancel invite'}</button></div>)}</section>
+    </div>}
+    <TeamActionDialog open={Boolean(review)} onClose={() => setReview(null)} busy={Boolean(busyId)} title={'Review ' + (review?.fromUser?.ign || review?.toIGN || 'application')} description="Choose a role and roster position. Accepting adds this player to your team immediately.">
+      <div className="space-y-5"><label className="block space-y-2 text-sm text-zinc-300"><span>Role</span><select className={fieldClass} value={role} onChange={e => { setRole(e.target.value); if (!openRoles.includes(e.target.value as typeof TEAM_ROLES[number])) setSub(true); }}>{TEAM_ROLES.map(r => <option key={r}>{r}</option>)}</select></label><label className="block space-y-2 text-sm text-zinc-300"><span>Roster position</span><select className={fieldClass} value={sub ? 'sub' : 'starter'} onChange={e => setSub(e.target.value === 'sub')}><option value="sub">Substitute</option><option value="starter" disabled={!canStart}>Starter{!canStart ? ' · role occupied or lineup full' : ''}</option></select></label><p className="rounded-md bg-amber-400/5 p-4 text-sm text-amber-100">{review?.fromUser?.ign || review?.toIGN} will join as {sub ? 'a substitute' : 'a starter'} for {role}. Existing players keep their positions.</p>{players.length >= 20 && <p className="text-sm text-red-300">Your roster is full. Remove a player before accepting another.</p>}<div className="flex flex-wrap justify-between gap-3 border-t border-white/10 pt-5"><button className={buttonClass + ' !text-red-400'} disabled={Boolean(busyId)} onClick={() => void respond(false)}>Decline application</button><button className={primaryClass} disabled={Boolean(busyId) || players.length >= 20 || (!sub && !canStart)} onClick={() => void respond(true)}>{busyId && <Loader2 size={16} className="animate-spin" />}Accept as {sub ? 'substitute' : 'starter'}</button></div></div>
+    </TeamActionDialog>
+  </div>;
 }

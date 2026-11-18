@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Swords, Plus, Calendar, Clock, Trophy, Check, X, Shield, Send, Sparkles, Loader2 } from 'lucide-react';
+import { Swords, Calendar, X, Send, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface MatchChallenge {

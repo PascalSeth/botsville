@@ -1,3 +1,4 @@
+import { parseTeamRole, TeamActionError } from '@/lib/team-lineup';
 import { NextRequest } from "next/server";
 import { requireActiveUser, apiError, apiSuccess, formatHumanError } from "@/lib/api-utils";
 import { prisma } from "@/lib/prisma";
@@ -11,25 +12,50 @@ export async function POST(
     const user = await requireActiveUser();
     const { id } = await context.params;
     const body = await request.json().catch(() => ({}));
-    const { role, signatureHero, pitch } = body;
+    const { role, signatureHero, pitch, message } = body;
+    const rawPitch = pitch ?? message;
+
+    if (role !== undefined) parseTeamRole(role);
+    if (rawPitch !== undefined && typeof rawPitch !== "string") return apiError("Pitch must be text");
+    if (signatureHero !== undefined && typeof signatureHero !== "string") return apiError("Signature hero must be text");
 
     // Auto-expire any outdated pending invites/applications for this user on this team
-    await prisma.teamInvite.updateMany({
-      where: {
-        teamId: id,
-        fromUserId: user.id,
-        status: "PENDING",
-        expiresAt: { lte: new Date() },
-      },
-      data: { status: "DECLINED" },
-    });
+    // and clean up orphaned player rows pointing to disbanded teams
+    await Promise.all([
+      prisma.teamInvite.deleteMany({
+        where: {
+          teamId: id,
+          fromUserId: user.id,
+          status: "PENDING",
+          expiresAt: { lte: new Date() },
+        },
+      }),
+      prisma.player.deleteMany({
+        where: {
+          userId: user.id,
+          deletedAt: null,
+          team: { deletedAt: { not: null } },
+        },
+      }),
+    ]);
 
     // Query database in parallel for all checks
-    const [team, existingPlayer, duplicatePending, captainInvite] = await Promise.all([
+    const [team, activePlayer, captainTeam, duplicatePending, captainInvite] = await Promise.all([
       prisma.team.findUnique({ where: { id } }),
       prisma.player.findFirst({
-        where: { userId: user.id },
-        include: { team: { select: { id: true, name: true, deletedAt: true } } },
+        where: {
+          userId: user.id,
+          deletedAt: null,
+          team: { deletedAt: null },
+        },
+        include: { team: { select: { id: true, name: true } } },
+      }),
+      prisma.team.findFirst({
+        where: {
+          captainId: user.id,
+          deletedAt: null,
+        },
+        select: { id: true, name: true },
       }),
       prisma.teamInvite.findFirst({
         where: {
@@ -53,13 +79,15 @@ export async function POST(
       return apiError("This team is no longer active or has been disbanded.", 404);
     }
 
-    // Auto-cleanup: if player points to a disbanded team, delete the orphaned record
-    if (existingPlayer) {
-      if (!existingPlayer.deletedAt && existingPlayer.team?.deletedAt) {
-        await prisma.player.delete({ where: { id: existingPlayer.id } });
-      } else if (!existingPlayer.deletedAt) {
-        return apiError(`You are currently on squad "${existingPlayer.team?.name || 'another team'}". You must leave your current squad before applying to a new team.`);
-      }
+    if (!team.isRecruiting) return apiError("This team has paused applications.");
+    if (!team.captainId || team.captainId === user.id) return apiError("You cannot apply to this team.");
+
+    // Block anyone who is already on a team (as captain or active player)
+    if (captainTeam) {
+      return apiError(`You are already captain of squad "${captainTeam.name}". Leave or disband your current squad before applying to a new team.`);
+    }
+    if (activePlayer) {
+      return apiError(`You are currently on squad "${activePlayer.team?.name || 'another team'}". You must leave your current squad before applying to a new team.`);
     }
 
     // If an application is currently pending captain response
@@ -82,12 +110,12 @@ export async function POST(
     });
 
     // Format application message with role/pitch details if provided
-    let appMessage = pitch ? pitch.trim() : null;
+    let appMessage = rawPitch ? rawPitch.trim() : null;
     if (role || signatureHero) {
       const details = [
         role ? `🎯 Preferred Role: ${role}` : null,
         signatureHero ? `⚡ Signature Hero: ${signatureHero}` : null,
-        pitch ? `💬 "${pitch.trim()}"` : null,
+        rawPitch ? `💬 "${rawPitch.trim()}"` : null,
       ].filter(Boolean).join(" · ");
       appMessage = details;
     }
@@ -126,6 +154,7 @@ export async function POST(
 
     return apiSuccess({ message: "Application submitted to team captain!", invite }, 201);
   } catch (error: unknown) {
+    if (error instanceof TeamActionError) return apiError(error.message, error.status);
     const formatted = formatHumanError(error);
     console.error("Apply to team error:", error);
     return apiError(formatted, 500);

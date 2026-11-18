@@ -9,7 +9,10 @@ import {
 } from "@/lib/api-utils";
 
 import { prisma } from "@/lib/prisma";
-import { ensureTeamRosterBalance } from "@/lib/team-roster";
+import { teamTransaction } from '@/lib/team-transaction';
+import { isTeamApplication } from '@/lib/team-invites';
+import { TeamActionError } from '@/lib/team-lineup';
+import { invalidatePattern } from '@/lib/redis';
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -149,6 +152,7 @@ export async function GET(
 
     return apiSuccess(team);
   } catch (error: unknown) {
+    if (error instanceof TeamActionError) return apiError(error.message, error.status);
     console.error("Get team error:", error);
     const message = error instanceof Error ? error.message : "Failed to fetch team";
     return apiError(message, 500);
@@ -165,6 +169,26 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
     const { name, tag, region, color, logo, banner, isRecruiting, captainId } = body;
+
+    if (captainId !== undefined) {
+      if (Object.keys(body).some(key => key !== 'captainId')) return apiError('Transfer captaincy separately from team settings.');
+      const updated = await teamTransaction(async tx => {
+        const current = await tx.team.findUnique({ where: { id }, include: { players: { where: { deletedAt: null } } } });
+        if (!current || current.deletedAt) throw new TeamActionError('Team not found', 404);
+        if (current.captainId !== user.id && !user.role) throw new TeamActionError('Only the current captain can transfer captaincy', 403);
+        const successor = current.players.find(p => p.userId === captainId || p.id === captainId);
+        if (!successor?.userId) throw new TeamActionError('Choose an active teammate with a registered account.');
+        if (successor.userId === current.captainId) throw new TeamActionError('This player is already the captain.');
+        const otherTeam = await tx.team.findFirst({ where: { captainId: successor.userId, deletedAt: null, id: { not: id } } });
+        if (otherTeam) throw new TeamActionError('This player already captains another team.');
+        const pending = await tx.teamInvite.findMany({ where: { teamId: id, status: 'PENDING' }, include: { fromUser: { select: { ign: true } } } });
+        const applications = pending.filter(invite => isTeamApplication({ ...invite, team: current }));
+        await tx.teamInvite.updateMany({ where: { id: { in: applications.map(invite => invite.id) } }, data: { toUserId: successor.userId } });
+        return tx.team.update({ where: { id }, data: { captainId: successor.userId } });
+      });
+      await invalidatePattern('teams:*');
+      return apiSuccess({ message: 'Captaincy transferred successfully', team: updated });
+    }
 
     // Get team and verify captain
     const team = await prisma.team.findUnique({
@@ -291,28 +315,6 @@ export async function PUT(
       updateData.isRecruiting = isRecruiting;
     }
 
-    // Captain transfer - current captain or admins can transfer captaincy
-    if (captainId !== undefined && captainId !== team.captainId) {
-      const isCurrentCaptain = team.captainId === user.id;
-      const isAdmin = Boolean(user.role);
-      if (!isCurrentCaptain && !isAdmin) {
-        return apiError("Only the current captain or an admin can transfer captaincy", 403);
-      }
-      // Verify new captain is a player on this team with a linked account or valid user ID
-      const newCaptainPlayer = team.players.find((p) => p.userId === captainId || p.id === captainId);
-      if (!newCaptainPlayer) {
-        return apiError("New captain must be a player on this team");
-      }
-
-      // If captainId provided was player ID instead of userId, get the user's ID
-      const targetUserId = newCaptainPlayer.userId || captainId;
-      if (!targetUserId) {
-        return apiError("Selected player must be linked to a registered user account to become captain");
-      }
-
-      updateData.captainId = targetUserId;
-    }
-
     if (Object.keys(updateData).length === 0) {
       return apiError("No fields to update");
     }
@@ -342,6 +344,7 @@ export async function PUT(
       },
     });
 
+    await invalidatePattern("teams:*");
     return apiSuccess({
       message: "Team updated successfully",
       team: updated,
@@ -351,7 +354,7 @@ export async function PUT(
       return apiError("Unauthorized", 401);
     }
     if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
-      const target = (error as any).meta?.target;
+      const target = (error as { meta?: { target?: unknown } }).meta?.target;
       if (Array.isArray(target) && target.includes("tag")) {
         return apiError("Team tag is already taken. Please choose another tag.", 409);
       }

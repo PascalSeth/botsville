@@ -1,3 +1,4 @@
+import { isTeamApplication, invitedRole } from '@/lib/team-invites';
 import { NextRequest } from "next/server";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireActiveUser, apiError, apiSuccess } from "@/lib/api-utils";
@@ -12,6 +13,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
 
     const where: Prisma.TeamInviteWhereInput = {
+      team: { deletedAt: null },
       OR: [{ toUserId: user.id }, { toIGN: user.ign }],
     };
 
@@ -41,6 +43,7 @@ export async function GET(request: NextRequest) {
             tag: true,
             logo: true,
             region: true,
+            captainId: true,
             color: true,
           },
         },
@@ -62,7 +65,7 @@ export async function GET(request: NextRequest) {
       return true;
     });
 
-    return apiSuccess(filtered);
+    return apiSuccess(filtered.filter(invite => !isTeamApplication(invite)).map(invite => ({ ...invite, role: invitedRole(invite.message) })));
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to fetch invites";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
