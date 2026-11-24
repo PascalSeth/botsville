@@ -1,7 +1,9 @@
 "use client";
 
 import { useRoleGuard } from "../lib/useRole";
-import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo, Fragment, Suspense } from "react";
+import { useSearchParams } from 'next/navigation';
+import { REVIEW_MATCH_STATUSES } from '@/lib/tournament-dashboard';
 import { dashboardFetch } from "../lib/api";
 import {
   Loader2,
@@ -54,7 +56,10 @@ const TOURNAMENT_STATUS_ORDER: Record<string, number> = {
   CANCELLED: 5,
 };
 
-export default function DashboardMatchesPage() {
+function DashboardMatchesContent() {
+  const searchParams = useSearchParams();
+  const requestedTournamentId = searchParams.get('tournamentId') || '';
+  const requestedView = searchParams.get('view');
   const { role } = useRoleGuard(["TOURNAMENT_ADMIN", "REFEREE", "COMMENTATOR", "STREAMER"]);
   const canScore = ["SUPER_ADMIN", "TOURNAMENT_ADMIN", "REFEREE", "COMMENTATOR"].includes(role ?? "");
   const canStream = ["SUPER_ADMIN", "TOURNAMENT_ADMIN", "STREAMER"].includes(role ?? "");
@@ -68,7 +73,11 @@ export default function DashboardMatchesPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Filters & Search
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTION" | "LIVE" | "UPCOMING" | "COMPLETED">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTION" | "LIVE" | "UPCOMING" | "COMPLETED" | "REVIEW">(requestedView === 'REVIEW' ? 'REVIEW' : 'ALL');
+  useEffect(() => {
+    const timer = setTimeout(() => setStatusFilter(requestedView === 'REVIEW' ? 'REVIEW' : 'ALL'), 0);
+    return () => clearTimeout(timer);
+  }, [requestedView]);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Result Entry Panel State
@@ -106,17 +115,31 @@ export default function DashboardMatchesPage() {
 
   // ── Load & Sort Tournaments with Ongoing Priority ─────────────
   useEffect(() => {
+    const controller = new AbortController();
     (async () => {
       setLoadingTournaments(true);
-      const { data, error: err } = await dashboardFetch<{ tournaments: Tournament[] }>("/api/tournaments?limit=100");
-      setLoadingTournaments(false);
+      const { data, error: err } = await dashboardFetch<{ tournaments: Tournament[] }>("/api/tournaments?limit=100", { signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (err) {
+        setLoadingTournaments(false);
         setError(err);
         setTournaments([]);
         return;
       }
 
       const rawList = data?.tournaments ?? [];
+      // Deep links must also work for events outside the public first page.
+      if (requestedTournamentId && !rawList.some(tournament => tournament.id === requestedTournamentId)) {
+        const requested = await dashboardFetch<Tournament>(`/api/tournaments/${encodeURIComponent(requestedTournamentId)}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        if (requested.error || !requested.data) {
+          setLoadingTournaments(false);
+          setError(requested.error || 'Tournament not found.');
+          setSelectedTournamentId('');
+          return;
+        }
+        rawList.push(requested.data);
+      }
       const sorted = [...rawList].sort((a, b) => {
         const orderA = TOURNAMENT_STATUS_ORDER[a.status] ?? 99;
         const orderB = TOURNAMENT_STATUS_ORDER[b.status] ?? 99;
@@ -125,13 +148,12 @@ export default function DashboardMatchesPage() {
       });
 
       setTournaments(sorted);
-
-      if (sorted.length > 0 && !selectedTournamentId) {
-        const ongoing = sorted.find((t) => t.status === "ONGOING") || sorted[0];
-        setSelectedTournamentId(ongoing.id);
-      }
+      setLoadingTournaments(false);
+      const selected = sorted.find(tournament => tournament.id === requestedTournamentId) || sorted.find(tournament => tournament.status === 'ONGOING') || sorted[0];
+      setSelectedTournamentId(selected?.id || '');
     })();
-  }, [selectedTournamentId]);
+    return () => controller.abort();
+  }, [requestedTournamentId]);
 
   const loadBracketData = useCallback(async (tournamentId: string) => {
     setLoadingBracket(true);
@@ -619,7 +641,9 @@ export default function DashboardMatchesPage() {
   const filteredMatches = useMemo(() => {
     let list = matches;
 
-    if (statusFilter === "ACTION") {
+    if (statusFilter === 'REVIEW') {
+      list = list.filter(m => (REVIEW_MATCH_STATUSES as readonly string[]).includes(m.status) || (m.status === 'COMPLETED' && m.statsFinalized === false));
+    } else if (statusFilter === "ACTION") {
       list = list.filter((m) => m.status === "LIVE" || m.status === "UPCOMING");
     } else if (statusFilter === "LIVE") {
       list = list.filter((m) => m.status === "LIVE");
@@ -654,6 +678,7 @@ export default function DashboardMatchesPage() {
       live,
       upcoming,
       completed,
+      review: matches.filter(m => (REVIEW_MATCH_STATUSES as readonly string[]).includes(m.status) || (m.status === 'COMPLETED' && m.statsFinalized === false)).length,
     };
   }, [matches]);
 
@@ -849,6 +874,12 @@ export default function DashboardMatchesPage() {
                 <span>Action Needed ({counts.action})</span>
               </button>
 
+              <button
+                onClick={() => setStatusFilter('REVIEW')}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${statusFilter === 'REVIEW' ? 'bg-amber-300 text-black' : 'bg-white/5 text-amber-200 hover:bg-white/10'}`}
+              >
+                <ShieldAlert size={10} /> Review ({counts.review})
+              </button>
               {counts.live > 0 && (
                 <button
                   onClick={() => setStatusFilter("LIVE")}
@@ -1520,4 +1551,8 @@ export default function DashboardMatchesPage() {
       )}
     </div>
   );
+}
+
+export default function DashboardMatchesPage() {
+  return <Suspense fallback={<div className="flex items-center justify-center gap-2 py-20 text-sm text-zinc-400"><Loader2 size={18} className="animate-spin" /> Loading match operations…</div>}><DashboardMatchesContent /></Suspense>;
 }

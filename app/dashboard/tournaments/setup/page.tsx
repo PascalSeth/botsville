@@ -165,8 +165,10 @@ export default function SetupTournamentWizardPage() {
 
       if (seasonsRes.data && Array.isArray(seasonsRes.data)) {
         setSeasons(seasonsRes.data);
+        const requestedSeasonId = new URLSearchParams(window.location.search).get('season');
+        const requested = seasonsRes.data.find(season => season.id === requestedSeasonId);
         const active = seasonsRes.data.find((s) => s.status === "ACTIVE");
-        if (active) setSelectedSeasonId(active.id);
+        if (requested || active) setSelectedSeasonId((requested || active)!.id);
       }
 
       if (teamsRes.data) {
@@ -188,8 +190,26 @@ export default function SetupTournamentWizardPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (!selectedSeasonId) {
       setError("Please select a season");
+      return;
+    }
+
+    if (!startDate || !Number.isFinite(new Date(startDate).getTime())) {
+      setError('Choose a valid tournament start date.');
+      return;
+    }
+    if (!Number.isInteger(slots) || slots < 2) {
+      setError('Choose a whole-number capacity of at least two teams.');
+      return;
+    }
+    if (launchMode === 'OPEN_REGISTRATION' && (!registrationDeadline || !Number.isFinite(new Date(registrationDeadline).getTime()) || new Date(registrationDeadline) >= new Date(startDate))) {
+      setError('Set a registration deadline before the tournament start.');
+      return;
+    }
+    if (launchMode === 'INVITATIONAL' && selectedTeamIds.length < 2) {
+      setError('Select at least two teams before creating the schedule.');
       return;
     }
 
@@ -215,7 +235,7 @@ export default function SetupTournamentWizardPage() {
 
     // MODE 1: Open Public Registration
     if (launchMode === "OPEN_REGISTRATION") {
-      const { data, error: err } = await dashboardFetch<{ id: string }>(
+      const { data, error: err } = await dashboardFetch<{ tournament: { id: string } }>(
         "/api/tournaments",
         {
           method: "POST",
@@ -251,8 +271,8 @@ export default function SetupTournamentWizardPage() {
         return;
       }
 
-      if (data?.id) {
-        router.push(`/dashboard/tournaments/${data.id}`);
+      if (data?.tournament?.id) {
+        router.push(`/dashboard/tournaments/${data.tournament.id}#registrations`);
       } else {
         router.push("/dashboard/tournaments");
       }

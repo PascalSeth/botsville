@@ -6,7 +6,9 @@ import {
   apiSuccess,
   createAuditLog,
 } from "@/lib/api-utils";
-import { NewsStatus, NewsCategory, AdminRoleType } from "@/app/generated/prisma/enums";
+import { NewsStatus, AdminRoleType } from "@/app/generated/prisma/enums";
+import { canManageNews } from '@/lib/news-content';
+import { NewsValidationError, parseNewsQuery, validateNewsWrite } from '@/lib/news-validation';
 
 import { prisma } from "@/lib/prisma";
 
@@ -14,11 +16,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get("status");
-    const category = searchParams.get("category");
-    const featured = searchParams.get("featured");
-    const limit = parseInt(searchParams.get("limit") || "50");
-    const skip = parseInt(searchParams.get("skip") || "0");
+    const { status, category, formats, featured, limit, skip } = parseNewsQuery(searchParams);
 
     const where: Prisma.NewsWhereInput = { deletedAt: null };
     
@@ -31,18 +29,18 @@ export async function GET(request: NextRequest) {
       // Not authenticated - public access
     }
     
-    if (!user || !user.role) {
+    const isEditor = canManageNews(user?.role);
+    if (!isEditor) {
       where.status = NewsStatus.PUBLISHED;
-    } else if (status && Object.values(NewsStatus).includes(status as NewsStatus)) {
-      where.status = status as NewsStatus;
+    } else if (status) {
+      where.status = status;
     }
 
-    if (category && Object.values(NewsCategory).includes(category as NewsCategory)) {
-      where.category = category as NewsCategory;
-    }
+    if (category) where.category = category;
+    if (formats.length > 0) where.format = { in: formats };
 
     if (featured !== null) {
-      where.featured = featured === "true";
+      where.featured = featured;
     }
 
     const [articles, total] = await Promise.all([
@@ -59,6 +57,7 @@ export async function GET(request: NextRequest) {
           { featured: "desc" },
           { publishedAt: "desc" },
           { createdAt: "desc" },
+          { id: "desc" },
         ],
         take: limit,
         skip,
@@ -66,9 +65,9 @@ export async function GET(request: NextRequest) {
       prisma.news.count({ where }),
     ]);
 
-    const cacheHeaders = (!user || !user.role) ? {
+    const cacheHeaders = !isEditor ? {
       "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
-    } : undefined;
+    } : { 'Cache-Control': 'private, no-store' };
 
     return apiSuccess({
       articles,
@@ -79,6 +78,7 @@ export async function GET(request: NextRequest) {
       },
     }, 200, cacheHeaders);
   } catch (error: unknown) {
+    if (error instanceof NewsValidationError) return apiError(error.message, 400);
     const message = error instanceof Error ? error.message : "Failed to fetch news";
     console.error("Get news error:", error);
     return apiError(message, 500);
@@ -89,44 +89,17 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR, AdminRoleType.INTERVIEWER]);
-    const payload = await request.json();
-    const {
-      category,
-      title,
-      subtitle,
-      body: articleBody,
-      image,
-      images,
-      tags,
-      featured,
-      status,
-    } = payload;
-
-    if (!category || !title) {
-      return apiError("Category and title are required");
-    }
-
-    if (!Object.values(NewsCategory).includes(category)) {
-      return apiError("Invalid category");
-    }
+    const { post } = validateNewsWrite(await request.json());
 
     // INTERVIEWER can only publish interview posts, not other news categories
-    if (admin.role === AdminRoleType.INTERVIEWER && category !== NewsCategory.INTERVIEW) {
+    if (admin.role === AdminRoleType.INTERVIEWER && (post.category !== 'INTERVIEW' || post.format !== 'ARTICLE')) {
       return apiError("Interviewers can only publish INTERVIEW category posts", 403);
     }
 
     const article = await prisma.news.create({
       data: {
-        category: category as NewsCategory,
-        title,
-        subtitle: subtitle || null,
-        body: articleBody ?? null,
-        image: image || null,
-        images: images || [],
-        tags: tags || [],
-        featured: Boolean(featured),
-        status: (status || NewsStatus.DRAFT) as NewsStatus,
-        publishedAt: status === NewsStatus.PUBLISHED ? new Date() : null,
+        ...post,
+        publishedAt: post.status === NewsStatus.PUBLISHED ? new Date() : null,
       },
     });
 
@@ -136,7 +109,7 @@ export async function POST(request: NextRequest) {
       "CREATE_NEWS",
       "News",
       article.id,
-      JSON.stringify({ title, category })
+      JSON.stringify({ title: post.title, category: post.category, format: post.format })
     );
 
     return apiSuccess(
@@ -147,6 +120,7 @@ export async function POST(request: NextRequest) {
       201
     );
   } catch (error: unknown) {
+    if (error instanceof NewsValidationError || error instanceof SyntaxError) return apiError(error.message, 400);
     const message = error instanceof Error ? error.message : "Failed to create article";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
     if (message.includes("Forbidden")) return apiError(message, 403);

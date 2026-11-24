@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
 import NewsDetailClient from './NewsDetailClient';
+import { getNewsImages } from '@/lib/news-presentation';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -14,14 +15,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
 
   try {
-    const article = await prisma.news.findUnique({
-      where: { id },
+    const article = await prisma.news.findFirst({
+      where: { id, status: 'PUBLISHED', deletedAt: null },
       select: {
         id: true,
         title: true,
         subtitle: true,
         body: true,
         image: true,
+        images: true,
         category: true,
         publishedAt: true,
       },
@@ -39,14 +41,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const description = article.subtitle || article.body?.slice(0, 160).replace(/[\r\n]+/g, ' ') || 'Latest MLBB news, updates & patch notes on Botsville!';
     
     // Ensure image URL is absolute for WhatsApp card parser
-    let imageUrl = article.image || '/mlbb_logobg.png';
+    let imageUrl = getNewsImages(article)[0] || '/mlbb_logobg.png';
     if (imageUrl.startsWith('/')) {
       imageUrl = `${appUrl}${imageUrl}`;
     }
 
     const canonicalUrl = `${appUrl}/news/${article.id}`;
-    const imageExtension = imageUrl.split('.').pop()?.toLowerCase();
-    const imageMimeType = imageExtension === 'png' ? 'image/png' : imageExtension === 'webp' ? 'image/webp' : 'image/jpeg';
+    const imageExtension = imageUrl.split(/[?#]/)[0].split('.').pop()?.toLowerCase();
+    const imageMimeType = ({ png: 'image/png', webp: 'image/webp', gif: 'image/gif', avif: 'image/avif', jpg: 'image/jpeg', jpeg: 'image/jpeg' } as Record<string, string>)[imageExtension || ''];
 
     return {
       title: `${title} | Botsville MLBB Ghana`,
@@ -62,8 +64,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
           {
             url: imageUrl,
             secureUrl: imageUrl.startsWith('https://') ? imageUrl : undefined,
-            width: 1200,
-            height: 630,
             type: imageMimeType,
             alt: title,
           },
@@ -90,8 +90,8 @@ export default async function Page({ params }: Props) {
   // Initial fetch for SSR hydration
   let initialArticle = null;
   try {
-    const raw = await prisma.news.findUnique({
-      where: { id },
+    const raw = await prisma.news.findFirst({
+      where: { id, status: 'PUBLISHED', deletedAt: null },
       include: {
         reactions: {
           select: {
@@ -114,5 +114,5 @@ export default async function Page({ params }: Props) {
     // Fallback to client fetch if DB error during build
   }
 
-  return <NewsDetailClient id={id} initialArticle={initialArticle} />;
+  return <NewsDetailClient key={id} id={id} initialArticle={initialArticle} />;
 }

@@ -38,10 +38,12 @@ type Tournament = {
   teamsPerGroup?: number;
   matchesPerTeam?: number;
   matchesBeforeBracket?: number;
+  roundRobinLegs?: number;
+  drawMode?: string;
 };
 
 type TournamentWithRegistrations = Tournament & {
-  registrations?: Array<{ id: string; teamId: string }>;
+  registrations?: Array<{ id: string; teamId: string; status: string }>;
 };
 
 const FORMATS = [
@@ -106,17 +108,17 @@ export default function EditTournamentPage() {
 
   // Group stage parameters
   const [numGroups, setNumGroups] = useState(2);
-  const [teamsPerGroup, setTeamsPerGroup] = useState(4);
-  const [matchesPerTeam, setMatchesPerTeam] = useState(3);
+  const [roundRobinLegs, setRoundRobinLegs] = useState(1);
+  const [drawMode, setDrawMode] = useState('SEEDED');
   const [registeredTeamsCount, setRegisteredTeamsCount] = useState(0);
-  const [manualOverride, setManualOverride] = useState(false);
 
   // Auto-calculate matches before bracket (total group stage matches)
   const matchesBeforeBracket = useMemo(() => {
-    return numGroups > 0 && teamsPerGroup > 0 
-      ? Math.round(numGroups * (teamsPerGroup * matchesPerTeam / 2))
-      : 0;
-  }, [numGroups, teamsPerGroup, matchesPerTeam]);
+    const count = format === 'ROUND_ROBIN' ? 1 : Math.max(1, numGroups);
+    const base = Math.floor(registeredTeamsCount / count);
+    const larger = registeredTeamsCount % count;
+    return Array.from({ length: count }, (_, index) => base + (index < larger ? 1 : 0)).reduce((sum, size) => sum + size * Math.max(0, size - 1) / 2 * roundRobinLegs, 0);
+  }, [numGroups, registeredTeamsCount, roundRobinLegs, format]);
 
   const fileToDataUrl = (file: File) => fileToCompressedDataUrl(file);
 
@@ -160,7 +162,7 @@ export default function EditTournamentPage() {
 
   // Check if tournament can have group stage configured
   const canConfigureGroupStage = useMemo(() => {
-    return format === "GROUP_STAGE";
+    return format === "GROUP_STAGE" || format === 'ROUND_ROBIN';
   }, [format]);
 
   useEffect(() => {
@@ -216,11 +218,11 @@ export default function EditTournamentPage() {
       }
 
       setNumGroups(tournamentData.numGroups || 2);
-      setTeamsPerGroup(tournamentData.teamsPerGroup || 4);
-      setMatchesPerTeam(tournamentData.matchesPerTeam || 3);
+      setRoundRobinLegs(tournamentData.roundRobinLegs ?? 1);
+      setDrawMode(tournamentData.drawMode ?? 'SEEDED');
 
       if (tournamentData.registrations) {
-        setRegisteredTeamsCount(tournamentData.registrations.length);
+        setRegisteredTeamsCount(tournamentData.registrations.filter(registration => registration.status === 'APPROVED').length);
       }
       
       setLoading(false);
@@ -295,10 +297,9 @@ export default function EditTournamentPage() {
         pointSystem,
         playDaysPerWeek,
         matchesPerDay,
-        numGroups,
-        teamsPerGroup,
-        matchesPerTeam,
-        matchesBeforeBracket,
+        numGroups: format === 'GROUP_STAGE' ? numGroups : undefined,
+        roundRobinLegs,
+        drawMode,
       }),
     });
 
@@ -637,13 +638,7 @@ export default function EditTournamentPage() {
                       <Layout size={18} className="text-[#e8a000]" /> Group Stage Parameters
                     </h2>
                   </div>
-                  <button 
-                    type="button"
-                    onClick={() => setManualOverride(!manualOverride)}
-                    className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-[0.15em] transition-all border ${manualOverride ? 'bg-[#e8a000]/10 border-[#e8a000] text-[#e8a000]' : 'bg-white/5 border-white/10 text-[#555]'}`}
-                  >
-                    Manual Override
-                  </button>
+                  <Link href={`/dashboard/tournaments/${id}#bracket`} className="text-xs text-[#edbb65]">Open draft room</Link>
                 </div>
 
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
@@ -653,32 +648,27 @@ export default function EditTournamentPage() {
                       type="number"
                       min={1}
                       max={16}
-                      value={numGroups}
+                      value={format === 'ROUND_ROBIN' ? 1 : numGroups}
+                      disabled={format === 'ROUND_ROBIN'}
                       onChange={(e) => setNumGroups(parseInt(e.target.value, 10) || 1)}
                       className="w-full bg-black/40 border border-white/10 text-white px-4 py-3 rounded-xl text-sm outline-none focus:border-[#e8a000]/50 transition-all font-mono"
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-[#555] block mb-2">Teams per Group</label>
-                    <input
-                      type="number"
-                      min={2}
-                      max={16}
-                      value={teamsPerGroup}
-                      onChange={(e) => setTeamsPerGroup(parseInt(e.target.value, 10) || 4)}
+                    <label className="text-[10px] font-black uppercase tracking-widest text-[#999] block mb-2">Meetings per pair</label>
+                    <select
+                      value={roundRobinLegs}
+                      onChange={event => setRoundRobinLegs(Number(event.target.value))}
                       className="w-full bg-black/40 border border-white/10 text-white px-4 py-3 rounded-xl text-sm outline-none focus:border-[#e8a000]/50 transition-all font-mono"
-                    />
+                    ><option value={1}>Once · single round robin</option><option value={2}>Twice · double round robin</option></select>
                   </div>
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-[#555] block mb-2">Matches per Team</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={15}
-                      value={matchesPerTeam}
-                      onChange={(e) => setMatchesPerTeam(parseInt(e.target.value, 10) || 3)}
+                    <label className="text-[10px] font-black uppercase tracking-widest text-[#999] block mb-2">Group draw</label>
+                    <select
+                      value={drawMode}
+                      onChange={event => setDrawMode(event.target.value)}
                       className="w-full bg-black/40 border border-white/10 text-white px-4 py-3 rounded-xl text-sm outline-none focus:border-[#e8a000]/50 transition-all font-mono"
-                    />
+                    ><option value="SEEDED">Seeded · snake order</option><option value="RANDOM">Random draw</option></select>
                   </div>
                 </div>
 
@@ -686,8 +676,9 @@ export default function EditTournamentPage() {
                   <div className="flex items-center gap-4 text-[#e8a000]">
                     <Zap size={24} />
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Bracket Trigger Threshold</p>
-                      <p className="text-xl font-black">{matchesBeforeBracket} Matches</p>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Balanced draw estimate · {registeredTeamsCount} approved teams</p>
+                      <p className="text-xl font-black">{matchesBeforeBracket} series</p>
+                      <p className="text-xs text-gray-400 mt-2">Actual counts update per group in the draft room. Best-of controls games within each series.</p>
                     </div>
                   </div>
                 </div>

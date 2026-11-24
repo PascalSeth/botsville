@@ -32,11 +32,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
     const region = searchParams.get("region");
+    const search = (searchParams.get('search') || '').trim().slice(0, 100);
     const limit = parseInt(searchParams.get("limit") || "50");
     const skip = parseInt(searchParams.get("skip") || "0");
 
     // Cache key based on query parameters
-    const cacheKey = `teams:${status || "all"}:${region || "all"}:${limit}:${skip}`;
+    const cacheKey = `teams:${status || "all"}:${region || "all"}:${limit}:${skip}:${encodeURIComponent(search)}`;
 
     const result = await cacheResult(
       cacheKey,
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest) {
         if (region) {
           where.region = region;
         }
+        if (search) where.OR = [{ name: { contains: search, mode: 'insensitive' } }, { tag: { contains: search, mode: 'insensitive' } }];
 
         const [teams, total] = await Promise.all([
       prisma.team.findMany({

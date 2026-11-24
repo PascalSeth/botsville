@@ -4,12 +4,13 @@ import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import { Dialog, Popover } from "radix-ui";
+import styles from "./dashboard-shell.module.css";
 import {
   LayoutDashboard,
   Users,
   Shield,
-  Calendar,
+  X,
   Trophy,
   UsersRound,
   Swords,
@@ -29,21 +30,21 @@ import {
 import { signOut } from "next-auth/react";
 import { useRole } from "../lib/useRole";
 
-const SIDEBAR_NAV: { label: string; href: string; icon: React.ReactNode; roles?: string[] }[] = [
-  { label: "Overview", href: "/dashboard", icon: <LayoutDashboard size={18} /> },
-  { label: "Admin roles", href: "/dashboard/roles", icon: <Shield size={18} />, roles: ["SUPER_ADMIN"] },
-  { label: "Users", href: "/dashboard/users", icon: <Users size={18} /> },
-  { label: "Teams", href: "/dashboard/teams", icon: <UsersRound size={18} /> },
-  { label: "Tournaments & Seasons", href: "/dashboard/tournaments", icon: <Trophy size={18} /> },
-  { label: "Solo Draft", href: "/dashboard/solo-draft", icon: <UsersRound size={18} />, roles: ["SUPER_ADMIN", "TOURNAMENT_ADMIN"] },
-  { label: "Matches", href: "/dashboard/matches", icon: <Swords size={18} /> },
-  { label: "Weekly Scrims", href: "/dashboard/scrims", icon: <Swords size={18} />, roles: ["SUPER_ADMIN", "TOURNAMENT_ADMIN"] },
-  { label: "News", href: "/dashboard/news", icon: <Newspaper size={18} /> },
-  { label: "Trivia", href: "/dashboard/trivia", icon: <Brain size={18} />, roles: ["SUPER_ADMIN", "CONTENT_ADMIN"] },
-  { label: "Heroes", href: "/dashboard/heroes", icon: <ImagePlus size={18} /> },
-  { label: "Scrim vault", href: "/dashboard/scrim-vault", icon: <Video size={18} /> },
-  { label: "Fan art", href: "/dashboard/fan-art", icon: <Palette size={18} /> },
-  { label: "Audit log", href: "/dashboard/audit-log", icon: <FileText size={18} /> },
+const SIDEBAR_NAV: { label: string; href: string; icon: React.ReactNode; group: string; roles?: string[] }[] = [
+  { group: "Workspace", label: "Overview", href: "/dashboard", icon: <LayoutDashboard size={18} /> },
+  { group: "Administration", label: "Admin roles", href: "/dashboard/roles", icon: <Shield size={18} />, roles: ["SUPER_ADMIN"] },
+  { group: "Administration", label: "Users", href: "/dashboard/users", icon: <Users size={18} /> },
+  { group: "Competition", label: "Teams", href: "/dashboard/teams", icon: <UsersRound size={18} /> },
+  { group: "Competition", label: "Tournaments & Seasons", href: "/dashboard/tournaments", icon: <Trophy size={18} /> },
+  { group: "Competition", label: "Solo Draft", href: "/dashboard/solo-draft", icon: <UsersRound size={18} />, roles: ["SUPER_ADMIN", "TOURNAMENT_ADMIN"] },
+  { group: "Competition", label: "Matches", href: "/dashboard/matches", icon: <Swords size={18} /> },
+  { group: "Competition", label: "Weekly Scrims", href: "/dashboard/scrims", icon: <Swords size={18} />, roles: ["SUPER_ADMIN", "TOURNAMENT_ADMIN"] },
+  { group: "Publishing", label: "News", href: "/dashboard/news", icon: <Newspaper size={18} /> },
+  { group: "Publishing", label: "Trivia", href: "/dashboard/trivia", icon: <Brain size={18} />, roles: ["SUPER_ADMIN", "CONTENT_ADMIN"] },
+  { group: "Publishing", label: "Heroes", href: "/dashboard/heroes", icon: <ImagePlus size={18} /> },
+  { group: "Publishing", label: "Scrim vault", href: "/dashboard/scrim-vault", icon: <Video size={18} /> },
+  { group: "Publishing", label: "Fan art", href: "/dashboard/fan-art", icon: <Palette size={18} /> },
+  { group: "Administration", label: "Audit log", href: "/dashboard/audit-log", icon: <FileText size={18} /> },
 ];
 
 type User = {
@@ -173,29 +174,19 @@ function DashboardNotificationBell({ isLoggedIn }: { isLoggedIn: boolean }) {
   if (!isLoggedIn) return null;
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setIsOpen((prev) => !prev)}
-        className="relative flex h-8 w-8 items-center justify-center rounded border border-white/10 text-[#666] hover:text-[#e8a000] hover:border-[#e8a000]/30 transition-colors"
-        aria-label="Notifications"
+    <Popover.Root open={isOpen} onOpenChange={setIsOpen}>
+      <Popover.Trigger asChild><button
+        className={styles.iconButton}
+        aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
       >
         <Bell size={15} />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#e8a000] text-[9px] font-black leading-4 text-black text-center">
+          <span className={styles.unread}>
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
-      </button>
-
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full mt-2 w-[320px] max-w-[calc(100vw-2rem)] bg-[#0d0d14] border border-white/10 shadow-xl z-50"
-          >
+      </button></Popover.Trigger>
+      <Popover.Portal><Popover.Content className={styles.notifications} align="end" sideOffset={8} collisionPadding={10} aria-label="Notifications">
             <div className="px-3 py-2 border-b border-white/5 flex items-center justify-between">
               <p className="text-white font-bold text-xs tracking-wider uppercase">Notifications</p>
               <button
@@ -251,241 +242,127 @@ function DashboardNotificationBell({ isLoggedIn }: { isLoggedIn: boolean }) {
                 })
               )}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+          </Popover.Content></Popover.Portal>
+    </Popover.Root>
   );
 }
 
-export function DashboardShell({
-  children,
-  user,
-}: {
-  children: React.ReactNode;
-  user: User;
-}) {
-  const pathname = usePathname();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const isLoggedIn = Boolean(user?.id);
-  const role = (user as { role?: string | null }).role ?? null;
+const GROUPS = ["Workspace", "Competition", "Publishing", "Administration"];
 
-  const { role: clientRole, actualRole } = useRole();
-  const activeRole = clientRole || role;
-
-  const filteredNav = SIDEBAR_NAV.filter(
-    (item) => !item.roles || (activeRole && item.roles.includes(activeRole))
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <Link href="/dashboard" className={styles.brand} aria-label="Botsville dashboard">
+      <Image src="/mlbb_logobg.png" alt="" width={38} height={38} />
+      {!compact && <span><strong>Botsville</strong><small>Dashboard</small></span>}
+    </Link>
   );
+}
+
+export function DashboardShell({ children, user }: { children: React.ReactNode; user: User }) {
+  const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { role } = useRole();
+  const activeRole = role || user.role;
+  const name = user.ign || user.name || user.email || "Admin";
+  const roleLabel = (activeRole || "Admin").replaceAll("_", " ").toLowerCase();
+  const initials = name.split(/\s+/).slice(0, 2).map(word => word[0]).join("").toUpperCase();
+  const visible = SIDEBAR_NAV.filter(item => !item.roles || (activeRole && item.roles.includes(activeRole)));
+  const seasonRoute = /^\/dashboard\/seasons(?:\/|$)/.test(pathname);
+  const current = visible.find(item =>
+    pathname === item.href ||
+    (item.href !== "/dashboard" && pathname.startsWith(item.href + "/")) ||
+    (seasonRoute && item.href === "/dashboard/tournaments")
+  );
+  const section = seasonRoute ? "Seasons" : current?.label || pathname.split("/")[2]?.replaceAll("-", " ") || "Overview";
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const closeOnDesktop = () => { if (desktop.matches) setMobileOpen(false); };
+    closeOnDesktop();
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, [mobileOpen]);
+
+  function navigation(compact: boolean, mobile = false) {
+    return (
+      <nav className={styles.nav} aria-label="Dashboard navigation">
+        {GROUPS.map(group => {
+          const links = visible.filter(item => item.group === group);
+          if (!links.length) return null;
+          return <section key={group} aria-label={group}>
+            {!compact && group !== "Workspace" && <h2>{group}</h2>}
+            {links.map(item => (
+              <Link key={item.href} href={item.href} className={styles.navLink}
+                aria-current={current === item ? (pathname === item.href ? "page" : "location") : undefined}
+                aria-label={item.label} title={compact ? item.label : undefined}
+                onClick={mobile ? () => setMobileOpen(false) : undefined}>
+                {item.icon}{!compact && <span>{item.label}</span>}
+              </Link>
+            ))}
+          </section>;
+        })}
+      </nav>
+    );
+  }
 
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&display=swap');
-        .dashboard-font { font-family: 'Barlow Condensed', sans-serif; }
-      `}</style>
-
-      {/* Sidebar — desktop */}
-      <aside
-        className={`
-          fixed left-0 top-0 z-40 h-screen border-r border-[#e8a000]/10
-          bg-[#0a0a0f]/98 backdrop-blur-md
-          hidden lg:flex flex-col
-          transition-[width] duration-300 ease-out
-          ${sidebarCollapsed ? "w-[72px]" : "w-[260px]"}
-        `}
-      >
-        {/* Logo strip */}
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.06] px-3">
-          {!sidebarCollapsed && (
-            <Link href="/dashboard" className="flex items-center gap-2">
-              <div className="relative">
-                <div className="absolute inset-0 rounded-full bg-[#e8a000]/20 blur-md" />
-                <Image
-                  src="/mlbb_logobg.png"
-                  alt="Botsville"
-                  width={36}
-                  height={36}
-                  className="relative z-10 object-contain"
-                />
-              </div>
-              <span className="dashboard-font text-[#e8a000] font-black text-sm tracking-[0.2em] uppercase">
-                Dashboard
-              </span>
-            </Link>
-          )}
-          <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="flex h-8 w-8 items-center justify-center rounded border border-white/10 text-[#666] hover:text-[#e8a000] hover:border-[#e8a000]/30 transition-all"
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-4 px-2">
-          <p
-            className={`px-3 text-[#444] text-[9px] font-black tracking-[0.25em] uppercase mb-3 ${
-              sidebarCollapsed ? "text-center" : ""
-            }`}
-          >
-            {sidebarCollapsed ? "—" : "Manage"}
-          </p>
-          <ul className="space-y-0.5">
-            {filteredNav.map((item) => {
-              const isActive =
-                item.href === "/dashboard"
-                  ? pathname === "/dashboard"
-                  : pathname.startsWith(item.href);
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={`
-                      flex items-center gap-3 rounded-md px-3 py-2.5
-                      text-xs font-bold tracking-wider uppercase transition-all duration-200
-                      ${sidebarCollapsed ? "justify-center" : ""}
-                      ${
-                        isActive
-                          ? "bg-[#e8a000]/15 text-[#e8a000] border border-[#e8a000]/30"
-                          : "text-[#888] hover:text-white hover:bg-white/[0.04] border border-transparent"
-                      }
-                    `}
-                  >
-                    <span className="shrink-0 text-[#e8a000]">{item.icon}</span>
-                    {!sidebarCollapsed && <span>{item.label}</span>}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
-
-        {/* Sidebar footer */}
-        {!sidebarCollapsed && (
-          <div className="border-t border-white/[0.06] p-3">
-            <Link
-              href="/"
-              className="flex items-center gap-2 rounded-md px-3 py-2 text-[10px] font-bold tracking-wider uppercase text-[#666] hover:text-[#e8a000] hover:bg-white/[0.04] transition-colors"
-            >
-              <ExternalLink size={14} /> View site
-            </Link>
-          </div>
-        )}
+    <div className={styles.shell} data-compact={collapsed}>
+      <aside className={styles.sidebar}>
+        <div className={styles.brandBar}><Brand compact={collapsed} /></div>
+        {navigation(collapsed)}
+        <button className={styles.railToggle} onClick={() => setCollapsed(!collapsed)}
+          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+          title={collapsed ? "Expand navigation" : "Collapse navigation"}>
+          {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} />Collapse navigation</>}
+        </button>
       </aside>
 
-      {/* Mobile sidebar overlay */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
-              onClick={() => setMobileOpen(false)}
-            />
-            <motion.aside
-              initial={{ x: -280 }}
-              animate={{ x: 0 }}
-              exit={{ x: -280 }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed left-0 top-0 z-50 h-screen w-[260px] border-r border-[#e8a000]/10 bg-[#0a0a0f] lg:hidden flex flex-col"
-            >
-              <div className="flex h-14 items-center justify-between border-b border-white/[0.06] px-4">
-                <span className="dashboard-font text-[#e8a000] font-black text-sm tracking-[0.2em] uppercase">
-                  Menu
-                </span>
-                <button
-                  onClick={() => setMobileOpen(false)}
-                  className="flex h-8 w-8 items-center justify-center rounded border border-white/10 text-[#888] hover:text-white"
-                >
-                  <ChevronLeft size={16} />
+      <div className={styles.body}>
+        <header className={styles.topbar}>
+          <Dialog.Root open={mobileOpen} onOpenChange={setMobileOpen}>
+            <Dialog.Trigger asChild>
+              <button className={styles.menuButton} aria-label="Open dashboard navigation"><Menu size={19} /></button>
+            </Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Overlay className={styles.scrim} />
+              <Dialog.Content className={styles.drawer} aria-describedby={undefined}>
+                <Dialog.Title className="sr-only">Dashboard navigation</Dialog.Title>
+                <div className={styles.brandBar}>
+                  <Dialog.Close asChild><Link href="/dashboard" className={styles.brand}>
+                    <Image src="/mlbb_logobg.png" alt="" width={38} height={38} />
+                    <span><strong>Botsville</strong><small>Dashboard</small></span>
+                  </Link></Dialog.Close>
+                  <Dialog.Close asChild><button className={styles.iconButton} aria-label="Close navigation"><X size={18} /></button></Dialog.Close>
+                </div>
+                {navigation(false, true)}
+                <Dialog.Close asChild><Link href="/" className={styles.railToggle}><ExternalLink size={15} /> View public site</Link></Dialog.Close>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
+          <div className={styles.path}>
+            <Link href="/dashboard">Dashboard</Link><ChevronRight size={13} /><strong>{section}</strong>
+          </div>
+          <div className={styles.actions}>
+            <Link href="/" className={styles.siteLink}><ExternalLink size={14} /> View site</Link>
+            <DashboardNotificationBell isLoggedIn={Boolean(user.id)} />
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <button className={styles.account} aria-label={`Account options for ${name}`}>
+                  <span className={styles.avatar}>{initials}</span>
+                  <span className={styles.identity}><strong>{name}</strong><small>{roleLabel}</small></span>
                 </button>
-              </div>
-              <nav className="flex-1 overflow-y-auto py-4 px-2">
-                <ul className="space-y-0.5">
-                  {filteredNav.map((item) => {
-                    const isActive =
-                      item.href === "/dashboard"
-                        ? pathname === "/dashboard"
-                        : pathname.startsWith(item.href);
-                    return (
-                      <li key={item.href}>
-                        <Link
-                          href={item.href}
-                          onClick={() => setMobileOpen(false)}
-                          className={`
-                            flex items-center gap-3 rounded-md px-3 py-2.5 text-xs font-bold tracking-wider uppercase
-                            ${
-                              isActive
-                                ? "bg-[#e8a000]/15 text-[#e8a000] border border-[#e8a000]/30"
-                                : "text-[#888] hover:text-white hover:bg-white/[0.04] border border-transparent"
-                            }
-                          `}
-                        >
-                          <span className="shrink-0 text-[#e8a000]">{item.icon}</span>
-                          <span>{item.label}</span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </nav>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Main area */}
-      <div
-        className={`
-          min-h-screen flex flex-col
-          transition-[margin] duration-300 ease-out
-          ${sidebarCollapsed ? "lg:ml-[72px]" : "lg:ml-[260px]"}
-        `}
-      >
-        {/* Top navbar */}
-        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-white/[0.06] bg-[#0d0d14]/95 px-4 backdrop-blur-md">
-          <button
-            onClick={() => setMobileOpen(true)}
-            className="flex h-9 w-9 items-center justify-center rounded border border-white/10 text-[#888] hover:text-[#e8a000] lg:hidden"
-            aria-label="Open menu"
-          >
-            <Menu size={18} />
-          </button>
-
-          <div className="hidden lg:block w-8" />
-
-          <div className="flex flex-1 items-center justify-end gap-3">
-            <DashboardNotificationBell isLoggedIn={isLoggedIn} />
-            <Link
-              href="/"
-              className="hidden sm:flex items-center gap-1.5 rounded border border-white/10 px-3 py-1.5 text-[10px] font-bold tracking-wider uppercase text-[#666] hover:text-[#e8a000] hover:border-[#e8a000]/30 transition-colors"
-            >
-              <ExternalLink size={12} /> Site
-            </Link>
-            <div className="flex items-center gap-2 rounded-md border border-[#e8a000]/25 bg-[#e8a000]/5 px-3 py-1.5 text-[#e8a000]">
-              <span className="text-[10px] font-black uppercase tracking-wider">
-                {activeRole ?? "Admin"}
-              </span>
-              <span className="text-[#888] text-xs">{(user as { ign?: string | null }).ign ?? user.name ?? "—"}</span>
-            </div>
-            <button
-              onClick={() => signOut({ callbackUrl: "/" })}
-              className="flex h-8 w-8 items-center justify-center rounded border border-white/10 text-[#666] hover:text-red-400 hover:border-red-500/30 transition-colors"
-              aria-label="Sign out"
-            >
-              <LogOut size={16} />
-            </button>
+              </Popover.Trigger>
+              <Popover.Portal><Popover.Content className={styles.accountPanel} align="end" sideOffset={8} collisionPadding={10} aria-label="Account options">
+                <strong>{name}</strong><small>{roleLabel}</small>
+                <button onClick={() => signOut({ callbackUrl: "/" })}><LogOut size={15} /> Sign out</button>
+              </Popover.Content></Popover.Portal>
+            </Popover.Root>
           </div>
         </header>
-
-        <main className="flex-1 p-4 sm:p-6">
-          <div className="mx-auto max-w-7xl">{children}</div>
-        </main>
+        <main className="flex-1 p-4 sm:p-6"><div className="mx-auto max-w-7xl">{children}</div></main>
       </div>
-    </>
+    </div>
   );
 }

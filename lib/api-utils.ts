@@ -104,7 +104,7 @@ export async function createAuditLog(
   action: string,
   targetType: string,
   targetId: string,
-  details?: string | Record<string, any>
+  details?: string | Record<string, unknown>
 ) {
   const detailsStr = typeof details === "object" && details !== null
     ? JSON.stringify(details)
@@ -265,7 +265,7 @@ export function isValidHexColor(color: string): boolean {
  * Validate region
  */
 export function isValidRegion(region: string): boolean {
-  const validRegions = ["Accra", "Kumasi", "Takoradi", "Tema", "Cape Coast", "Tamale"];
+  const validRegions = ["Accra", "Kumasi", "Takoradi", "Tema", "Cape Coast", "Tamale", "Sunyani", "Ho"];
   return validRegions.includes(region);
 }
 

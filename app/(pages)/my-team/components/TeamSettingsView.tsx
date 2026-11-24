@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Camera, Shield, Save, Loader2, MapPin, Tag, UploadCloud, Image as ImageIcon, Trash2, Copy, Check, Key } from 'lucide-react';
 import { toast } from 'sonner';
@@ -37,10 +37,18 @@ export default function TeamSettingsView({
   const [logoUrl, setLogoUrl] = useState(team.logo || '');
   const [bannerUrl, setBannerUrl] = useState(team.banner || '');
   const [copiedCode, setCopiedCode] = useState(false);
-  
+
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
+
+  useEffect(() => {
+    setName(team.name);
+    setTag(team.tag);
+    setRegion(team.region || 'Accra');
+    setLogoUrl(team.logo || '');
+    setBannerUrl(team.banner || '');
+  }, [team.name, team.tag, team.region, team.logo, team.banner]);
 
   const fileToDataUrl = (file: File) => fileToCompressedDataUrl(file);
 
@@ -62,12 +70,27 @@ export default function TeamSettingsView({
       const data = await res.json();
       if (res.ok && data.url) {
         setLogoUrl(data.url);
-        toast.success("Squad logo uploaded!");
+        await onUpdateTeamSettings({ logo: data.url });
+        toast.success("Squad logo updated successfully!");
       } else {
         toast.error(data.error || "Logo upload failed");
       }
-    } catch {
-      toast.error("Logo upload failed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Logo upload failed");
+    } finally {
+      setUploadingLogo(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    setUploadingLogo(true);
+    try {
+      setLogoUrl('');
+      await onUpdateTeamSettings({ logo: null });
+      toast.success("Squad logo removed!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to remove squad logo");
     } finally {
       setUploadingLogo(false);
     }
@@ -91,12 +114,27 @@ export default function TeamSettingsView({
       const data = await res.json();
       if (res.ok && data.url) {
         setBannerUrl(data.url);
-        toast.success("Squad banner uploaded!");
+        await onUpdateTeamSettings({ banner: data.url });
+        toast.success("Squad banner updated successfully!");
       } else {
         toast.error(data.error || "Banner upload failed");
       }
-    } catch {
-      toast.error("Banner upload failed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Banner upload failed");
+    } finally {
+      setUploadingBanner(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveBanner = async () => {
+    setUploadingBanner(true);
+    try {
+      setBannerUrl('');
+      await onUpdateTeamSettings({ banner: null });
+      toast.success("Squad banner removed!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to remove squad banner");
     } finally {
       setUploadingBanner(false);
     }
@@ -169,7 +207,7 @@ export default function TeamSettingsView({
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold uppercase text-zinc-400 mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-bold uppercase text-zinc-400 mb-1.5 flex items-center gap-1.5">
                 <Shield size={14} /> Team Name
               </label>
               <input
@@ -183,7 +221,7 @@ export default function TeamSettingsView({
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase text-zinc-400 mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-bold uppercase text-zinc-400 mb-1.5 flex items-center gap-1.5">
                 <Tag size={14} /> Clan Tag (3–5 characters)
               </label>
               <input
@@ -201,8 +239,8 @@ export default function TeamSettingsView({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold uppercase text-zinc-400 mb-1.5 flex items-center gap-1.5">
-                <MapPin size={14} /> Regional Base / City
+              <label className="text-xs font-bold uppercase text-zinc-400 mb-1.5 flex items-center gap-1.5">
+                <MapPin size={14} /> Region/City
               </label>
               <select
                 value={region}
@@ -219,7 +257,7 @@ export default function TeamSettingsView({
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase text-zinc-400 mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-bold uppercase text-zinc-400 mb-1.5 flex items-center gap-1.5">
                 <Camera size={14} /> Squad Logo
               </label>
               <div className="flex items-center gap-4">
@@ -231,20 +269,33 @@ export default function TeamSettingsView({
                   )}
                 </div>
                 {isCaptain && (
-                  <label className="flex-1 flex items-center justify-center gap-2 h-16 bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-xs text-zinc-400 rounded-xl cursor-pointer transition-colors px-4">
-                    {uploadingLogo ? (
-                      <><Loader2 size={14} className="animate-spin text-amber-400" /> Uploading...</>
-                    ) : (
-                      <><UploadCloud size={14} className="text-amber-400" /> Upload Logo File</>
+                  <div className="flex-1 flex items-center gap-2">
+                    <label className="flex-1 flex items-center justify-center gap-2 h-16 bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-xs text-zinc-300 rounded-xl cursor-pointer transition-colors px-4">
+                      {uploadingLogo ? (
+                        <><Loader2 size={14} className="animate-spin text-amber-400" /> Saving...</>
+                      ) : (
+                        <><UploadCloud size={14} className="text-amber-400" /> {logoUrl ? "Change Logo" : "Upload Logo File"}</>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleLogoUpload}
+                        disabled={uploadingLogo}
+                      />
+                    </label>
+                    {logoUrl && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        disabled={uploadingLogo}
+                        className="h-16 px-3.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-xl transition-colors flex items-center justify-center shrink-0"
+                        title="Remove Logo"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     )}
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      className="hidden" 
-                      onChange={handleLogoUpload} 
-                      disabled={uploadingLogo}
-                    />
-                  </label>
+                  </div>
                 )}
               </div>
             </div>
@@ -252,7 +303,7 @@ export default function TeamSettingsView({
 
           {/* ── Squad Banner Image Upload ───────────────────────── */}
           <div className="space-y-2 pt-2 border-t border-white/10">
-            <label className="block text-xs font-bold uppercase text-zinc-400 flex items-center gap-1.5">
+            <label className="text-xs font-bold uppercase text-zinc-400 flex items-center gap-1.5">
               <ImageIcon size={14} className="text-amber-400" /> Squad Hero Banner Image
             </label>
             <p className="text-[11px] text-zinc-500">
@@ -260,24 +311,25 @@ export default function TeamSettingsView({
             </p>
 
             {bannerUrl ? (
-              <div className="relative rounded-lg overflow-hidden border border-white/10 aspect-[21/9] sm:aspect-[21/7] bg-black group">
+              <div className="relative rounded-lg overflow-hidden border border-white/10 aspect-21/9 sm:aspect-21/7 bg-black group">
                 <Image src={bannerUrl} alt="Squad Banner Preview" fill className="object-cover" unoptimized />
                 {isCaptain && (
                   <div className="absolute inset-0 bg-black/60 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
                     <label className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase rounded-xl cursor-pointer transition-colors flex items-center gap-2">
                       {uploadingBanner ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
                       <span>Change File</span>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
-                        onChange={handleBannerUpload} 
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleBannerUpload}
                         disabled={uploadingBanner}
                       />
                     </label>
                     <button
                       type="button"
-                      onClick={() => setBannerUrl('')}
+                      onClick={handleRemoveBanner}
+                      disabled={uploadingBanner}
                       className="px-4 py-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 text-xs font-bold uppercase rounded-xl border border-red-500/30 transition-colors flex items-center gap-1.5"
                     >
                       <Trash2 size={14} /> Remove
@@ -287,7 +339,7 @@ export default function TeamSettingsView({
               </div>
             ) : (
               isCaptain && (
-                <label className="w-full h-32 bg-white/[0.02] hover:bg-white/[0.05] border-2 border-dashed border-white/15 hover:border-amber-400/50 rounded-lg flex flex-col items-center justify-center gap-2 cursor-pointer transition-all group">
+                <label className="w-full h-32 bg-white/2 hover:bg-white/5 border-2 border-dashed border-white/15 hover:border-amber-400/50 rounded-lg flex flex-col items-center justify-center gap-2 cursor-pointer transition-all group">
                   {uploadingBanner ? (
                     <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
                       <Loader2 size={18} className="animate-spin" /> Uploading Banner File...
@@ -301,11 +353,11 @@ export default function TeamSettingsView({
                       <p className="text-[10px] text-zinc-500">Recommended aspect ratio 21:9 (MAX 5MB)</p>
                     </>
                   )}
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    onChange={handleBannerUpload} 
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleBannerUpload}
                     disabled={uploadingBanner}
                   />
                 </label>

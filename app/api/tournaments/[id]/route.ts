@@ -10,6 +10,7 @@ import {
 import { TournamentStatus, TournamentFormat, AdminRoleType } from "@/app/generated/prisma/enums";
 
 import { prisma } from "@/lib/prisma";
+import { invalidatePattern } from '@/lib/redis';
 
 // GET - Get tournament details by ID or slug
 export async function GET(
@@ -33,6 +34,7 @@ export async function GET(
         pointsFormulas: {
           orderBy: { placement: "asc" },
         },
+        stages: { orderBy: { order: 'asc' } },
         registrations: {
           where: {
             status: { in: ['APPROVED', 'PENDING'] },
@@ -90,6 +92,7 @@ export async function GET(
           pointsFormulas: {
             orderBy: { placement: "asc" },
           },
+          stages: { orderBy: { order: 'asc' } },
           registrations: {
             where: {
               status: "APPROVED",
@@ -219,11 +222,24 @@ export async function PUT(
     if (body.rules !== undefined) updateData.rules = body.rules;
     if (body.prizePool !== undefined) updateData.prizePool = body.prizePool;
     
-    // Group Stage Configuration
+    // Group settings are inputs; counts come from the approved team draw.
+    if (body.drawMode !== undefined) {
+      if (!['SEEDED', 'RANDOM'].includes(body.drawMode)) return apiError('Choose a seeded or random draw.');
+      updateData.drawMode = body.drawMode;
+    }
+    if (body.roundRobinLegs !== undefined) {
+      if (![1, 2].includes(body.roundRobinLegs)) return apiError('Choose a single or double round robin.');
+      updateData.roundRobinLegs = body.roundRobinLegs;
+    }
+    if (body.numGroups !== undefined && body.numGroups !== null && (!Number.isInteger(body.numGroups) || body.numGroups < 1 || body.numGroups > 32)) return apiError('Choose between 1 and 32 groups.');
+    if (body.defaultBestOf !== undefined && ![1, 3, 5, 7, 9].includes(body.defaultBestOf)) return apiError('Choose an odd best-of series from 1 to 9.');
+    if (body.matchesPerDay !== undefined && (!Number.isInteger(body.matchesPerDay) || body.matchesPerDay < 1 || body.matchesPerDay > 48)) return apiError('Choose between 1 and 48 series per day.');
+    if (body.playDaysPerWeek !== undefined && (!Array.isArray(body.playDaysPerWeek) || body.playDaysPerWeek.some((day: number) => !Number.isInteger(day) || day < 0 || day > 6))) return apiError('Provide valid play days.');
+    if (body.pointSystem !== undefined && !['STANDARD', 'MLBB_WEIGHTED'].includes(body.pointSystem)) return apiError('Choose a valid scoring system.');
+    const structureChanged = (body.format !== undefined && body.format !== tournament.format) || (body.numGroups !== undefined && body.numGroups !== tournament.numGroups) || (body.roundRobinLegs !== undefined && body.roundRobinLegs !== tournament.roundRobinLegs);
+    if (structureChanged && await prisma.match.count({ where: { tournamentId: id } })) return apiError('Fixtures are already published. Group structure cannot change after publication.');
     if (body.numGroups !== undefined) updateData.numGroups = body.numGroups;
-    if (body.teamsPerGroup !== undefined) updateData.teamsPerGroup = body.teamsPerGroup;
-    if (body.matchesPerTeam !== undefined) updateData.matchesPerTeam = body.matchesPerTeam;
-    if (body.matchesBeforeBracket !== undefined) updateData.matchesBeforeBracket = body.matchesBeforeBracket;
+    // Actual group size, matches per team and the playoff threshold are set on publication.
 
     if (body.playDaysPerWeek !== undefined) updateData.playDaysPerWeek = body.playDaysPerWeek;
     if (body.matchesPerDay !== undefined) updateData.matchesPerDay = body.matchesPerDay;
@@ -240,6 +256,7 @@ export async function PUT(
       where: { id },
       data: updateData,
     });
+    await invalidatePattern('tournaments:*');
 
     // Create audit log
     await createAuditLog(

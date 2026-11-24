@@ -143,6 +143,7 @@ export async function PUT(
     }
 
     // Approve
+    if (['COMPLETED', 'CANCELLED'].includes(registration.tournament.status) || await prisma.match.count({ where: { tournamentId: id } })) return apiError('The team list is locked after fixtures are published.');
     if (registration.tournament.filled >= registration.tournament.slots) {
       return apiError("Tournament is full");
     }
@@ -235,6 +236,8 @@ export async function POST(
     if (!tournament || tournament.deletedAt) {
       return apiError("Tournament not found", 404);
     }
+
+    if (['COMPLETED', 'CANCELLED'].includes(tournament.status) || await prisma.match.count({ where: { tournamentId: id } })) return apiError('The team list is locked after fixtures are published.');
 
     const results = [];
 
@@ -446,6 +449,7 @@ export async function DELETE(
     }
 
     // Delete the registration record
+    if (registration.status === RegistrationStatus.APPROVED && await prisma.match.count({ where: { tournamentId } })) return apiError('Approved teams cannot be removed after fixtures are published.');
     await prisma.tournamentRegistration.delete({
       where: { id: registration.id },
     });

@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { MatchStatus, BracketType } from "@/app/generated/prisma/enums";
+import { requireAdmin, apiError } from '@/lib/api-utils';
+import { invalidatePattern } from '@/lib/redis';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await requireAdmin('TOURNAMENT_ADMIN');
     const { id: tournamentId } = await params;
     const body = await req.json().catch(() => ({}));
 
@@ -16,6 +19,7 @@ export async function POST(
     });
 
     if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
+    if (tournament.deletedAt || ['COMPLETED', 'CANCELLED'].includes(tournament.status)) return apiError('This tournament cannot generate another round.');
 
     // 2. Find all playoff matches (bracketType OR stage-based fallback)
     const allTournamentMatches = await prisma.match.findMany({
@@ -47,7 +51,7 @@ export async function POST(
     const matchesInRound = currentMatches.filter(m => m.round === currentRoundNum);
 
     // 3. Ensure all are completed
-    const uncompleted = matchesInRound.filter(m => m.status !== MatchStatus.COMPLETED);
+    const uncompleted = matchesInRound.filter(m => !m.winnerId || (m.status !== MatchStatus.COMPLETED && m.status !== MatchStatus.FORFEITED) || (m.status === MatchStatus.COMPLETED && m.teamBId && !m.statsFinalized));
     if (uncompleted.length > 0) {
       return NextResponse.json({ 
         error: `Please complete all matches in Round ${currentRoundNum + 1} before generating the next round.` 
@@ -62,6 +66,9 @@ export async function POST(
     let matchups: Array<{ seed1: any, seed2: any }> = [];
 
     if (body.manualMatchups && Array.isArray(body.manualMatchups)) {
+      const winners = new Set(matchesInRound.map(match => match.winnerId));
+      const selectedIds = body.manualMatchups.flatMap((match: { team1Id?: string; team2Id?: string }) => [match.team1Id, match.team2Id].filter(Boolean));
+      if (selectedIds.length !== winners.size || new Set(selectedIds).size !== selectedIds.length || selectedIds.some((teamId: string) => !winners.has(teamId)) || body.manualMatchups.some((match: { team1Id?: string; team2Id?: string }) => !match.team1Id && !match.team2Id)) return apiError('Include every winner exactly once in the next round.');
       // Manual Matchups
       matchups = body.manualMatchups.map((m: any, i: number) => ({
         seed1: { teamId: m.team1Id, teamName: m.team1Name || "Team A" },
@@ -82,8 +89,8 @@ export async function POST(
 
     // 5. Create matches
     const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(18, 0, 0, 0);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(tournament.date.getUTCHours(), tournament.date.getUTCMinutes(), 0, 0);
 
     // Assign the next playDay by finding the max existing playoff playDay
     const lastPlayoffMatch = await prisma.match.findFirst({
@@ -96,11 +103,13 @@ export async function POST(
     const isGrandFinal = matchups.length === 1;
     const stageName = isGrandFinal ? "Grand Finals" : `Round ${nextRoundNum + 1}`;
     const bType = isGrandFinal ? BracketType.GRAND_FINAL : BracketType.WINNER_BRACKET;
-    const bestOf = isGrandFinal ? 5 : (tournament.defaultBestOf || 3);
+    const bestOf = tournament.defaultBestOf;
 
     const createdMatches: any[] = [];
 
     await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM tournaments WHERE id = ${tournamentId} FOR UPDATE`;
+      if (await tx.match.count({ where: { tournamentId, round: nextRoundNum, bracketType: { in: ['WINNER_BRACKET', 'GRAND_FINAL'] } } })) throw new Error('This round already exists. Reload match management.');
       for (let i = 0; i < matchups.length; i++) {
         const m = matchups[i];
         const hasBye = !m.seed1.teamId || !m.seed2.teamId;
@@ -114,7 +123,8 @@ export async function POST(
             teamBId: hasBye ? null : otherTeam.teamId,
             status: hasBye ? MatchStatus.COMPLETED : MatchStatus.UPCOMING,
             winnerId: hasBye ? realTeam.teamId : null,
-            scoreA: hasBye ? bestOf : 0,
+            scoreA: hasBye ? Math.ceil(bestOf / 2) : 0,
+            statsFinalized: hasBye,
             bracketType: bType,
             stage: hasBye ? `${stageName} (Bye)` : stageName,
             bracketPosition: i + 1,
@@ -151,6 +161,7 @@ export async function POST(
       });
     });
 
+    await invalidatePattern(`tournament:matches:${tournamentId}:*`);
     return NextResponse.json({
       success: true,
       message: `Successfully generated ${stageName}.`,
@@ -158,6 +169,10 @@ export async function POST(
     });
 
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to generate the next round.';
+    if (message === 'Unauthorized') return apiError(message, 401);
+    if (message.includes('Forbidden')) return apiError(message, 403);
+    if (message.includes('already exists')) return apiError(message, 409);
     console.error("Generate Next Round Error:", error);
     return NextResponse.json({ 
       error: error instanceof Error ? error.message : "Failed to generate next round" 

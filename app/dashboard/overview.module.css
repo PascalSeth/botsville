@@ -1,0 +1,122 @@
+.desk { max-width:1200px; margin:auto; color:#f3efe5; font-size:13px }
+.desk a:focus-visible { outline:2px solid #edbb65; outline-offset:2px }
+.header,.schedule header,.news header,.poster footer { display:flex; align-items:center; justify-content:space-between; gap:14px }
+.header { margin:3px 0 18px; flex-wrap:wrap }
+.header p,.stories small,.flag,.schedule header span { font-size:10px; font-weight:650; letter-spacing:.08em; text-transform:uppercase; color:#c1b294 }
+.header h1 { margin:2px 0 0; font-size:clamp(26px,3vw,38px); letter-spacing:-.055em; line-height:1.15; font-weight:760 }
+.create,.poster footer a,.more,.news header a { display:inline-flex; align-items:center; gap:7px }
+.create { background:#edbb65; color:#201b13; padding:10px 13px; border-radius:4px; font-size:12px; font-weight:650 }
+.board { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(220px,1fr); border:1px solid #43403b; border-radius:7px; overflow:hidden }
+.spotlight { position:relative; isolation:isolate; display:grid; align-items:end; min-height:295px; background:#222729 }
+.cover { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center 32%; z-index:-2 }
+.spotlight::before { content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(0deg,#0a0c0efc 4%,#0b1014ad 64%,#0b101426) }
+.poster { padding:clamp(18px,3vw,36px); min-width:0 }
+.flag { display:inline-block; color:#272015; background:#eac784; padding:4px 7px }
+.flag[data-live=true] { background:#afe0be }
+.poster h2 { margin:10px 0 3px; font-size:clamp(22px,3vw,36px); font-weight:700; letter-spacing:-.045em; line-height:1.13; overflow-wrap:anywhere }
+.poster p,.schedule p,.news p { color:#c0c3c6; margin:5px 0; font-size:12px }
+.duel { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:12px; padding:20px 0 0 }
+.duel > div { display:flex; align-items:center; gap:9px; min-width:0 }
+.duel > div:nth-child(2) { grid-column:3 }
+.duel strong,.fixture strong { overflow-wrap:anywhere; line-height:1.2 }
+.duel b { grid-row:1; grid-column:2; color:#e6bf77; font-variant-numeric:tabular-nums }
+.poster footer { margin-top:20px; border-top:1px solid #ffffff32; padding-top:12px; flex-wrap:wrap; font-size:11px }
+.poster footer a,.news header a,.more { color:#edc98d; font-weight:600 }
+.schedule { display:flex; flex-direction:column; background:#16191b; padding:16px 18px }
+.schedule h2,.news h2 { font-size:17px; letter-spacing:-.035em; font-weight:650 }
+.schedule header { padding-bottom:12px }
+.fixture { display:grid; grid-template-columns:50px 1fr; gap:12px; align-items:center; padding:10px 0; border-top:1px solid #383c3e }
+.fixture time { font-size:14px; font-variant-numeric:tabular-nums; color:#eac784 }
+.fixture small { display:block; font-size:10px; color:#a4abb1 }
+.fixture strong { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:550 }
+.fixture strong + strong { margin-top:4px }
+.more { margin-top:auto; padding-top:15px; font-size:11px }
+.news { margin-top:26px }
+.news header { margin-bottom:12px }
+.news header a { font-size:11px }
+.stories { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:15px }
+.thumb { aspect-ratio:2.1; border-radius:4px; display:grid; place-items:center; background:#202427; overflow:hidden; color:#899198 }
+.thumb img { width:100%; height:100%; object-fit:cover }
+.stories small { display:block; margin:9px 0 4px; font-size:9px }
+.stories h3 { font-size:14px; font-weight:630; line-height:1.35; overflow-wrap:anywhere }
+.directory { display:flex; flex-wrap:wrap; gap:0 22px; border-top:1px solid #34373a; margin-top:24px; color:#aab0b6; font-size:11px }
+.directory a { padding:12px 0 }
+.directory a:hover,.fixture:hover strong,.stories a:hover h3 { color:#edbb65 }
+@media(max-width:740px) {
+  .board { grid-template-columns:minmax(0,1fr) }
+  .spotlight { min-height:255px }
+  .schedule { border-top:1px solid #383c3e }
+  .stories { grid-template-columns:1fr; gap:0 }
+  .stories a { display:grid; grid-template-columns:95px 1fr; align-items:center; gap:12px; padding:9px 0; border-top:1px solid #303538 }
+  .thumb { aspect-ratio:1.55 }
+  .stories small { margin-top:0 }
+  .duel > div { flex-direction:column; align-items:center; text-align:center; font-size:12px }
+}
+
+.metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border:1px solid #383a3c; border-radius:7px; overflow:hidden; background:#17191c }
+.metrics a { display:grid; gap:5px; padding:16px; border-inline-end:1px solid #383a3c }
+.metrics a:last-child { border:0 }
+.metrics a:hover { background:#212327 }
+.metrics span,.chart header { display:flex; justify-content:space-between; align-items:center; gap:8px }
+.metrics span { color:#dad9d3; font-size:12px }
+.metrics svg { color:#98989b }
+.metrics strong { font-size:clamp(24px,3vw,38px); font-weight:650; letter-spacing:-.055em; font-variant-numeric:tabular-nums }
+.metrics small,.activity small,.chart p { color:#a8adb2; font-size:11px }
+.activity { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(200px,1fr); gap:16px; margin:16px 0 24px }
+.activity h2 { font-size:16px; font-weight:650; letter-spacing:-.025em }
+.chart,.engagement { padding:16px; border:1px solid #34373b; border-radius:6px; background:#121518 }
+.chart header { flex-wrap:wrap }
+.bars { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; padding:12px 0 }
+.bars > div { display:flex; flex-direction:column; align-items:center; justify-content:end; min-height:96px }
+.bars b { color:#dfd6c4; font-size:11px; font-variant-numeric:tabular-nums }
+.bars i { display:block; width:min(60%,38px); background:#b69a69; margin-top:3px; border-radius:2px 2px 0 0 }
+.bars > div:last-child i { background:#edbb65 }
+.bars span { text-align:center; width:100%; border-top:1px solid #444649; padding-top:4px; color:#a9afb5; font-size:10px }
+.engagement dl { margin-top:12px }
+.engagement dl div { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid #35383b }
+.engagement dt { font-size:12px; color:#b4b9bd }
+.engagement dd { font-size:19px; color:#eed4a5; font-weight:600 }
+@media(max-width:740px) {
+ .metrics { grid-template-columns:repeat(2,minmax(0,1fr)) }
+ .metrics a { padding:12px }
+ .metrics a:nth-child(even) { border-inline-end:0 }
+ .metrics a:nth-child(-n+2) { border-bottom:1px solid #383a3c }
+ .activity { grid-template-columns:1fr; gap:10px }
+}
+
+.seasonPoster {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid #55412f;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(112deg, #14171d 30%, #342b30 56%, #a46133 85%, #e8b35d);
+}
+.illustration { position:absolute; inset:0 0 0 45%; overflow:hidden; pointer-events:none; z-index:-1 }
+.illustration::before {
+  content:""; position:absolute; inset:0;
+  background:repeating-linear-gradient(114deg, transparent 0 35px, #ffda951c 36px 37px, transparent 38px 62px);
+}
+.illustration img { position:absolute; height:auto; max-width:none; }
+.brody { right:42%; top:-8%; width:48%; transform:rotate(-8deg); filter:saturate(.8); }
+.badang { right:1%; top:-12%; width:64%; transform:rotate(5deg); }
+.posterData { width:52%; padding:clamp(18px, 2.6vw, 32px); background:linear-gradient(90deg,#15171c 80%,transparent) }
+.posterData header p { color:#e0b77c; font-size:11px; font-weight:600 }
+.posterData h1 { margin:4px 0 18px; color:#fff3de; font-size:clamp(32px,4.2vw,58px); font-weight:850; letter-spacing:-.065em; line-height:1 }
+.posterData .chart { padding:13px 0 0; border:0; border-top:1px solid #756552; border-radius:0; background:none }
+.posterData .chart h2 { font-size:14px; font-weight:650 }
+.posterData .chart small { color:#c4b9a9; font-size:10px }
+.seasonPoster + .metrics { border-radius:0 0 7px 7px; margin-bottom:22px; border-top-color:#88704b }
+.news .newsActivity { margin:-4px 0 12px; color:#a7aaae; font-size:11px }
+.directory a { display:inline-flex; align-items:center; gap:5px }
+@media(max-width:700px) {
+  .illustration { inset:0 0 auto 30%; height:156px }
+  .badang { top:-10%; width:72% }
+  .brody { right:51%; width:47%; top:2% }
+  .posterData { width:100%; padding:0; background:none }
+  .posterData > header { min-height:156px; display:flex; flex-direction:column; justify-content:flex-end; padding:16px; background:linear-gradient(90deg,#14171bf5 9%,#14171bb5 38%,transparent 70%) }
+  .posterData > header p,.posterData h1 { max-width:54%; overflow-wrap:anywhere }
+  .posterData h1 { margin-bottom:0 }
+  .posterData .chart { padding:13px 16px; background:#15171c }
+}

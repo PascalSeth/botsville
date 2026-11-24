@@ -1,12 +1,13 @@
 import { NextRequest } from "next/server";
-import type { Prisma } from "@/app/generated/prisma/client";
 import {
   requireAdmin,
   apiError,
   apiSuccess,
   createAuditLog,
 } from "@/lib/api-utils";
-import { NewsStatus, NewsCategory, AdminRoleType } from "@/app/generated/prisma/enums";
+import { NewsStatus, AdminRoleType } from "@/app/generated/prisma/enums";
+import { canManageNews } from '@/lib/news-content';
+import { NewsValidationError, validateNewsWrite } from '@/lib/news-validation';
 
 import { prisma } from "@/lib/prisma";
 
@@ -48,15 +49,15 @@ export async function GET(
       // Not authenticated - public access
     }
     
-    if (!user || !user.role) {
+    if (!canManageNews(user?.role)) {
       if (article.status !== NewsStatus.PUBLISHED) {
         return apiError("Article not found", 404);
       }
     }
 
-    const cacheHeaders = (!user || !user.role) ? {
+    const cacheHeaders = !canManageNews(user?.role) ? {
       "Cache-Control": "public, s-maxage=1, stale-while-revalidate=59"
-    } : undefined;
+    } : { 'Cache-Control': 'private, no-store' };
 
     return apiSuccess(article, 200, cacheHeaders);
   } catch (error: unknown) {
@@ -74,7 +75,7 @@ export async function PUT(
   try {
     const admin = await requireAdmin([AdminRoleType.CONTENT_ADMIN, AdminRoleType.EDITOR, AdminRoleType.INTERVIEWER]);
     const { id } = await context.params;
-    const body = await request.json();
+    const payload = await request.json();
 
     const article = await prisma.news.findUnique({
       where: { id },
@@ -84,47 +85,25 @@ export async function PUT(
       return apiError("Article not found", 404);
     }
 
-    // INTERVIEWER can only edit interview posts and can't move them to another category
+    const { post, changes } = validateNewsWrite(payload, article);
+
+    // Interviewers cannot turn an interview into another topic or format.
     if (admin.role === AdminRoleType.INTERVIEWER) {
-      if (article.category !== NewsCategory.INTERVIEW) {
+      if (article.category !== 'INTERVIEW') {
         return apiError("Interviewers can only edit INTERVIEW category posts", 403);
       }
-      if (body.category !== undefined && body.category !== NewsCategory.INTERVIEW) {
+      if (post.category !== 'INTERVIEW' || post.format !== 'ARTICLE') {
         return apiError("Interviewers can only publish INTERVIEW category posts", 403);
       }
     }
 
-    const updateData: Prisma.NewsUpdateInput = {};
-
-    if (body.category !== undefined) {
-      if (!Object.values(NewsCategory).includes(body.category)) {
-        return apiError("Invalid category");
-      }
-      updateData.category = body.category;
-    }
-    if (body.title !== undefined) updateData.title = body.title;
-    if (body.subtitle !== undefined) updateData.subtitle = body.subtitle;
-    if (body.body !== undefined) updateData.body = body.body;
-    if (body.image !== undefined) updateData.image = body.image;
-    if (body.images !== undefined) updateData.images = body.images;
-    if (body.tags !== undefined) updateData.tags = body.tags;
-    if (body.featured !== undefined) updateData.featured = body.featured;
-    if (body.status !== undefined) {
-      if (!Object.values(NewsStatus).includes(body.status)) {
-        return apiError("Invalid status");
-      }
-      if (body.status === NewsStatus.PUBLISHED && !article.publishedAt) {
-        updateData.publishedAt = new Date();
-      }
-      updateData.status = body.status;
-    }
-
-    if (Object.keys(updateData).length === 0) {
-      return apiError("No fields to update");
-    }
+    const updateData = {
+      ...changes,
+      ...(post.status === NewsStatus.PUBLISHED && !article.publishedAt ? { publishedAt: new Date() } : {}),
+    };
 
     const updated = await prisma.news.update({
-      where: { id },
+      where: { id, updatedAt: article.updatedAt, deletedAt: null },
       data: updateData,
     });
 
@@ -142,6 +121,8 @@ export async function PUT(
       article: updated,
     });
   } catch (error: unknown) {
+    if (error instanceof NewsValidationError || error instanceof SyntaxError) return apiError(error.message, 400);
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2025') return apiError('This post changed while you were editing. Reload it and try again.', 409);
     const message = error instanceof Error ? error.message : "Failed to update article";
     if (message === "Unauthorized") return apiError("Unauthorized", 401);
     if (message.includes("Forbidden")) return apiError(message, 403);

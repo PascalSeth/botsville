@@ -222,8 +222,18 @@ enum NewsStatus {
   PUBLISHED
 }
 
-// News content category
+// Presentation format is independent of the topic.
+enum NewsFormat {
+  ARTICLE
+  QUICK_POST
+  MEME
+}
+
+// News content topic
 enum NewsCategory {
+  COMMUNITY
+  ESPORTS
+  BANTER
   PATCH_NOTES
   NEW_EVENT
   NEW_HERO
@@ -661,6 +671,8 @@ model Tournament {
   teamsPerGroup        Int?
   matchesPerTeam       Int?
   matchesBeforeBracket Int?
+  roundRobinLegs       Int              @default(1)
+  drawMode             String           @default("SEEDED")
   
   // Dynamic Orchestration Parameters
   playDaysPerWeek      Int[]            @default([]) // e.g., [3, 4, 5, 6, 0] for Wed-Sun
@@ -688,11 +700,23 @@ model Tournament {
   scrimVaults        ScrimVault[]
   pastRecord         PastTournament?
   prizeDistributions PrizeDistribution[]
+  fixtureDraft       TournamentFixtureDraft?
 
   @@index([status])
   @@index([date])
   @@index([seasonId])
   @@map("tournaments")
+}
+
+// Private working copy. Public groups and matches are created only on publication.
+model TournamentFixtureDraft {
+  tournamentId String   @id
+  data         Json
+  revision     Int      @default(1)
+  updatedAt    DateTime @updatedAt
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@map("tournament_fixture_drafts")
 }
 
 // Stages within a tournament (e.g., Group Stage, Playoffs)
@@ -1430,6 +1454,7 @@ model RoleVote {
 
 model News {
   id          String       @id @default(uuid())
+  format      NewsFormat   @default(ARTICLE)
   category    NewsCategory
   status      NewsStatus   @default(DRAFT)
   title       String
@@ -1438,6 +1463,8 @@ model News {
   image       String?
   images      String[]     @default([])
   tags        String[]     @default([])
+  sourceName  String?
+  sourceUrl   String?
   featured    Boolean      @default(false)
   publishedAt DateTime?
   createdAt   DateTime     @default(now())
@@ -1450,6 +1477,8 @@ model News {
   @@index([status])
   @@index([featured])
   @@index([publishedAt])
+  @@index([status, deletedAt, format, publishedAt])
+  @@index([category, status, deletedAt, publishedAt])
   @@map("news")
 }
 

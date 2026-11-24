@@ -1,544 +1,172 @@
-"use client";
+'use client';
 
-/* eslint-disable @next/next/no-img-element */
-import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
+import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, Clock3, Flag, ListChecks, Loader2, Plus, Radio, RefreshCw, Search, Swords, Trophy, Users, X } from 'lucide-react';
+import TournamentCard from './TournamentCard';
+import { dashboardFetch } from '../lib/api';
+import { useRoleGuard } from '../lib/useRole';
 import {
-  Trophy,
-  Calendar,
-  Plus,
-  Search,
-  Filter,
-  Loader2,
-  RefreshCw,
-  Zap,
-  ChevronRight,
-  ShieldAlert,
-  Layers,
-  Swords,
-  Users,
-  Sparkles,
-  Award,
-  BarChart3,
-  Flame,
-  CheckCircle2,
-  Clock,
-  Radio,
-  Edit,
-} from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { dashboardFetch } from "../lib/api";
+  TOURNAMENT_FORMAT_LABELS, TOURNAMENT_STATUS_LABELS, tournamentIssues,
+  type TournamentDeskPayload, type TournamentDeskView,
+} from '@/lib/tournament-dashboard';
+import styles from './tournaments.module.css';
 
-type Season = {
-  id: string;
-  name: string;
-  status: string;
-  startDate: string;
-  endDate: string;
-};
-
-type Tournament = {
-  id: string;
-  name: string;
-  subtitle: string | null;
-  status: string;
-  format: string;
-  date: string;
-  slots: number;
-  filled: number;
-  banner?: string | null;
-  heroImage?: string | null;
-  prizePool?: string | null;
-  season?: { id: string; name: string } | null;
-  stages?: { id: string; name: string; stageType: string; status: string }[];
-  _count?: { registrations: number; matches: number };
-};
-
-const FORMAT_CONFIG: Record<
-  string,
-  { label: string; tag: string; bg: string; text: string; border: string; glow: string }
-> = {
-  GROUP_STAGE: {
-    label: "Group Stage + Playoffs",
-    tag: "MPL PRO",
-    bg: "bg-emerald-500/10",
-    text: "text-emerald-400",
-    border: "border-emerald-500/30",
-    glow: "shadow-emerald-500/10",
-  },
-  DOUBLE_ELIMINATION: {
-    label: "Double Elimination",
-    tag: "PRO PLAY",
-    bg: "bg-purple-500/10",
-    text: "text-purple-400",
-    border: "border-purple-500/30",
-    glow: "shadow-purple-500/10",
-  },
-  SINGLE_ELIMINATION: {
-    label: "Single Elimination",
-    tag: "FAST CUP",
-    bg: "bg-blue-500/10",
-    text: "text-blue-400",
-    border: "border-blue-500/30",
-    glow: "shadow-blue-500/10",
-  },
-  ROUND_ROBIN: {
-    label: "Round Robin League",
-    tag: "LEAGUE",
-    bg: "bg-amber-500/10",
-    text: "text-amber-400",
-    border: "border-amber-500/30",
-    glow: "shadow-amber-500/10",
-  },
-  SWISS: {
-    label: "Swiss System",
-    tag: "M-SERIES",
-    bg: "bg-cyan-500/10",
-    text: "text-cyan-400",
-    border: "border-cyan-500/30",
-    glow: "shadow-cyan-500/10",
-  },
-};
-
-const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
-  OPEN: { label: "Open for Reg", bg: "bg-blue-500/10 border-blue-500/30", text: "text-blue-400", dot: "bg-blue-400" },
-  ONGOING: { label: "Live Matches", bg: "bg-emerald-500/10 border-emerald-500/30", text: "text-emerald-400", dot: "bg-emerald-400 animate-ping" },
-  UPCOMING: { label: "Scheduled", bg: "bg-amber-500/10 border-amber-500/30", text: "text-amber-400", dot: "bg-amber-400" },
-  COMPLETED: { label: "Finished", bg: "bg-white/5 border-white/10", text: "text-gray-400", dot: "bg-gray-500" },
-  CANCELLED: { label: "Cancelled", bg: "bg-red-500/10 border-red-500/30", text: "text-red-400", dot: "bg-red-500" },
-};
-
-export default function UnifiedTournamentsDashboardPage() {
-  const [seasons, setSeasons] = useState<Season[]>([]);
-  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+const VIEWS: { value: TournamentDeskView; label: string }[] = [
+  { value: 'active', label: 'Active' }, { value: 'attention', label: 'Needs attention' },
+  { value: 'all', label: 'All tournaments' }, { value: 'archive', label: 'Archive' },
+];
+function dateLabel(date: string, time = false) {
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', ...(time ? { hour: '2-digit', minute: '2-digit' } : {}), timeZone: 'UTC' }).format(new Date(date));
+}
+function TournamentDesk() {
+  const { isAllowed } = useRoleGuard(['TOURNAMENT_ADMIN']);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const rawView = searchParams.get('view');
+  const view = VIEWS.find(item => item.value === rawView)?.value || 'active';
+  const season = searchParams.get('season') || '';
+  const format = searchParams.get('format') || '';
+  const status = searchParams.get('status') || '';
+  const query = searchParams.get('q') || '';
+  const sort = searchParams.get('sort') || 'soonest';
+  const page = searchParams.get('page') || '1';
+  const requestParams = new URLSearchParams({ view, page, sort });
+  if (season) requestParams.set('season', season);
+  if (format) requestParams.set('format', format);
+  if (status) requestParams.set('status', status);
+  if (query) requestParams.set('q', query);
+  const requestKey = requestParams.toString();
+  const [search, setSearch] = useState(query);
+  const [snapshot, setSnapshot] = useState<{ key: string; data: TournamentDeskPayload } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [formatFilter, setFormatFilter] = useState<string>("");
-  const [searchQuery, setSearchQuery] = useState<string>("");
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    const [seasonsRes, tourneysRes] = await Promise.all([
-      dashboardFetch<Season[]>("/api/seasons"),
-      dashboardFetch<{ tournaments: Tournament[] }>(
-        `/api/tournaments?limit=50${statusFilter ? `&status=${statusFilter}` : ""}`
-      ),
-    ]);
-
-    setLoading(false);
-
-    if (seasonsRes.error) {
-      setError(seasonsRes.error);
-      return;
-    }
-
-    setSeasons(Array.isArray(seasonsRes.data) ? seasonsRes.data : []);
-    setTournaments(tourneysRes.data?.tournaments ?? (Array.isArray(tourneysRes.data) ? tourneysRes.data : []));
-  }, [statusFilter]);
+  const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [operationsOpen, setOperationsOpen] = useState(false);
+  const data = snapshot?.key === requestKey ? snapshot.data : null;
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    const timer = setTimeout(() => setSearch(query), 0);
+    return () => clearTimeout(timer);
+  }, [query]);
 
-  const activeSeason = seasons.find((s) => s.status === "ACTIVE");
+  useEffect(() => {
+    if (!isAllowed) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      setError('');
+      const result = await dashboardFetch<TournamentDeskPayload>('/api/admin/tournaments?' + requestKey, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (result.error || !result.data) setError(result.error || 'The tournament desk couldn’t load.');
+      else setSnapshot({ key: requestKey, data: result.data });
+      setLoading(false);
+    }, 0);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [requestKey, revision, isAllowed]);
 
-  const filteredTournaments = tournaments.filter((t) => {
-    if (formatFilter && t.format !== formatFilter) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return (
-        t.name.toLowerCase().includes(q) ||
-        t.format.toLowerCase().includes(q) ||
-        t.season?.name.toLowerCase().includes(q)
-      );
+  useEffect(() => {
+    const refresh = () => setRevision(value => value + 1);
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, []);
+
+  function updateFilters(changes: Record<string, string>, resetPage = true) {
+    const next = new URLSearchParams(searchParams.toString());
+    if (resetPage) next.delete('page');
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
     }
-    return true;
-  });
-
-  const totalRegisteredTeams = tournaments.reduce(
-    (acc, cur) => acc + (cur._count?.registrations ?? cur.filled ?? 0),
-    0
-  );
-  const liveCount = tournaments.filter((t) => t.status === "ONGOING" || t.status === "OPEN").length;
+    router.replace(pathname + (next.size ? '?' + next.toString() : ''), { scroll: false });
+  }
+  function resetFilters() {
+    setSearch('');
+    router.replace(pathname, { scroll: false });
+  }
+  const seasons = snapshot?.data.seasons ?? [];
+  const scopedSeason = seasons.find(item => item.id === season);
+  const activeSeason = seasons.find(item => item.status === 'ACTIVE');
+  const now = data ? Date.parse(data.generatedAt) : Date.now();
+  const totalPages = data ? Math.max(1, Math.ceil(data.pagination.total / data.pagination.pageSize)) : 1;
+  const filtered = Boolean(query || format || status || season);
+  const createUrl = '/dashboard/tournaments/setup' + (season ? '?season=' + encodeURIComponent(season) : '');
 
   return (
-    <div className="min-h-screen bg-[#05050a] text-white p-4 sm:p-6 md:p-10 space-y-6 sm:space-y-8 selection:bg-[#e8a000]/30 relative overflow-x-hidden">
-      {/* Background Subtle Ambient Glow */}
-      <div className="absolute top-0 left-1/4 w-[32rem] h-[32rem] bg-[#e8a000]/5 rounded-full blur-3xl pointer-events-none -z-10" />
-      <div className="absolute top-1/3 right-1/4 w-[28rem] h-[28rem] bg-purple-600/5 rounded-full blur-3xl pointer-events-none -z-10" />
+    <div className={styles.desk}>
+      <header className={styles.header}>
+        <div><span className={styles.eyebrow}>Botsville / Competition desk</span><h1>Tournaments<span>.</span></h1><p>From the first sign-up to the final GG.</p></div>
+        <div className={styles.headerActions}><Link className={styles.textLink} href="/dashboard/seasons">Manage seasons <ArrowUpRight size={14} /></Link><Link className={styles.primaryButton} href={createUrl}><Plus size={15} /> Create tournament</Link></div>
+      </header>
 
-      {/* Top Command Bar Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-6 border-b border-white/10 pb-6 sm:pb-8">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#e8a000] to-amber-600 flex items-center justify-center text-black font-black shadow-lg shadow-[#e8a000]/20 shrink-0">
-              <Trophy size={20} />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl md:text-4xl font-black uppercase tracking-tight text-white flex items-center gap-2">
-                Tournaments <span className="text-[#e8a000]">&amp;</span> Seasons
-              </h1>
-              <p className="text-[11px] sm:text-xs text-gray-400 font-medium mt-0.5">
-                Esports Command Center — Multi-stage brackets, dynamic seeding, and automated match progression.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
-          <button
-            type="button"
-            onClick={loadData}
-            className="p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-gray-400 hover:text-white hover:border-white/20 active:scale-95 shrink-0"
-            title="Refresh Registry"
-          >
-            <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
-          </button>
-          <Link
-            href="/dashboard/tournaments/setup"
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-[#e8a000] to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded-xl hover:from-[#ffb800] hover:to-amber-400 transition-all shadow-xl shadow-[#e8a000]/15 hover:shadow-[#e8a000]/25 hover:scale-[1.02] active:scale-95"
-          >
-            <Plus size={18} />
-            Launch Tournament
-          </Link>
-        </div>
+      <div className={styles.scopeBar}>
+        <div><CalendarDays size={14} /><label htmlFor="desk-season" className={styles.srOnly}>Season</label><select id="desk-season" value={season} onChange={event => updateFilters({ season: event.target.value })}><option value="">All seasons</option>{seasons.map(item => <option key={item.id} value={item.id}>{item.name}{item.status === 'ACTIVE' ? ' · Active' : ''}</option>)}</select></div>
+        {activeSeason && !season && <button className={styles.seasonShortcut} onClick={() => updateFilters({ season: activeSeason.id })}>Current season: {activeSeason.name}<ArrowRight size={12} /></button>}
+        {scopedSeason && <Link className={styles.seasonShortcut} href={'/dashboard/seasons/' + scopedSeason.id}>{dateLabel(scopedSeason.startDate)} — {dateLabel(scopedSeason.endDate)}<ArrowUpRight size={12} /></Link>}
+        <div className={styles.refresh}><span>{data ? 'Updated ' + new Date(data.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC' : 'All times UTC'}</span><button disabled={loading} onClick={() => setRevision(value => value + 1)} className={styles.iconButton} aria-label="Refresh tournament data"><RefreshCw size={14} className={loading ? styles.spin : undefined} /></button></div>
       </div>
 
-      {/* Global Stat Counters Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl border border-white/10 bg-white/[0.02] backdrop-blur-xl space-y-1">
-          <div className="flex items-center justify-between text-xs font-bold text-gray-500 uppercase tracking-wider">
-            <span>Total Tournaments</span>
-            <Trophy size={16} className="text-[#e8a000]" />
-          </div>
-          <p className="text-2xl md:text-3xl font-black text-white">{tournaments.length}</p>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-white/10 bg-white/[0.02] backdrop-blur-xl space-y-1">
-          <div className="flex items-center justify-between text-xs font-bold text-gray-500 uppercase tracking-wider">
-            <span>Live / Open Events</span>
-            <Radio size={16} className="text-emerald-400 animate-pulse" />
-          </div>
-          <p className="text-2xl md:text-3xl font-black text-emerald-400">{liveCount}</p>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-white/10 bg-white/[0.02] backdrop-blur-xl space-y-1">
-          <div className="flex items-center justify-between text-xs font-bold text-gray-500 uppercase tracking-wider">
-            <span>Registered Squads</span>
-            <Users size={16} className="text-purple-400" />
-          </div>
-          <p className="text-2xl md:text-3xl font-black text-purple-400">{totalRegisteredTeams}</p>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-white/10 bg-white/[0.02] backdrop-blur-xl space-y-1">
-          <div className="flex items-center justify-between text-xs font-bold text-gray-500 uppercase tracking-wider">
-            <span>Active Season</span>
-            <Zap size={16} className="text-amber-400" />
-          </div>
-          <p className="text-base font-black text-white truncate">
-            {activeSeason ? activeSeason.name : "None Active"}
-          </p>
-        </div>
+      <div className={styles.summary} aria-label="Season overview">
+        <div><span><Radio size={14} /> In progress</span><strong>{data?.summary.live ?? '—'}</strong><small>Tournaments under way</small></div>
+        <div><span><Users size={14} /> Registration open</span><strong>{data?.summary.open ?? '—'}</strong><small>Events marked open</small></div>
+        <div data-attention={Boolean(data?.summary.pending)}><span><ListChecks size={14} /> Pending teams</span><strong>{data?.summary.pending ?? '—'}</strong><small>Applications to review</small></div>
+        <div data-attention={Boolean(data?.summary.review)}><span><Flag size={14} /> Results to review</span><strong>{data?.summary.review ?? '—'}</strong><small>Review or finalise scores</small></div>
       </div>
 
-      {/* Active Season Banner */}
-      {activeSeason && (
-        <div className="relative rounded-3xl border border-amber-500/30 bg-gradient-to-r from-[#141005] via-[#0d0a14] to-[#0a0514] p-6 md:p-8 overflow-hidden shadow-2xl">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-          
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-black text-[10px] uppercase tracking-widest flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  CURRENT ACTIVE SEASON
-                </span>
-                <span className="text-xs text-gray-400 font-mono">
-                  {new Date(activeSeason.startDate).toLocaleDateString()} — {new Date(activeSeason.endDate).toLocaleDateString()}
-                </span>
-              </div>
-              <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight">
-                {activeSeason.name}
-              </h2>
-              <p className="text-xs text-gray-400 max-w-xl">
-                Cumulative regular season standings, monthly rankings, and playoff qualification brackets are live.
-              </p>
-            </div>
+      {error && <div className={styles.error} role="alert"><Flag size={16} /><div><strong>Couldn’t refresh tournament data.</strong><p>{error}{data ? ' Previously loaded data is shown below.' : ''}</p></div><button onClick={() => setRevision(value => value + 1)} className={styles.secondaryButton}>Retry</button></div>}
+      <button className={styles.operationsToggle} aria-expanded={operationsOpen} aria-controls="tournament-operations" onClick={() => setOperationsOpen(value => !value)}><span><ListChecks size={15} /> Tasks & fixtures{data && <small>{data.attentionTotal} events need attention</small>}</span><ChevronDown size={15} /></button>
 
-            <div className="flex items-center gap-3 shrink-0">
-              <Link
-                href={`/dashboard/seasons/${activeSeason.id}`}
-                className="flex items-center gap-2 px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/15 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all hover:scale-[1.02] active:scale-95"
-              >
-                Season Command Center <ChevronRight size={16} />
-              </Link>
+      <div className={styles.workspace}>
+        <section className={styles.registry} aria-label="Tournament registry" id="tournament-registry">
+          <div className={styles.viewTabs} aria-label="Tournament views">{VIEWS.map(item => <button key={item.value} aria-pressed={view === item.value} onClick={() => updateFilters({ view: item.value, status: '' })}>{item.label}<span>{data?.viewCounts[item.value] ?? '—'}</span></button>)}</div>
+          <div className={styles.filters}>
+            <form className={styles.search} onSubmit={event => { event.preventDefault(); updateFilters({ q: search.trim() }); }}><Search size={15} /><input aria-label="Search tournaments" placeholder="Search name, season or format…" value={search} maxLength={100} onChange={event => setSearch(event.target.value)} /><button type="submit" aria-label="Apply search"><ArrowRight size={15} /></button></form>
+            <div className={styles.filterSelects}>
+              <select aria-label="Filter by format" value={format} onChange={event => updateFilters({ format: event.target.value })}><option value="">All formats</option>{Object.entries(TOURNAMENT_FORMAT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+              <select aria-label="Filter by status" value={status} onChange={event => updateFilters({ status: event.target.value, view: 'all' })}><option value="">All statuses</option>{Object.entries(TOURNAMENT_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+              <select aria-label="Sort tournaments" value={sort} onChange={event => updateFilters({ sort: event.target.value })}><option value="soonest">{view === 'archive' ? 'Recent dates' : 'Start date'}</option><option value="newest">Recently created</option><option value="name">Name A–Z</option></select>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Search & Filter Toolbar */}
-      <div className="space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* Search bar */}
-          <div className="relative w-full lg:w-96">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-            <input
-              type="text"
-              placeholder="Search tournament, season, or format..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#0a0a0f] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-500 outline-none focus:border-[#e8a000]/60 focus:ring-1 focus:ring-[#e8a000]/30 transition-all"
-            />
+          <div className={styles.listIntro}><span>{view === 'active' ? 'Scheduled, open, closed and in-progress tournaments.' : view === 'attention' ? 'Pending entries, results and schedule checks.' : view === 'archive' ? 'Completed and cancelled tournaments.' : 'Every tournament, across the full lifecycle.'}</span>{filtered && <button onClick={resetFilters}><X size={12} /> Reset filters</button>}</div>
+          <div aria-busy={loading || !isAllowed}>
+            {!data && (loading || !error) ? <div className={styles.loading} role="status"><Loader2 size={19} className={styles.spin} /> Loading the competition desk…</div>
+              : data && data.tournaments.length === 0 ? <div className={styles.empty}><Trophy size={25} /><h2>{view === 'attention' ? 'Nothing needs attention here' : filtered ? 'No tournaments match' : view === 'archive' ? 'No archived tournaments yet' : 'Make room for the next GG'}</h2><p>{view === 'attention' ? 'There are no outstanding alerts in this view.' : filtered ? 'Try another search, season or format.' : view === 'archive' ? 'Completed and cancelled events will appear here.' : 'Create a tournament, open entries and build the bracket.'}</p>{filtered ? <button className={styles.secondaryButton} onClick={resetFilters}>Reset filters</button> : view === 'active' && <Link className={styles.primaryButton} href={createUrl}><Plus size={14} /> Create tournament</Link>}</div>
+              : data && (
+                <div className={styles.tournamentGrid}>
+                  {data.tournaments.map((tournament, index) => (
+                    <TournamentCard key={tournament.id} tournament={tournament} now={now} lead={index === 0} />
+                  ))}
+                </div>
+              )}
           </div>
+          {data && data.pagination.total > 0 && <footer className={styles.pagination}><span>{(data.pagination.page - 1) * data.pagination.pageSize + 1}–{Math.min(data.pagination.page * data.pagination.pageSize, data.pagination.total)} of {data.pagination.total} tournaments</span><div><button className={styles.iconButton} disabled={loading || data.pagination.page === 1} aria-label="Previous page" onClick={() => { updateFilters({ page: String(data.pagination.page - 1) }, false); document.getElementById('tournament-registry')?.scrollIntoView({ block: 'start' }); }}><ArrowLeft size={14} /></button><span>{data.pagination.page} / {totalPages}</span><button className={styles.iconButton} disabled={loading || data.pagination.page >= totalPages} aria-label="Next page" onClick={() => { updateFilters({ page: String(data.pagination.page + 1) }, false); document.getElementById('tournament-registry')?.scrollIntoView({ block: 'start' }); }}><ArrowRight size={14} /></button></div></footer>}
+        </section>
 
-          {/* Status filter tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 lg:pb-0 scrollbar-none">
-            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider mr-1 flex items-center gap-1">
-              <Filter size={12} /> Status:
-            </span>
-            {[
-              { id: "", label: "All Events" },
-              { id: "OPEN", label: "Open Reg" },
-              { id: "ONGOING", label: "Live Matches" },
-              { id: "UPCOMING", label: "Scheduled" },
-              { id: "COMPLETED", label: "Finished" },
-            ].map((st) => (
-              <button
-                key={st.id}
-                type="button"
-                onClick={() => setStatusFilter(st.id)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all shrink-0 ${
-                  statusFilter === st.id
-                    ? "bg-[#e8a000] text-black border-[#e8a000] shadow-lg shadow-[#e8a000]/10"
-                    : "bg-[#0a0a0f] text-gray-400 border-white/10 hover:border-white/20 hover:text-white"
-                }`}
-              >
-                {st.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <aside className={styles.operations} id="tournament-operations" data-open={operationsOpen}>
+          <section className={styles.attentionPanel}>
+            <div className={styles.panelHeading}><h2><Flag size={14} /> Needs attention</h2><span>{data?.attentionTotal ?? '—'}</span></div>
+            <p className={styles.panelScope}>{scopedSeason?.name || 'Across all seasons'} · Unfiltered task queue</p>
+            {!data ? <p className={styles.quiet}>Tasks load with the desk.</p> : !data.attention.length ? <div className={styles.clearState}><Check size={19} /><p>The desk is clear.<span>No outstanding tournament alerts.</span></p></div> : <div className={styles.taskList}>{data.attention.map(tournament => {
+              const issue = tournamentIssues(tournament, now)[0];
+              if (!issue) return null;
+              return <Link key={tournament.id} href={issue.href}><span className={styles.taskLabel} data-urgent={issue.urgent}>{issue.label}</span><strong>{tournament.name}</strong><p>{issue.detail}</p><span className={styles.taskAction}>{issue.action}<ArrowUpRight size={13} /></span></Link>;
+            })}</div>}
+            {Boolean(data?.attentionTotal) && <button className={styles.panelLink} onClick={() => { updateFilters({ view: 'attention', q: '', status: '', format: '' }); setSearch(''); setOperationsOpen(false); }}>View all tasks <ArrowRight size={13} /></button>}
+          </section>
 
-        {/* Format filter pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-          <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider shrink-0">
-            Format:
-          </span>
-          <button
-            type="button"
-            onClick={() => setFormatFilter("")}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all shrink-0 ${
-              formatFilter === ""
-                ? "bg-white/15 text-white border border-white/20"
-                : "bg-white/5 text-gray-400 hover:text-gray-200 border border-transparent"
-            }`}
-          >
-            All Formats
-          </button>
-          {Object.entries(FORMAT_CONFIG).map(([fmtKey, fmtVal]) => (
-            <button
-              key={fmtKey}
-              type="button"
-              onClick={() => setFormatFilter(fmtKey)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all shrink-0 ${
-                formatFilter === fmtKey
-                  ? `${fmtVal.bg} ${fmtVal.text} ${fmtVal.border}`
-                  : "bg-white/5 text-gray-400 hover:text-gray-200 border-transparent"
-              }`}
-            >
-              {fmtVal.tag} — {fmtVal.label}
-            </button>
-          ))}
-        </div>
+          <section className={styles.fixturePanel}>
+            <div className={styles.panelHeading}><h2><Swords size={14} /> Up next</h2><span>UTC</span></div>
+            {!data?.fixtures.length ? <p className={styles.quiet}>{data ? 'No live or upcoming fixtures scheduled in this season view.' : 'Fixtures load with the desk.'}</p> : <div className={styles.fixtureList}>{data.fixtures.map(match => <Link key={match.id} href={'/dashboard/matches?tournamentId=' + encodeURIComponent(match.tournament.id)}><div><span className={styles.fixtureDate} data-live={match.status === 'LIVE'}>{match.status === 'LIVE' ? <><Radio size={11} /> Live now</> : <><Clock3 size={11} />{dateLabel(match.scheduledTime, true)}</>}</span><ArrowUpRight size={12} /></div><strong>{match.teamA.tag || match.teamA.name}<span>vs</span>{match.teamB?.tag || match.teamB?.name || 'TBC'}</strong><small>{match.tournament.name}</small></Link>)}</div>}
+          </section>
+          <p className={styles.legend}><span><i /> Approved</span><span><i /> Pending</span></p><p className={styles.legendNote}>Team capacity excludes rejected, withdrawn, forfeited and disqualified entries. Match totals exclude cancelled fixtures and resting rounds.</p>
+        </aside>
       </div>
-
-      {/* Loading State */}
-      {loading && (
-        <div className="flex flex-col items-center justify-center py-24 text-gray-500 space-y-3">
-          <Loader2 className="w-10 h-10 animate-spin text-[#e8a000]" />
-          <p className="text-xs uppercase font-bold tracking-widest">Loading Esports Registry...</p>
-        </div>
-      )}
-
-      {/* Error Feedback */}
-      {error && (
-        <div className="p-5 rounded-2xl border border-red-500/30 bg-red-500/10 text-red-400 text-sm flex items-center gap-3">
-          <ShieldAlert size={20} className="shrink-0" />
-          <div>
-            <p className="font-bold">Failed to load tournaments</p>
-            <p className="text-xs text-red-400/80 mt-0.5">{error}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!loading && !error && filteredTournaments.length === 0 && (
-        <div className="rounded-3xl border border-white/10 bg-[#0a0a0f] p-16 text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto text-gray-600">
-            <Trophy size={32} />
-          </div>
-          <div className="space-y-1">
-            <h3 className="text-lg font-black text-white uppercase tracking-wider">No Tournaments Found</h3>
-            <p className="text-xs text-gray-400 max-w-sm mx-auto">
-              No events match your search or filter criteria. Click &quot;Launch New Tournament&quot; to initialize a new competition.
-            </p>
-          </div>
-          <Link
-            href="/dashboard/tournaments/setup"
-            className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#e8a000] text-black font-black text-xs uppercase tracking-wider rounded-xl hover:bg-[#ffb800] transition-all shadow-lg shadow-[#e8a000]/10"
-          >
-            <Plus size={16} /> Setup Tournament
-          </Link>
-        </div>
-      )}
-
-      {/* Tournaments Grid Cards */}
-      {!loading && !error && filteredTournaments.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <AnimatePresence>
-            {filteredTournaments.map((t, idx) => {
-              const fmtConfig = FORMAT_CONFIG[t.format] ?? {
-                label: t.format,
-                tag: "EVENT",
-                bg: "bg-white/10",
-                text: "text-white",
-                border: "border-white/20",
-                glow: "shadow-white/5",
-              };
-              const stConfig = STATUS_CONFIG[t.status] ?? {
-                label: t.status,
-                bg: "bg-white/10 border-white/20",
-                text: "text-white",
-                dot: "bg-gray-400",
-              };
-
-              const filledCount = t._count?.registrations ?? t.filled ?? 0;
-              const filledPercent = Math.min(100, Math.round((filledCount / (t.slots || 1)) * 100));
-
-              return (
-                <motion.div
-                  key={t.id}
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.3, delay: idx * 0.05 }}
-                  className={`rounded-3xl border border-white/10 bg-[#0a0a0f] hover:border-[#e8a000]/40 transition-all duration-300 flex flex-col justify-between overflow-hidden group hover:shadow-2xl ${fmtConfig.glow}`}
-                >
-                  {/* Banner / Card Header */}
-                  <div className="relative h-36 bg-gradient-to-br from-gray-900 via-[#10101a] to-[#0a0a0f] overflow-hidden">
-                    {t.banner ? (
-                      <img
-                        src={t.banner}
-                        alt={t.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-white/5 via-transparent to-transparent flex items-center justify-center opacity-30">
-                        <Trophy size={64} className="text-white/10" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0f] via-[#0a0a0f]/40 to-transparent" />
-
-                    {/* Format & Status Floating Badges */}
-                    <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 z-10">
-                      <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg border backdrop-blur-md ${fmtConfig.bg} ${fmtConfig.text} ${fmtConfig.border}`}>
-                        {fmtConfig.tag} — {fmtConfig.label}
-                      </span>
-                      <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg border backdrop-blur-md flex items-center gap-1.5 ${stConfig.bg} ${stConfig.text}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${stConfig.dot}`} />
-                        {stConfig.label}
-                      </span>
-                    </div>
-
-                    {/* Season Pill */}
-                    {t.season && (
-                      <div className="absolute bottom-2 left-4 z-10 flex items-center gap-1 text-[11px] font-bold text-amber-400">
-                        <Calendar size={12} /> {t.season.name}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Body Content */}
-                  <div className="p-6 space-y-5 flex-1 flex flex-col justify-between">
-                    <div className="space-y-3">
-                      <h3 className="text-xl font-black text-white group-hover:text-[#e8a000] transition-colors leading-tight">
-                        {t.name}
-                      </h3>
-
-                      {t.prizePool && (
-                        <div className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg">
-                          <Sparkles size={12} /> Prize Pool: {t.prizePool}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Progress & Quick Stats */}
-                    <div className="space-y-3 pt-2">
-                      {/* Slots Fill Progress Bar */}
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[11px] font-bold text-gray-400">
-                          <span className="flex items-center gap-1">
-                            <Users size={12} className="text-gray-500" /> Registration Slots
-                          </span>
-                          <span className="text-white font-black">{filledCount} / {t.slots} Teams</span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-white/5 overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-[#e8a000] to-amber-500 rounded-full transition-all duration-500"
-                            style={{ width: `${filledPercent}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Stats Grid */}
-                      <div className="grid grid-cols-2 gap-2 text-center pt-2">
-                        <div className="bg-white/[0.02] p-2.5 rounded-xl border border-white/5">
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 flex items-center justify-center gap-1">
-                            <Swords size={10} /> Matches
-                          </p>
-                          <p className="text-sm font-black text-white mt-0.5">{t._count?.matches ?? 0}</p>
-                        </div>
-                        <div className="bg-white/[0.02] p-2.5 rounded-xl border border-white/5">
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 flex items-center justify-center gap-1">
-                            <Layers size={10} /> Stages
-                          </p>
-                          <p className="text-sm font-black text-white mt-0.5">{t.stages?.length ?? 1}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Footer Manage Action */}
-                    <div className="pt-4 border-t border-white/5 flex items-center justify-between">
-                      <span className="text-[11px] font-mono text-gray-500">
-                        {new Date(t.date).toLocaleDateString()}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/dashboard/tournaments/${t.id}/edit`}
-                          className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-all border border-white/10"
-                          title="Edit Tournament Settings"
-                        >
-                          <Edit size={14} />
-                        </Link>
-                        <Link
-                          href={`/dashboard/tournaments/${t.id}`}
-                          className="flex items-center gap-1.5 px-4 py-2 bg-white/5 hover:bg-[#e8a000] text-gray-300 hover:text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all group-hover:shadow-lg group-hover:shadow-[#e8a000]/10"
-                        >
-                          Manage Bracket <ChevronRight size={14} />
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
-      )}
     </div>
   );
+}
+
+export default function TournamentsDashboardPage() {
+  return <Suspense fallback={<div className={styles.loading} role="status"><Loader2 size={18} className={styles.spin} /> Opening tournaments…</div>}><TournamentDesk /></Suspense>;
 }
