@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 import { dashboardFetch } from "../../lib/api";
 import { fileToCompressedDataUrl } from "@/lib/supabase";
+import GameDaySchedule from '../GameDaySchedule';
+import { groupTotals } from '@/lib/tournament-planner';
+import { planGameDates, type MatchdayConfig } from '@/lib/tournament-schedule';
 
 type SeasonOption = {
   id: string;
@@ -141,6 +144,7 @@ export default function SetupTournamentWizardPage() {
   // Matchday & Orchestration Parameters
   const [playDaysPerWeek, setPlayDaysPerWeek] = useState<number[]>([5, 6, 0]); // Fri(5), Sat(6), Sun(0)
   const [matchesPerDay, setMatchesPerDay] = useState<number>(4);
+  const [playDates, setPlayDates] = useState<string[] | undefined>();
   const [tiebreakerSequence, setTiebreakerSequence] = useState<string[]>(["H2H", "GD", "TIME"]);
 
   // Format-specific settings
@@ -153,6 +157,17 @@ export default function SetupTournamentWizardPage() {
   const [loadingInitial, setLoadingInitial] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  const usesGameDays = ['ROUND_ROBIN', 'GROUP_STAGE'].includes(selectedFormat);
+  const scheduleTeams = launchMode === 'INVITATIONAL' ? selectedTeamIds.length : slots;
+  const scheduleGroups = selectedFormat === 'ROUND_ROBIN' ? 1 : Math.max(1, numGroups);
+  const estimatedMatches = Array.from({ length: scheduleGroups }, (_, index) => groupTotals(Math.floor(scheduleTeams / scheduleGroups) + (index < scheduleTeams % scheduleGroups ? 1 : 0)).matches).reduce((sum, count) => sum + count, 0);
+  const scheduleConfig: MatchdayConfig = { startDate: startDate ? `${startDate}T00:00:00.000Z` : '', playDays: playDaysPerWeek, matchesPerDay, playDates };
+  function updateSchedule(patch: Partial<MatchdayConfig>) {
+    if (patch.matchesPerDay !== undefined) setMatchesPerDay(patch.matchesPerDay);
+    if (patch.playDays !== undefined) setPlayDaysPerWeek(patch.playDays);
+    if ('playDates' in patch) setPlayDates(patch.playDates);
+  }
 
   useEffect(() => {
     async function init() {
@@ -212,6 +227,15 @@ export default function SetupTournamentWizardPage() {
       setError('Select at least two teams before creating the schedule.');
       return;
     }
+    if (usesGameDays) {
+      try {
+        const schedule = planGameDates(scheduleConfig, estimatedMatches);
+        if (schedule.issues.length) throw new Error(schedule.issues.join(' '));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Check the game dates.');
+        return;
+      }
+    }
 
     setSubmitting(true);
     setError(null);
@@ -258,6 +282,7 @@ export default function SetupTournamentWizardPage() {
             defaultBestOf,
             playDaysPerWeek,
             matchesPerDay,
+            playDates: usesGameDays ? playDates : undefined,
             tiebreakerSequence,
             numGroups: selectedFormat === "GROUP_STAGE" ? numGroups : undefined,
           }),
@@ -303,6 +328,7 @@ export default function SetupTournamentWizardPage() {
           pointSystem,
           playDaysPerWeek,
           matchesPerDay,
+          playDates: usesGameDays ? playDates : undefined,
           tiebreakerSequence,
           numGroups: selectedFormat === "GROUP_STAGE" ? numGroups : undefined,
           drawMode: selectedFormat === "GROUP_STAGE" ? drawMode : undefined,
@@ -597,7 +623,11 @@ export default function SetupTournamentWizardPage() {
             </div>
 
             {/* Matchdays Selection */}
-            <div className="space-y-2 col-span-1 md:col-span-2 pt-2 border-t border-white/5">
+            {usesGameDays ? <div className="col-span-1 md:col-span-2 pt-2 border-t border-white/5">
+              <h3 className="text-xs font-black uppercase tracking-wider text-gray-400">Game days</h3>
+              <GameDaySchedule config={scheduleConfig} totalMatches={estimatedMatches} estimated={launchMode === 'OPEN_REGISTRATION'} onChange={updateSchedule} />
+              {scheduleGroups === 1 && scheduleTeams > 0 && scheduleTeams === matchesPerDay * 2 && <p className="text-xs text-gray-400 mt-3">All {scheduleTeams} teams play once each game day · {matchesPerDay} fixtures per day.</p>}
+            </div> : <div className="space-y-2 col-span-1 md:col-span-2 pt-2 border-t border-white/5">
               <label className="text-xs font-black uppercase tracking-wider text-gray-400 block">
                 Weekly Matchdays Schedule (Active Game Days)
               </label>
@@ -632,7 +662,7 @@ export default function SetupTournamentWizardPage() {
                   );
                 })}
               </div>
-            </div>
+            </div>}
 
             {/* Prize Pool */}
             <div className="space-y-2">
@@ -860,6 +890,11 @@ export default function SetupTournamentWizardPage() {
               </div>
             </div>
           )}
+
+          {usesGameDays && <div className="rounded-xl border border-white/10 p-5">
+            <h3 className="text-sm font-bold text-white">Review game days</h3>
+            <GameDaySchedule config={scheduleConfig} totalMatches={estimatedMatches} estimated={launchMode === 'OPEN_REGISTRATION'} onChange={updateSchedule} />
+          </div>}
 
           <div className="flex justify-between pt-4">
             <button

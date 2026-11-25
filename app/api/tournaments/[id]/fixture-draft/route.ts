@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/app/generated/prisma/client';
 import { requireAdmin, apiError, apiSuccess } from '@/lib/api-utils';
 import { invalidatePattern } from '@/lib/redis';
-import { allocateGroups, buildDrawPlan, validateDraft, type DrawConfig, type DrawTeam, type FixtureDraft, type DrawPlan } from '@/lib/tournament-planner';
+import { allocateGroups, buildDrawPlan, defaultDrawConfig, drawSourceSignature, validateDraft, type DrawTeam, type FixtureDraft, type DrawPlan } from '@/lib/tournament-planner';
 
 type Context = { params: Promise<{ id: string }> };
 const include = {
@@ -14,16 +14,8 @@ const include = {
 type Tournament = Prisma.TournamentGetPayload<{ include: typeof include }>;
 
 function setup(t: Tournament) {
-  const stage = t.stages.find(s => ['GROUP_STAGE', 'ROUND_ROBIN'].includes(s.stageType));
-  const defaults: DrawConfig = {
-    startDate: t.date.toISOString(), playDays: t.playDaysPerWeek.length ? t.playDaysPerWeek : [0, 1, 2, 3, 4, 5, 6],
-    matchesPerDay: t.matchesPerDay ?? 4, bestOf: t.defaultBestOf,
-    numGroups: t.format === 'ROUND_ROBIN' ? 1 : Math.max(1, Math.min(32, t.numGroups ?? stage?.numGroups ?? (t.teamsPerGroup ? Math.ceil(t.registrations.length / t.teamsPerGroup) : 2))),
-    legs: t.roundRobinLegs, drawMode: t.drawMode === 'RANDOM' ? 'RANDOM' : 'SEEDED',
-    pointSystem: t.pointSystem, advancingPerGroup: stage?.teamsAdvancingPerGroup ?? 2,
-    parallelMatches: 2, slotMinutes: 120,
-  };
-  const sourceSignature = JSON.stringify({ format: t.format, ...defaults, tiebreakers: t.tiebreakerSequence });
+  const defaults = defaultDrawConfig(t);
+  const sourceSignature = drawSourceSignature(t.format, defaults, t.tiebreakerSequence);
   const teams: DrawTeam[] = t.registrations.map(r => ({ ...r.team, seed: r.seed }));
   return { defaults, sourceSignature, teams };
 }
@@ -49,6 +41,8 @@ export async function GET(_request: NextRequest, context: Context) {
     if (!['GROUP_STAGE', 'ROUND_ROBIN'].includes(t.format)) return apiError('This format does not use a group draw.', 400);
     const { defaults, sourceSignature, teams } = setup(t);
     const draft = (t.fixtureDraft?.data as unknown as FixtureDraft | undefined) ?? { config: defaults, groups: allocateGroups(teams, defaults.numGroups, defaults.drawMode), sourceSignature };
+    // Registration setup may save dates before any teams have joined.
+    if (teams.length && draft.groups.every(group => group.teamIds.length === 0)) draft.groups = allocateGroups(teams, draft.config.numGroups, draft.config.drawMode);
     let stale = draft.sourceSignature !== sourceSignature;
     let plan: DrawPlan;
     try { validateDraft(draft, teams, t.format); plan = buildDrawPlan(draft, t.format); }
@@ -118,7 +112,7 @@ export async function POST(request: NextRequest, context: Context) {
       }
       await tx.match.createMany({ data: plan.matches.map((match, index) => ({ tournamentId: id, stageId: stage.id, roundId: roundIds.get(match.round), teamAId: match.teamAId, teamBId: match.teamBId, scheduledTime: new Date(match.scheduledTime), round: match.round, playDay: match.playDay, lobby: match.lobby, bracketType: 'GROUP_STAGE', bestOf: c.bestOf, status: 'UPCOMING', stage: `Group Stage - ${match.groupName} - Match ${index + 1}` })) });
       const equalSize = new Set(draft.groups.map(group => group.teamIds.length)).size === 1;
-      await tx.tournament.update({ where: { id }, data: { date: new Date(c.startDate), playDaysPerWeek: c.playDays, matchesPerDay: c.matchesPerDay, defaultBestOf: c.bestOf, pointSystem: c.pointSystem, numGroups: c.numGroups, roundRobinLegs: c.legs, drawMode: c.drawMode, teamsPerGroup: equalSize ? draft.groups[0].teamIds.length : null, matchesPerTeam: equalSize ? plan.groups[0].perTeam : null, matchesBeforeBracket: plan.totalMatches, status: t.status === 'ONGOING' ? 'ONGOING' : 'CLOSED' } });
+      await tx.tournament.update({ where: { id }, data: { date: new Date(plan.firstMatch!), playDaysPerWeek: c.playDays, matchesPerDay: c.matchesPerDay, defaultBestOf: c.bestOf, pointSystem: c.pointSystem, numGroups: c.numGroups, roundRobinLegs: c.legs, drawMode: c.drawMode, teamsPerGroup: equalSize ? draft.groups[0].teamIds.length : null, matchesPerTeam: equalSize ? plan.groups[0].perTeam : null, matchesBeforeBracket: plan.totalMatches, status: t.status === 'ONGOING' ? 'ONGOING' : 'CLOSED' } });
       await tx.tournamentFixtureDraft.deleteMany({ where: { tournamentId: id } });
       return { message: `Published ${plan.totalMatches} series across ${draft.groups.length} groups and ${plan.playDays} play days.`, matchCount: plan.totalMatches };
     }, { isolationLevel: 'Serializable', timeout: 30000 });

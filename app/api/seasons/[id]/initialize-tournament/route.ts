@@ -16,13 +16,12 @@ import {
 } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import {
-  generateRoundRobinSchedule,
   buildSingleEliminationBracket,
   buildDoubleEliminationBracket,
   divideTeamsIntoGroups,
-  buildGroupStageSchedule,
   generateSwissRoundPairings,
 } from "@/lib/tournament-engine";
+import { buildDrawPlan, validateDraft, type DrawPlan, type FixtureDraft } from '@/lib/tournament-planner';
 
 /**
  * POST /api/seasons/[id]/initialize-tournament
@@ -89,6 +88,28 @@ export async function POST(
 
     const name = (tournamentName && tournamentName.trim()) ? tournamentName.trim() : `${season.name} — ${format.replace(/_/g, " ")}`;
 
+    let fixtureDraft: FixtureDraft | null = null;
+    let drawPlan: DrawPlan | null = null;
+    if (format === TournamentFormat.ROUND_ROBIN || format === TournamentFormat.GROUP_STAGE) {
+      try {
+        const groups = format === TournamentFormat.ROUND_ROBIN
+          ? [{ name: 'Group A', teamIds }]
+          : divideTeamsIntoGroups(teamIds, numGroups || Math.max(2, Math.floor(teamIds.length / 4)), drawMode, manualGroups).map(group => ({ name: group.groupName, teamIds: group.teamIds }));
+        fixtureDraft = {
+          sourceSignature: '', groups,
+          config: {
+            startDate: startDate.toISOString(), playDays: body.playDaysPerWeek ?? [0, 1, 2, 3, 4, 5, 6],
+            playDates: body.playDates, matchesPerDay: body.matchesPerDay ?? Math.floor(teamIds.length / 2),
+            bestOf: defaultBestOf, numGroups: groups.length, legs: 1,
+            drawMode: drawMode === 'RANDOM' ? 'RANDOM' : 'SEEDED', pointSystem, advancingPerGroup: 2,
+          },
+        };
+        validateDraft(fixtureDraft, validTeams.map(team => ({ ...team, logo: null, seed: null })), format);
+        drawPlan = buildDrawPlan(fixtureDraft, format);
+        if (drawPlan.issues.length) return apiError(drawPlan.issues.join(' '));
+      } catch (error) { return apiError(error instanceof Error ? error.message : 'Check the tournament schedule.'); }
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create Tournament record
       const tournament = await tx.tournament.create({
@@ -98,13 +119,17 @@ export async function POST(
           format,
           location: "Online",
           isOnline: true,
-          date: startDate,
+          date: drawPlan?.firstMatch ? new Date(drawPlan.firstMatch) : startDate,
           registrationDeadline: startDate,
           slots: teamIds.length,
           filled: teamIds.length,
           status: TournamentStatus.ONGOING,
           pointSystem,
           defaultBestOf,
+          ...(fixtureDraft && {
+            playDaysPerWeek: fixtureDraft.config.playDays, matchesPerDay: fixtureDraft.config.matchesPerDay,
+            numGroups: fixtureDraft.config.numGroups, drawMode: fixtureDraft.config.drawMode,
+          }),
           banner: body.banner || null,
           heroImage: body.heroImage || null,
           prizePool: body.prizePool || null,
@@ -140,8 +165,9 @@ export async function POST(
           format,
           defaultBestOf,
           pointSystem,
-          numGroups: numGroups || null,
+          numGroups: fixtureDraft?.config.numGroups ?? numGroups ?? null,
           swissRounds: swissRounds || null,
+          ...(drawPlan && { startsAt: new Date(drawPlan.firstMatch!), endsAt: new Date(drawPlan.lastMatch!) }),
         },
       });
 
@@ -151,33 +177,32 @@ export async function POST(
 
       // --- BRANCH A: ROUND ROBIN ---
       if (format === TournamentFormat.ROUND_ROBIN) {
-        const rounds = generateRoundRobinSchedule(teamIds);
-        totalMatchesCount = rounds.reduce((sum, r) => sum + r.length, 0);
+        const plan = drawPlan!;
+        totalMatchesCount = plan.totalMatches;
 
-        for (let rIdx = 0; rIdx < rounds.length; rIdx++) {
+        for (let rIdx = 0; rIdx < plan.groups[0].rounds; rIdx++) {
           const roundObj = await tx.round.create({
             data: {
               stageId: stage.id,
               number: rIdx + 1,
-              displayName: `Week ${rIdx + 1}`,
+              displayName: `Round ${rIdx + 1}`,
               bestOf: defaultBestOf,
             },
           });
 
-          const roundDate = new Date(startDate);
-          roundDate.setDate(roundDate.getDate() + rIdx * 7);
-
-          const matchesData = rounds[rIdx].map(([teamAId, teamBId], mIdx) => ({
+          const matchesData = plan.matches.filter(match => match.round === rIdx + 1).map(match => ({
             tournamentId: tournament.id,
             stageId: stage.id,
             roundId: roundObj.id,
-            teamAId,
-            teamBId,
+            teamAId: match.teamAId,
+            teamBId: match.teamBId,
             round: rIdx + 1,
-            scheduledTime: new Date(roundDate.getTime() + mIdx * 60 * 60 * 1000),
+            scheduledTime: new Date(match.scheduledTime),
+            playDay: match.playDay,
+            lobby: match.lobby,
             status: MatchStatus.UPCOMING,
             bestOf: defaultBestOf,
-            stage: `Week ${rIdx + 1}`,
+            stage: `Round ${rIdx + 1}`,
           }));
 
           await tx.match.createMany({ data: matchesData });
@@ -298,9 +323,8 @@ export async function POST(
 
       // --- BRANCH D: GROUP STAGE ---
       else if (format === TournamentFormat.GROUP_STAGE) {
-        const groupsCount = numGroups || Math.max(2, Math.floor(teamIds.length / 4));
-        const groupsAssignments = divideTeamsIntoGroups(teamIds, groupsCount, drawMode, manualGroups);
-        const { groupMatches } = buildGroupStageSchedule(groupsAssignments);
+        const groupsAssignments = fixtureDraft!.groups;
+        const groupMatches = drawPlan!.matches;
         totalMatchesCount = groupMatches.length;
 
         // Create TournamentGroup rows
@@ -308,7 +332,7 @@ export async function POST(
           const groupRow = await tx.tournamentGroup.create({
             data: {
               tournamentId: tournament.id,
-              name: g.groupName,
+              name: g.name,
             },
           });
 
@@ -340,7 +364,9 @@ export async function POST(
             teamAId: m.teamAId,
             teamBId: m.teamBId,
             round: r,
-            scheduledTime: new Date(startDate.getTime() + (r - 1) * 7 * 86400000 + idx * 3600000),
+            scheduledTime: new Date(m.scheduledTime),
+            playDay: m.playDay,
+            lobby: m.lobby,
             status: MatchStatus.UPCOMING,
             bestOf: defaultBestOf,
             stage: `${m.groupName} — Match ${idx + 1}`,

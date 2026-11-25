@@ -1,9 +1,10 @@
 import { generateRoundRobinSchedule } from './tournament-engine/round-robin';
+import { planGameDates, validateMatchdayConfig, type MatchdayConfig } from './tournament-schedule';
 
 export type DrawTeam = { id: string; name: string; tag: string; logo: string | null; seed: number | null };
 export type DrawGroup = { name: string; teamIds: string[] };
-export type DrawConfig = {
-  startDate: string; playDays: number[]; matchesPerDay: number; bestOf: number;
+export type DrawConfig = MatchdayConfig & {
+  bestOf: number;
   numGroups: number; legs: number; drawMode: 'SEEDED' | 'RANDOM';
   pointSystem: 'STANDARD' | 'MLBB_WEIGHTED'; advancingPerGroup: number;
   // Concurrent lobby count and slot spacing affect time placement only.
@@ -21,6 +22,27 @@ export type DraftPayload = {
   draft: FixtureDraft; defaults: DrawConfig; teams: DrawTeam[]; revision: number;
   savedAt: string | null; stale: boolean; sourceSignature: string; publishedMatches: number; plan: DrawPlan;
 };
+
+export function defaultDrawConfig(t: {
+  date: Date; playDaysPerWeek: number[]; matchesPerDay: number | null; defaultBestOf: number;
+  format: string; numGroups: number | null; teamsPerGroup: number | null; roundRobinLegs: number;
+  drawMode: string; pointSystem: DrawConfig['pointSystem'];
+  registrations: unknown[]; stages: { stageType: string; numGroups: number | null; teamsAdvancingPerGroup: number | null }[];
+}): DrawConfig {
+  const stage = t.stages.find(s => ['GROUP_STAGE', 'ROUND_ROBIN'].includes(s.stageType));
+  return {
+    startDate: t.date.toISOString(), playDays: t.playDaysPerWeek.length ? t.playDaysPerWeek : [0, 1, 2, 3, 4, 5, 6],
+    matchesPerDay: t.matchesPerDay ?? 4, bestOf: t.defaultBestOf,
+    numGroups: t.format === 'ROUND_ROBIN' ? 1 : Math.max(1, Math.min(32, t.numGroups ?? stage?.numGroups ?? (t.teamsPerGroup ? Math.ceil(t.registrations.length / t.teamsPerGroup) : 2))),
+    legs: t.roundRobinLegs, drawMode: t.drawMode === 'RANDOM' ? 'RANDOM' : 'SEEDED',
+    pointSystem: t.pointSystem, advancingPerGroup: stage?.teamsAdvancingPerGroup ?? 2,
+    parallelMatches: 2, slotMinutes: 120,
+  };
+}
+
+export function drawSourceSignature(format: string, defaults: DrawConfig, tiebreakers: string[]) {
+  return JSON.stringify({ format, ...defaults, tiebreakers });
+}
 
 export function groupTotals(size: number, legs = 1) {
   return { matches: size * Math.max(0, size - 1) / 2 * legs, perTeam: Math.max(0, size - 1) * legs, rounds: size < 2 ? 0 : (size % 2 ? size : size - 1) * legs };
@@ -54,13 +76,9 @@ export function validateDraft(value: unknown, teams: DrawTeam[], format: string)
   if (![1, 2].includes(c.legs)) throw new Error('Choose a single or double round robin.');
   if (![1, 3, 5, 7, 9].includes(c.bestOf)) throw new Error('Choose an odd best-of series from 1 to 9.');
   if (!['STANDARD', 'MLBB_WEIGHTED'].includes(c.pointSystem) || !['SEEDED', 'RANDOM'].includes(c.drawMode)) throw new Error('Choose a valid scoring system and draw mode.');
-  if (!Number.isInteger(c.matchesPerDay) || c.matchesPerDay < 1 || c.matchesPerDay > 48) throw new Error('Choose between 1 and 48 series per day.');
+  validateMatchdayConfig(c);
   if (c.parallelMatches !== undefined && (!Number.isInteger(c.parallelMatches) || c.parallelMatches < 1 || c.parallelMatches > 2)) throw new Error('Choose one or two concurrent lobbies.');
   if (c.slotMinutes !== undefined && (!Number.isInteger(c.slotMinutes) || c.slotMinutes < 15 || c.slotMinutes > 480)) throw new Error('Choose a series slot between 15 minutes and 8 hours.');
-  if (!Array.isArray(c.playDays) || !c.playDays.length || c.playDays.length > 7 || new Set(c.playDays).size !== c.playDays.length || c.playDays.some(day => !Number.isInteger(day) || day < 0 || day > 6)) throw new Error('Select at least one valid play day.');
-  if (typeof c.startDate !== 'string' || !c.startDate.endsWith('Z') || !Number.isFinite(Date.parse(c.startDate))) throw new Error('Choose a valid start time in UTC.');
-  const date = new Date(c.startDate);
-  if (date.getUTCFullYear() < 2000 || date.getUTCFullYear() > 2200) throw new Error('Choose a start date between 2000 and 2200.');
   if (!Number.isInteger(c.advancingPerGroup) || c.advancingPerGroup < 1 || c.advancingPerGroup > 32) throw new Error('Choose 1–32 qualifiers per group.');
   if (draft.groups.length !== c.numGroups) throw new Error('Rebalance the draw to match the selected group count.');
   const seen = new Set<string>();
@@ -102,11 +120,13 @@ export function buildDrawPlan(draft: FixtureDraft, format: string): DrawPlan {
   const matches: PlannedMatch[] = [];
   const days: DrawPlan['days'] = [];
   const orderedPairs = pools.flat();
-  const day = new Date(c.startDate);
-  day.setUTCSeconds(0, 0);
-  // Date allocation depends only on the daily match count and selected play days.
+  const schedule = planGameDates(c, orderedPairs.length);
+  issues.push(...schedule.issues);
+  // Keep round-robin order: a full round per day gives each team one fixture.
   for (let offset = 0; offset < orderedPairs.length; offset += c.matchesPerDay) {
-    while (!c.playDays.includes(day.getUTCDay())) day.setUTCDate(day.getUTCDate() + 1);
+    const date = schedule.dates[offset / c.matchesPerDay];
+    if (!date) break;
+    const day = new Date(`${date}T${c.startDate.slice(11, 16)}:00.000Z`);
     const dailyPairs = orderedPairs.slice(offset, offset + c.matchesPerDay);
     const playDay = days.length + 1;
     const midnight = new Date(day);
@@ -118,7 +138,6 @@ export function buildDrawPlan(draft: FixtureDraft, format: string): DrawPlan {
     const spacing = Math.max(0, spacingMinutes) * 60000;
     dailyPairs.forEach((pair, index) => matches.push({ ...pair, scheduledTime: new Date(day.getTime() + index * spacing).toISOString(), playDay, lobby: 'LOBBY_A' }));
     days.push({ playDay, date: day.toISOString().slice(0, 10), matches: dailyPairs.length });
-    day.setUTCDate(day.getUTCDate() + 1);
   }
-  return { groups, days, matches, totalMatches: matches.length, playDays: days.length, firstMatch: matches[0]?.scheduledTime ?? null, lastMatch: matches.at(-1)?.scheduledTime ?? null, issues };
+  return { groups, days, matches, totalMatches: orderedPairs.length, playDays: schedule.requiredDays, firstMatch: matches[0]?.scheduledTime ?? null, lastMatch: schedule.endDate ? matches.at(-1)?.scheduledTime ?? null : null, issues };
 }

@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Dialog } from 'radix-ui';
-import { ArrowRight, CalendarDays, Check, Loader2, RefreshCw, Save, Shuffle, X } from 'lucide-react';
+import { ArrowRight, Check, Loader2, RefreshCw, Save, Shuffle, X } from 'lucide-react';
 import { dashboardFetch } from '../../lib/api';
-import { allocateGroups, buildDrawPlan, validateDraft, type DraftPayload, type DrawConfig, type FixtureDraft, type DrawPlan } from '@/lib/tournament-planner';
+import { allocateGroups, buildDrawPlan, groupTotals, validateDraft, type DraftPayload, type DrawConfig, type FixtureDraft, type DrawPlan } from '@/lib/tournament-planner';
 import styles from './tournament-detail.module.css';
 import TeamLogo from '../TeamLogo';
+import GameDaySchedule from '../GameDaySchedule';
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const stamp = (value: string) => new Date(value).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 
 export default function FixturePlanner({ tournamentId, format, teamVersion, onPublished }: { tournamentId: string; format: string; teamVersion: string; onPublished: () => void }) {
@@ -115,8 +115,8 @@ export default function FixturePlanner({ tournamentId, format, teamVersion, onPu
           </div>
           <h3 className={styles.subheading}>Match days <span>UTC</span></h3>
           <label className={styles.field}>First day & daily start time<input type="datetime-local" value={c.startDate.slice(0, 16)} onChange={e => { if (e.target.value) configure({ startDate: e.target.value + ':00.000Z' }); }} /></label>
-          <div className={styles.weekdays} aria-label="Play days">{DAYS.map((day, index) => <button type="button" key={day} aria-pressed={c.playDays.includes(index)} onClick={() => configure({ playDays: c.playDays.includes(index) ? c.playDays.filter(d => d !== index) : [...c.playDays, index].sort() })}>{day}</button>)}</div>
-          <div className={styles.dailyCap}><span><CalendarDays size={16} /></span><label>Matches per day<input type="number" min={1} max={48} value={c.matchesPerDay} onChange={e => configure({ matchesPerDay: Number(e.target.value) })} /></label><p>Up to this many matches on each selected play day, across every group. The final day may have fewer.</p></div>
+          <GameDaySchedule config={c} totalMatches={draft.groups.reduce((sum, group) => sum + groupTotals(group.teamIds.length, c.legs).matches, 0)} onChange={configure} />
+          {draft.groups.length === 1 && payload.teams.length > 0 && payload.teams.length === c.matchesPerDay * 2 && <p className={styles.help}>All {payload.teams.length} teams play once each game day · {c.matchesPerDay} fixtures per day.</p>}
         </section>
         <section className={styles.drawPanel}>
           <div className={styles.panelTitle}><div><h3>Group draw</h3><p>{payload.teams.length} approved teams · Move teams using their group selector.</p></div><button type="button" className={styles.button} onClick={() => { setDraft({ ...draft, groups: allocateGroups(payload.teams, c.numGroups, c.drawMode) }); setFixturePage(0); }}><Shuffle size={14} />{c.drawMode === 'RANDOM' ? 'Redraw' : 'Rebalance'}</button></div>
@@ -139,7 +139,7 @@ export default function FixturePlanner({ tournamentId, format, teamVersion, onPu
       <div className={styles.planSummary}><div><strong>{plan.totalMatches}</strong><span>Total series</span></div><div><strong>{plan.playDays}</strong><span>Play days</span></div><div><strong>BO{c.bestOf}</strong><span>Per series</span></div><div><strong>{plan.lastMatch ? stamp(plan.lastMatch) : '—'}</strong><span>Last scheduled start · UTC</span></div></div>
       {plan.issues.length > 0 && <div className={styles.warning}><strong>Before publishing</strong>{plan.issues.map(issue => <p key={issue}>{issue}</p>)}</div>}
       <section className={styles.matchDays}>
-        <div className={styles.panelTitle}><div><h3>Your match days</h3><p>Up to {c.matchesPerDay} matches per day · {plan.totalMatches} total · All groups combined</p></div><button className={styles.textButton} onClick={() => { setFixtureDay(0); setFixturePage(0); setPreviewOpen(true); }}>View all fixtures</button></div>
+        <div className={styles.panelTitle}><div><h3>Your match days</h3><p>{c.matchesPerDay} fixtures per game day · {plan.totalMatches} total · All groups combined{plan.totalMatches % c.matchesPerDay > 0 ? ` · Final day: ${plan.totalMatches % c.matchesPerDay}` : ''}</p></div><button className={styles.textButton} onClick={() => { setFixtureDay(0); setFixturePage(0); setPreviewOpen(true); }}>View all fixtures</button></div>
         <div className={styles.dayGrid}>{plan.days.slice(currentDayPage * 8, currentDayPage * 8 + 8).map(day => <button key={day.playDay} aria-pressed={fixtureDay === day.playDay} onClick={() => { setFixtureDay(day.playDay); setFixturePage(0); setPreviewOpen(true); }}><span>Day {day.playDay}</span><time dateTime={day.date}>{new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}</time><strong>{day.matches}<small> matches</small></strong></button>)}</div>
         {plan.days.length > 8 && <div className={styles.pager}><button className={styles.button} disabled={currentDayPage === 0} onClick={() => setDayPage(currentDayPage - 1)}>Earlier days</button><span>{currentDayPage + 1} / {Math.ceil(plan.days.length / 8)}</span><button className={styles.button} disabled={(currentDayPage + 1) * 8 >= plan.days.length} onClick={() => setDayPage(currentDayPage + 1)}>Later days</button></div>}
       </section>
@@ -153,7 +153,7 @@ export default function FixturePlanner({ tournamentId, format, teamVersion, onPu
     {publishBlocker && <p id="publish-blocker" className={styles.warning} role="status"><strong>Before publishing: </strong>{publishBlocker}</p>}
     <div className={styles.saveBar}><div><strong>{ready ? 'Ready to publish your draw' : 'Finish setting up the draw'}</strong><span>{needsSave ? 'Publishing includes your latest changes. Saving first is optional.' : `Draft saved ${stamp(payload.savedAt!)} UTC`}</span></div><button className={styles.button} disabled={Boolean(busy)} aria-label="Reload draft" onClick={() => { if (!dirty || window.confirm('Discard unsaved draft changes and reload?')) void load(); }}><RefreshCw size={15} /></button><button className={styles.button} disabled={Boolean(busy) || !needsSave || Boolean(invalid) || stale || locked} onClick={() => void save()}>{busy === 'save' ? <Loader2 size={15} className={styles.spin} /> : <Save size={15} />} Save draft</button><button className={styles.primary} disabled={!ready || Boolean(busy)} aria-describedby={publishBlocker ? 'publish-blocker' : undefined} onClick={() => { setError(''); setConfirm(true); }}>Review & publish <ArrowRight size={15} /></button></div>
     <Dialog.Root open={confirm} onOpenChange={open => { if (busy !== 'publish') setConfirm(open); }}><Dialog.Portal><Dialog.Overlay className={styles.overlay} /><Dialog.Content className={styles.modal}>
-      <Dialog.Title>Publish this draw?</Dialog.Title><Dialog.Description>{plan?.totalMatches} matches across {draft.groups.length} groups, with up to {c.matchesPerDay} matches per play day. Your current team assignments and schedule will be published together. Registration will close.</Dialog.Description>
+      <Dialog.Title>Publish this draw?</Dialog.Title><Dialog.Description>{plan?.totalMatches} fixtures across {plan?.playDays} game days, with {c.matchesPerDay} fixtures per day{plan && plan.totalMatches % c.matchesPerDay > 0 ? ` (${plan.totalMatches % c.matchesPerDay} on the final day)` : ''}. Your current team assignments and schedule will be published together. Registration will close.</Dialog.Description>
       <div className={styles.confirmLineup}>{payload.teams.map(team => <TeamLogo key={team.id} team={team} size={38} />)}</div>
       {error && <p className={styles.error} role="alert">{error}</p>}
       <div className={styles.modalActions}><Dialog.Close asChild><button className={styles.button} disabled={Boolean(busy)}><X size={14} /> Keep editing</button></Dialog.Close><button className={styles.primary} disabled={!ready || Boolean(busy)} onClick={() => void publish()}>{busy === 'publish' && <Loader2 size={15} className={styles.spin} />}Publish {plan?.totalMatches} matches</button></div>

@@ -1,0 +1,20 @@
+.schedule { min-width:0; margin-top:14px; color:#d9dce1; font-size:12px; }
+.field { display:flex; flex-direction:column; min-width:0; gap:7px; color:#a3abb7; font-size:11px; }
+.field input { box-sizing:border-box; width:100%; min-width:0; min-height:40px; padding:9px; border:1px solid #3a404a; border-radius:4px; background:#0c1016; color:#dde0e5; color-scheme:dark; font:inherit; }
+.help { margin:9px 0 13px; color:#9ba5b4; font-size:11px; line-height:1.6; }
+.modes,.weekdays,.pager { display:flex; gap:5px; margin:12px 0; }
+.schedule button { min-height:36px; border:1px solid #3a404a; border-radius:4px; padding:7px; background:#1a1f26; color:#adb6c3; font:inherit; cursor:pointer; }
+.modes button { flex:1; font-size:11px; }
+.weekdays button { flex:1; min-width:0; padding:5px 1px; font-size:10px; }
+.schedule button[aria-pressed=true] { background:#3e3423; border-color:#94794c; color:#ecd19f; }
+.schedule :is(button,input):focus-visible { outline:2px solid #edbb65; outline-offset:2px; }
+.schedule button:disabled { opacity:.4; cursor:not-allowed; }
+.dates { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:12px; max-height:430px; overflow-y:auto; padding:3px; }
+.schedule .refill { margin-top:12px; border:0; background:transparent; color:#d4b883; padding:0; font-size:11px; }
+.pager { align-items:center; justify-content:space-between; font-size:10px; }
+.error { color:#e2b6ab; line-height:1.6; }
+.summary { margin-top:14px; padding:13px; border:1px solid #494438; border-radius:5px; background:#1d1d19; }
+.summary strong { display:block; color:#ead2a9; font-size:12px; line-height:1.6; }
+.summary ul { list-style:none; margin:10px 0 0; padding:0; max-height:190px; overflow-y:auto; }
+.summary li { display:flex; justify-content:space-between; gap:10px; padding:5px 0; color:#a5acb5; font-size:11px; }
+.summary li span { white-space:nowrap; color:#d7d6cd; }
